@@ -2,6 +2,24 @@
 
 Tauri v2 desktop app. React 19 + TypeScript frontend, Rust backend. Package manager: **pnpm**.
 
+## Git commit style
+
+Conventional Commits: `type(scope): description`
+
+| Type | Usage |
+|---|---|
+| `feat` | New feature |
+| `fix` | Bug fix |
+| `refactor` | Code restructuring (no behavior change) |
+| `chore` | Tooling, config, deps, misc |
+| `docs` | Documentation |
+| `style` | Formatting, whitespace |
+| `ci` | CI/CD |
+| `test` | Tests |
+| `perf` | Performance |
+
+Scope is optional but encouraged for clarity (e.g. `feat(tauri):`, `fix(ui):`, `chore(deps):`). All lowercase.
+
 ## Commands
 
 | Command | Purpose |
