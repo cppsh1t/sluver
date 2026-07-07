@@ -1,0 +1,20 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript", "import", "unicorn"],
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {
+    "no-console": "warn",
+    "no-unused-vars": "off",
+    "typescript/no-unused-vars": "warn",
+    "typescript/no-explicit-any": "warn",
+    "react/exhaustive-deps": "warn",
+    "react/no-direct-mutation-state": "error"
+  },
+  "ignorePatterns": [
+    "dist/",
+    "src-tauri/",
+    "node_modules/"
+  ]
+}
