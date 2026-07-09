@@ -69,6 +69,33 @@ Do NOT rely on LSP diagnostics for verification — unreliable. Use commands ins
 - Frontend: `pnpm type-check`
 - Backend: `cargo check` (run from `src-tauri/`)
 
+## 禁令 (HARD PROHIBITIONS)
+
+### 🚫 严禁 git clone 查看源码 (STRICTLY FORBIDDEN: git clone to read source)
+
+**进行 `git clone` 来查看某个仓库的源码，是严重的「钻牛角尖」行为，本项目完全禁止。**
+
+This applies to ALL agents and subagents (librarian, explore, oracle, task categories — everyone). No exceptions.
+
+- **Do NOT** run `git clone`, `gh repo clone`, or any equivalent to fetch a repository's full source for reading/analysis.
+- **Do NOT** instruct subagents to "find open-source apps and extract their schemas/DDL by cloning".
+- This wastes enormous time and tokens, produces marginal value over web/docs search, and is exactly the kind of over-research that derails work.
+
+#### What to do INSTEAD:
+
+| ❌ Forbidden (rabbit hole) | ✅ Use instead (targeted) |
+|---|---|
+| `git clone https://github.com/x/y` then read files | GitHub **code search API** (e.g. `grep_app_searchGitHub`) for specific snippets |
+| Clone a repo to "understand its schema" | Read **docs / README / published DDL** via `webfetch` / `websearch` |
+| Clone to find usage examples | `context7_query-docs` for official library docs |
+| Spawning subagent that clones repos | Direct `grep`/`glob` on **our own** codebase only |
+
+#### If you (any agent) feel the urge to clone a repo:
+
+STOP. The answer is almost always available via: official docs, npm/crates package metadata, GitHub raw file URLs (`raw.githubusercontent.com` — read single files, never clone), or web search. Use those.
+
+**Violating this rule is a blocking failure. Report it immediately if a subagent attempts it.**
+
 ## Tauri-specific notes
 
 - `pnpm build` = frontend only. `pnpm tauri build` = frontend + native binary.
