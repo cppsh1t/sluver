@@ -1,6 +1,6 @@
 # AGENTS.md — sluver
 
-Tauri v2 desktop app. React 19 + TypeScript frontend, Rust backend. Package manager: **pnpm**.
+Tauri v2 desktop app for **worldbuilding & novel writing**. React 19 + TypeScript frontend, Rust backend backed by SQLite. Package manager: **pnpm**.
 
 ## Git commit style
 
@@ -28,46 +28,105 @@ Scope is optional but encouraged for clarity (e.g. `feat(tauri):`, `fix(ui):`, `
 | `pnpm tauri build` | Production build (frontend + native binary). Runs `pnpm build` internally. |
 | `pnpm build` | Frontend-only build (`tsc && vite build`). Output to `dist/`. |
 | `pnpm dev` | Vite dev server only (no Rust backend). For frontend-only work. |
-| `pnpm type-check` | `tsc --noEmit`. Use this for fast type validation without full build. |
-| `pnpm lint` | oxlint (not eslint). Runs on `src/` only — `src-tauri/` and `dist/` are excluded. |
+| `pnpm type-check` | `tsc --noEmit`. Fast type validation. |
+| `pnpm lint` | oxlint (not eslint). Runs from repo root; ignores `dist/`, `src-tauri/`, `node_modules/`. |
 | `pnpm lint:fix` | oxlint with auto-fix. |
 
 ## Architecture
 
+### Domain model
+
 ```
-src/                    # Frontend (React + TypeScript)
-  main.tsx              # Entry point
-  App.tsx               # Root component
-  index.css             # Tailwind + shadcn theme (oklch colors, dark mode via `.dark` class)
-  lib/utils.ts          # cn() utility (clsx + tailwind-merge)
-  components/ui/        # shadcn/ui components (base-mira style — uses @base-ui/react, NOT Radix)
-src-tauri/               # Rust backend (Tauri v2)
-  src/lib.rs             # Tauri app builder + command handlers
-  src/main.rs            # Binary entry (delegates to sluver_lib::run)
-  tauri.conf.json        # Tauri config (beforeDevCommand, beforeBuildCommand, window config)
-  capabilities/           # Tauri capability permissions
+World (top-level container — one .db file per world)
+├── Character ─ CharacterPhase[]      (lifecycle stages; each may trigger an Event)
+├── Location, Item, Lore              (shared "element" schema: name/description/notes/tags)
+├── Event                             (references CharacterRef = {characterId, phaseId}, optional Location)
+└── Novel ─ Chapter[] ─ Scene[]       (Scene = prose leaf unit; refs characters/items/events/location)
 ```
+
+### Two-database design (CRITICAL)
+
+```
+{app_data_dir}/
+  meta.db            # World registry (worlds table) + app settings (settings KV table). Always open.
+  worlds/
+    {uuid7}.db       # One DB file per world — ALL world-scoped data lives here.
+```
+
+- **`world_id` is NOT a column** in world-scoped tables. Each world IS its own database file. `world_id` is passed as a command arg and injected into responses at query time.
+- `meta.db` is always open; world DBs are opened lazily and cached in `DbManager`.
+
+### Backend (Rust) — `src-tauri/src/`
+
+```
+lib.rs          # Builder: setup (creates data_dir + worlds/), manages DbManager, registers ~40 commands
+main.rs         # Binary entry → sluver_lib::run()
+util.rs         # new_id() = UUID v7; now_iso() = ISO 8601 ms precision
+db/
+  manager.rs    # DbManager — the ONLY managed State. with_meta() / with_world() closure pattern
+  migrations.rs # ALL migrations inline as &str SQL — NO .sql files. META_MIGRATIONS + WORLD_MIGRATIONS
+  error.rs      # DbError enum — serializes to a flat string (frontend receives string rejections)
+commands/       # One file per domain: world, character, element, event, novel
+models/         # One file per entity: structs with #[serde(rename_all = "camelCase")]
+```
+
+**Command conventions:**
+- Signature: `fn create_x(world_id: String, input: CreateXInput, state: State<'_, DbManager>) -> Result<X, DbError>`. World-scoped commands take `world_id` first; world/config commands use `with_meta()` directly.
+- Updates are **full replacement** (not PATCH). Check `rows_affected == 0` → `NotFound`. Read back the entity after mutation.
+- Junction refs (Event `character_refs`, Scene `character_refs`/`item_ids`/`event_ids`) = delete-all + re-insert in a transaction.
+- Reorder commands (`reorder_chapters`, `reorder_scenes`) take `Vec<String>` of IDs, set `position = index`.
+- `commands/element.rs` uses a `load_element!` macro — Location/Item/Lore share identical schema.
+
+**Rust gotchas:**
+- `Vec<String>` fields (`tags`, `aliases`) are stored as **JSON TEXT** in SQLite, deserialized via `serde_json::from_str().unwrap_or_default()`.
+- All connections enable `foreign_keys = ON` + `journal_mode = WAL`.
+- All IDs are **UUID v7** (time-sortable). No sequential IDs anywhere.
+- `#[serde(rename_all = "camelCase")]` on ALL models — Rust snake_case internally, frontend camelCase.
+- DbManager lock ordering: `with_world()` resolves the world DB path via the `meta` lock, releases it, THEN acquires the `worlds` cache lock — reversing this order deadlocks.
+
+### Frontend — `src/`
+
+```
+main.tsx, App.tsx   # STILL DEFAULT TAURI BOILERPLATE — not yet wired to the api/ layer
+api/                # Typed IPC layer wrapping invoke()
+  client.ts         # call<T>(cmd, args?) → invoke<T>(). DbError → string, so rejections are `string`.
+  *.ts              # One file per domain: createX/getX/listX/updateX/deleteX. World-scoped take worldId first.
+  types.ts          # CreateInput<T,R> derives input types from entity types (no field duplication).
+types/              # Zod schemas are the SINGLE SOURCE OF TRUTH; TS types via z.infer
+  index.ts          # Barrel re-export of all branded IDs + schemas + types
+  ids.ts            # Leaf module (eventIdSchema only) — breaks character↔event import cycle
+  *.ts              # Branded IDs: z.string().brand<'EntityId'>() prevent cross-entity mixups
+components/ui/      # shadcn/ui (base-mira style — @base-ui/react, NOT Radix)
+lib/utils.ts        # cn() = clsx + tailwind-merge
+```
+
+**Frontend patterns:**
+- `types/element.ts` defines `elementBaseSchema` shared by Location/Item/Lore; each extends it with a branded ID.
+- App.tsx is boilerplate calling `invoke("greet")` — a command no longer registered in `lib.rs`. The real API surface lives in `src/api/` + `src/types/`. When building UI, import from `@/api` and `@/types`, do not extend App.tsx's demo code.
+- No router, no state management library, no `hooks/` dir, no tests yet.
+- `markdown-it` and `@hugeicons/react` are declared deps but **not yet imported** anywhere in `src/` (reserved for Scene.content rendering and UI icons).
 
 ### Key patterns
 
-- **Path alias**: `@/` maps to `./src/` (configured in both `vite.config.ts` and `tsconfig.json`)
-- **Frontend→Rust IPC**: Use `invoke("command_name", { args })` from `@tauri-apps/api/core`. Commands are registered in `src-tauri/src/lib.rs` via `tauri::generate_handler![]`
-- **shadcn/ui style**: `base-mira` — components use `@base-ui/react` primitives, not Radix. This differs from most shadcn docs/examples which assume Radix.
-- **Dark mode**: Toggle by adding/removing `.dark` class. CSS uses `@custom-variant dark (&:is(.dark *))` pattern (Tailwind v4).
+- **Path alias**: `@/` → `./src/` (configured in both `vite.config.ts` and `tsconfig.json`).
+- **shadcn/ui style**: `base-mira` — components use `@base-ui/react` primitives, not Radix. This differs from most shadcn docs/examples which assume Radix. Config in `components.json`.
+- **Icon library**: hugeicons (`components.json` → `iconLibrary: "hugeicons"`, baseColor `neutral`).
+- **Dark mode**: toggle by adding/removing `.dark` class. CSS uses `@custom-variant dark (&:is(.dark *))` pattern (Tailwind v4).
 - **Color system**: oklch, defined as CSS custom properties in `index.css` (`:root` / `.dark`).
 
 ## Toolchain quirks
 
-- **Linter is oxlint, not eslint.** Config at `.oxlintrc.json`. Plugins: `react`, `typescript`, `import`, `unicorn`. Key rules: `no-console: warn`, `no-explicit-any: warn`.
-- **Formatter is oxfmt** (from oxc), not prettier. VSCode config at `.vscode/settings.json` forces whole-file format on save.
-- **Tailwind CSS v4** with `@tailwindcss/vite` plugin. No `tailwind.config.js` — configuration is inline in CSS via `@theme`. Do not create a `tailwind.config.js`.
-- **No router, no state management library, no tests yet.** This is early-stage boilerplate.
+- **Linter is oxlint, not eslint.** Config at `.oxlintrc.json`. Plugins: `react`, `typescript`, `import`, `unicorn`. `correctness` category = error. Notable rules: `no-console: warn`, `typescript/no-explicit-any: warn`, `typescript/no-unused-vars: warn`, `react/no-direct-mutation-state: error`.
+- **Formatter is oxfmt** (from oxc), not prettier. `.vscode/settings.json` forces whole-file format on save (oxfmt only supports whole-file mode).
+- **Tailwind CSS v4** with `@tailwindcss/vite` plugin. Config is inline in CSS via `@theme` — **do not create a `tailwind.config.js`**.
+- **tsconfig is strict**: `noUnusedLocals` + `noUnusedParameters` are ON — `pnpm type-check` FAILS on unused vars/params. Clean them up before committing.
+- **No tests yet.**
 
 ## Verification
 
 Do NOT rely on LSP diagnostics for verification — unreliable. Use commands instead:
 - Frontend: `pnpm type-check`
-- Backend: `cargo check` (run from `src-tauri/`)
+- Backend: `cargo check` (run from `src-tauri/`); `cargo clippy` for linting.
 
 ## 禁令 (HARD PROHIBITIONS)
 
@@ -102,3 +161,4 @@ STOP. The answer is almost always available via: official docs, npm/crates packa
 - `tauri.conf.json` sets `beforeDevCommand: "pnpm dev"` and `beforeBuildCommand: "pnpm build"`. When running `pnpm tauri dev/build`, these commands execute automatically.
 - Rust source lives in `src-tauri/` — oxlint ignores this directory. Use `cargo check` / `cargo clippy` for Rust linting.
 - CSP is disabled (`"csp": null`). Adjust in `tauri.conf.json` before production.
+- Capabilities (`src-tauri/capabilities/default.json`): `core:default` + `opener:default` only. Add new permissions here when invoking new Tauri APIs.
