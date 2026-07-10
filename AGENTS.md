@@ -114,6 +114,24 @@ lib/utils.ts        # cn() = clsx + tailwind-merge
 - **Dark mode**: toggle by adding/removing `.dark` class. CSS uses `@custom-variant dark (&:is(.dark *))` pattern (Tailwind v4).
 - **Color system**: oklch, defined as CSS custom properties in `index.css` (`:root` / `.dark`).
 
+## Agent Skills
+
+Project skills live in `.opencode/skills/`. **Agents MUST assess the current task and auto-load the relevant skill** via `load_skills=[...]` (for `task()`) or the `skill` tool — do not wait to be told which skill to use.
+
+| Skill | Applies when | Notes |
+|---|---|---|
+| `shadcn` | Adding / searching / fixing / composing shadcn/ui components; touching `components.json`, presets, `--preset` codes | This project uses `base-mira` style (`@base-ui/react`, NOT Radix). Load for any `components/ui/` work. |
+| `frontend-design` | Building new UI, reshaping existing UI, making aesthetic / visual decisions (palette, typography, layout, motion) | Drives distinctive, opinionated design choices; avoids AI-templated defaults. Load alongside `shadcn` for page/feature-level UI. |
+| `vercel-ai-sdk` | Adding AI features (text generation, streaming, tool calling, agents, chat UI, embeddings); questions about the `ai` / `@ai-sdk/*` packages | Novel-writing app may integrate AI assistance. Load for anything AI-related. |
+| `skill-creator` | Designing, structuring, or packaging a new AgentSkill | Meta-tool. Load only when authoring/editing a skill. |
+| `skill-lookup` | Discovering, retrieving, or installing skills | Meta-tool. Load only when searching for / installing skills. |
+
+**Auto-load rules (judge by task, then act):**
+- Frontend / component work → always load `shadcn`; add `frontend-design` when visual design decisions are involved.
+- AI feature work → always load `vercel-ai-sdk`.
+- Skill authoring / installation → load `skill-creator` / `skill-lookup` respectively.
+- When unsure whether a skill applies, include it — `load_skills` is cheap, missing domain context is expensive.
+
 ## Toolchain quirks
 
 - **Linter is oxlint, not eslint.** Config at `.oxlintrc.json`. Plugins: `react`, `typescript`, `import`, `unicorn`. `correctness` category = error. Notable rules: `no-console: warn`, `typescript/no-explicit-any: warn`, `typescript/no-unused-vars: warn`, `react/no-direct-mutation-state: error`.
