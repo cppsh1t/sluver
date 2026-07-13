@@ -10,9 +10,12 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
+        "label": "main",
         "title": "sluver",
+        "decorations": false,
         "width": 1280,
         "height": 800,
         "maximized": true

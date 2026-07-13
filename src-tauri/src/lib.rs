@@ -4,17 +4,35 @@ mod models;
 mod util;
 
 use tauri::Manager;
+use tauri_plugin_decorum::WebviewWindowExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_decorum::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
             std::fs::create_dir_all(data_dir.join("worlds"))?;
             let db_manager = db::DbManager::new(data_dir)?;
             app.manage(db_manager);
+
+            // Frameless window: decorum injects native caption controls on
+            // Windows/Linux (retaining Win11 Snap Layout). On macOS the native
+            // traffic lights are preserved via titleBarStyle "Overlay" +
+            // hiddenTitle in tauri.macos.conf.json.
+            let main_window = app
+                .get_webview_window("main")
+                .expect("main window not found");
+            main_window.create_overlay_titlebar()?;
+
+            // macOS only: inset the traffic lights to vertically center them in
+            // the custom titlebar (h-9 ≈ 36px). Tweak visually when targeting
+            // macOS. No-op (not even compiled) on Windows/Linux.
+            #[cfg(target_os = "macos")]
+            main_window.set_traffic_lights_inset(12.0, 12.0)?;
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
