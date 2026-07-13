@@ -81,7 +81,7 @@ function CreateWorldDialog({
                 id="world-name"
                 value={name}
                 onChange={(e) => setName(e.currentTarget.value)}
-                placeholder="例：九州大陆"
+                placeholder="输入世界名称"
                 autoFocus
               />
               <FieldDescription>给你的世界起一个名字。</FieldDescription>
@@ -92,12 +92,12 @@ function CreateWorldDialog({
                 id="world-desc"
                 value={description}
                 onChange={(e) => setDescription(e.currentTarget.value)}
-                placeholder="史诗奇幻世界…"
+                placeholder="简要描述这个世界的核心设定与风格"
                 rows={3}
               />
             </Field>
           </FieldGroup>
-          <DialogFooter>
+          <DialogFooter className="mt-4">
             <DialogClose render={<Button variant="outline" type="button" />}>
               取消
             </DialogClose>
