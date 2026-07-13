@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Outlet, createRootRoute } from "@tanstack/react-router";
 
 import { AppSidebar } from "@/components/app-sidebar";
+import { TitleBar } from "@/components/title-bar";
 import { Toaster } from "@/components/ui/sonner";
 import { getAppConfig } from "@/api";
 import {
@@ -32,11 +33,14 @@ function RootLayout() {
   }, []);
 
   return (
-    <div className="flex h-svh overflow-hidden bg-background text-foreground">
-      <AppSidebar />
-      <main className="flex flex-1 flex-col overflow-hidden">
-        <Outlet />
-      </main>
+    <div className="flex h-svh flex-col overflow-hidden bg-background text-foreground">
+      <TitleBar />
+      <div className="flex flex-1 overflow-hidden">
+        <AppSidebar />
+        <main className="flex flex-1 flex-col overflow-hidden">
+          <Outlet />
+        </main>
+      </div>
       <Toaster />
     </div>
   );

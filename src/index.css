@@ -205,3 +205,12 @@
     @apply font-sans;
     }
 }
+
+/* ── tauri-plugin-decorum: injected window caption buttons ────────────── */
+/* Windows/Linux only — macOS uses native traffic lights. Decorum injects
+   native buttons (#decorum-tb-minimize/maximize/close) for Snap Layout. We
+   style the close hover to follow the Windows convention (red). */
+button#decorum-tb-close:hover {
+  background-color: var(--destructive);
+  color: white;
+}
