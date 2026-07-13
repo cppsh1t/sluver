@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { rootRoute } from "./__root";
-import { getAppConfig, updateAppConfig } from "@/api";
+import { getAppConfig, setTrayLocale, updateAppConfig } from "@/api";
 import { toErrorPayload } from "@/api/client";
 import { resolveLocale, AUTO_LOCALE } from "@/i18n";
 import i18n from "@/i18n";
@@ -146,6 +146,7 @@ function SettingsPage() {
 
     await i18n.changeLanguage(resolved);
     setDayjsLocale(resolved);
+    setTrayLocale(resolved).catch(() => {});
 
     try {
       await persist({ locale: next });
@@ -153,6 +154,7 @@ function SettingsPage() {
       setLocale(prev);
       await i18n.changeLanguage(prevResolved);
       setDayjsLocale(prevResolved);
+      setTrayLocale(prevResolved).catch(() => {});
     }
   }
 

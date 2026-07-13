@@ -39,3 +39,14 @@ export function getAppConfig(): Promise<AppConfig> {
 export function updateAppConfig(config: AppConfig): Promise<AppConfig> {
   return call<AppConfig>('update_app_config', { config });
 }
+
+// ─── Tray ───────────────────────────────────────────────────────────────────
+
+/**
+ * Push the resolved UI locale to the backend so the system tray menu labels
+ * follow the active language. Pass a resolved BCP-47 tag (`"zh-CN"` / `"en"`),
+ * NOT the `"auto"` sentinel — OS detection is resolved on the frontend side.
+ */
+export function setTrayLocale(locale: string): Promise<void> {
+  return call<void>('set_tray_locale', { locale });
+}

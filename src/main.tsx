@@ -4,7 +4,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { locale as detectOsLocale } from "@tauri-apps/plugin-os";
 
 import { router } from "./router";
-import { getAppConfig } from "@/api";
+import { getAppConfig, setTrayLocale } from "@/api";
 import {
   AUTO_LOCALE,
   DEFAULT_LOCALE,
@@ -71,6 +71,10 @@ resolveInitialLocale()
   .then(async (lng) => {
     await i18n.changeLanguage(lng);
     setDayjsLocale(lng);
+    // Sync the tray menu labels to the resolved locale. Best-effort: a
+    // failure leaves the tray on its English startup default, which is
+    // preferable to blocking the render pipeline.
+    setTrayLocale(lng).catch(() => {});
   })
   .catch(() => {
     // Swallow — render anyway with whatever i18next managed to load.

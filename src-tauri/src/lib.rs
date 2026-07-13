@@ -1,6 +1,7 @@
 mod commands;
 mod db;
 mod models;
+mod tray;
 mod util;
 
 use tauri::Manager;
@@ -33,6 +34,11 @@ pub fn run() {
             // macOS. No-op (not even compiled) on Windows/Linux.
             #[cfg(target_os = "macos")]
             main_window.set_traffic_lights_inset(12.0, 12.0)?;
+
+            // System tray (close-to-tray + i18n menu). The tray starts with an
+            // English menu; the frontend pushes the resolved locale via
+            // `set_tray_locale` right after bootstrap. See `tray.rs`.
+            tray::setup(app.handle())?;
 
             Ok(())
         })
@@ -97,7 +103,20 @@ pub fn run() {
             commands::novel::update_scene,
             commands::novel::delete_scene,
             commands::novel::reorder_scenes,
+            // Tray
+            commands::tray::set_tray_locale,
         ])
+        .on_window_event(|window, event| {
+            // Intercept the main window's close button: hide to tray instead
+            // of tearing down the process. Only "main" is affected so future
+            // auxiliary windows (dialogs, pickers, ...) can close normally.
+            if window.label() == "main" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    let _ = window.hide();
+                    api.prevent_close();
+                }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

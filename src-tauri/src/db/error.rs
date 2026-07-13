@@ -41,6 +41,13 @@ pub enum DbError {
 
     #[error("Serialization error: {0}")]
     Serde(#[from] serde_json::Error),
+
+    /// Catch-all for infrastructure/framework errors that don't fit a more
+    /// specific variant (e.g. a `tauri::Error` from window/tray operations).
+    /// Collapses to `INTERNAL_ERROR` — the dynamic message is the only useful
+    /// information, so it's not worth translating.
+    #[error("{0}")]
+    Internal(String),
 }
 
 impl DbError {
@@ -62,7 +69,8 @@ impl DbError {
             DbError::Sqlite(_)
             | DbError::Io(_)
             | DbError::Migration(_)
-            | DbError::Serde(_) => ("INTERNAL_ERROR", HashMap::new()),
+            | DbError::Serde(_)
+            | DbError::Internal(_) => ("INTERNAL_ERROR", HashMap::new()),
         };
         ErrorPayload {
             code: code.to_string(),
