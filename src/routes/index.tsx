@@ -63,11 +63,16 @@ function WorldHubPage() {
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
-      <div className="mx-auto w-full max-w-5xl px-6 py-8">
-        <div className="mb-6 flex items-center justify-between">
-          <h1 className="font-heading text-lg font-medium tracking-tight">
-            我的世界
-          </h1>
+      <div className="mx-auto w-full max-w-5xl px-6 py-10">
+        <div className="mb-8 flex items-end justify-between gap-4">
+          <div>
+            <h1 className="font-heading text-xl font-semibold tracking-tight">
+              世界
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              管理你的世界观宇宙，进入开始创作。
+            </p>
+          </div>
           <Button onClick={() => setCreateOpen(true)}>
             <HugeiconsIcon icon={Add01Icon} strokeWidth={2} />
             新建世界

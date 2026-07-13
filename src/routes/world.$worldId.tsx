@@ -1,23 +1,16 @@
-import { createRoute, useNavigate, useParams } from "@tanstack/react-router";
+import { createRoute, useParams } from "@tanstack/react-router";
 
 import { rootRoute } from "./__root";
-import { Button } from "@/components/ui/button";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowLeft01Icon } from "@hugeicons/core-free-icons";
 
 function WorldWorkspacePage() {
   const { worldId } = useParams({ from: "/world/$worldId" });
-  const navigate = useNavigate();
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8">
-      <p className="text-sm text-muted-foreground">
-        世界工作区（{worldId}）— 即将推出
+    <div className="flex flex-1 flex-col items-center justify-center gap-1 p-8 text-center">
+      <p className="font-heading text-sm font-medium tracking-tight">
+        世界工作区即将推出
       </p>
-      <Button variant="outline" onClick={() => navigate({ to: "/" })}>
-        <HugeiconsIcon icon={ArrowLeft01Icon} strokeWidth={2} />
-        返回世界列表
-      </Button>
+      <p className="text-xs text-muted-foreground/70">{worldId}</p>
     </div>
   );
 }
