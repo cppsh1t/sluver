@@ -11,6 +11,8 @@ export const appConfigSchema = z.object({
   appearance: z.object({
     /** Controls the `.dark` class on the root element. */
     theme: z.enum(['light', 'dark', 'system']),
+    /** Controls the `data-color-theme` attribute: the active color palette. */
+    colorTheme: z.enum(['neutral', 'parchment']),
   }),
 });
 

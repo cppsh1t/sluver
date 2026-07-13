@@ -12,6 +12,8 @@ pub struct AppConfig {
 pub struct Appearance {
     /// "light" | "dark" | "system"
     pub theme: String,
+    /// "neutral" | "parchment"
+    pub color_theme: String,
 }
 
 impl Default for AppConfig {
@@ -19,6 +21,7 @@ impl Default for AppConfig {
         Self {
             appearance: Appearance {
                 theme: "system".to_string(),
+                color_theme: "neutral".to_string(),
             },
         }
     }

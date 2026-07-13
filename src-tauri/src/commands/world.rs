@@ -158,8 +158,16 @@ pub fn get_app_config(state: State<'_, DbManager>) -> Result<AppConfig, DbError>
             )
             .unwrap_or_else(|_| "system".to_string());
 
+        let color_theme = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'appearance.colorTheme'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap_or_else(|_| "neutral".to_string());
+
         Ok(AppConfig {
-            appearance: Appearance { theme },
+            appearance: Appearance { theme, color_theme },
         })
     })
 }
@@ -170,11 +178,17 @@ pub fn update_app_config(
     state: State<'_, DbManager>,
 ) -> Result<AppConfig, DbError> {
     let theme = config.appearance.theme.clone();
+    let color_theme = config.appearance.color_theme.clone();
     state.with_meta(|conn| {
         conn.execute(
             "INSERT INTO settings (key, value) VALUES ('appearance.theme', ?1)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             params![theme],
+        )?;
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('appearance.colorTheme', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![color_theme],
         )?;
         Ok(())
     })?;
