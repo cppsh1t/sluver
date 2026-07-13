@@ -1,0 +1,46 @@
+{
+  "hub": {
+    "title": "Worlds",
+    "subtitle": "Manage your worlds and start creating.",
+    "createButton": "New world",
+    "empty": {
+      "title": "No worlds yet",
+      "description": "Create your first world to start building characters, weaving events, and writing novels.",
+      "cta": "Create your first world"
+    }
+  },
+  "card": {
+    "editAction": "Edit world",
+    "deleteAction": "Delete world",
+    "noDescription": "No description",
+    "deleteTitle": "Delete \"{{name}}\"?",
+    "deleteDescription": "This cannot be undone. All characters, locations, items, lore, events, and novel data in this world will be permanently deleted."
+  },
+  "createDialog": {
+    "title": "New world",
+    "description": "Create a new world to serve as your creative workspace.",
+    "nameLabel": "Name",
+    "namePlaceholder": "Enter world name",
+    "nameDescription": "Give your world a name.",
+    "descriptionLabel": "Description",
+    "descriptionPlaceholder": "Briefly describe the core concept and style of this world"
+  },
+  "editDialog": {
+    "title": "Edit world",
+    "description": "Update the name and description of this world.",
+    "nameLabel": "Name",
+    "namePlaceholder": "Enter world name",
+    "nameDescription": "Give your world a name.",
+    "descriptionLabel": "Description",
+    "descriptionPlaceholder": "Briefly describe the core concept and style of this world"
+  },
+  "toast": {
+    "loadFailed": "Failed to load worlds",
+    "createSuccess": "World created",
+    "createFailed": "Failed to create",
+    "updateSuccess": "World updated",
+    "updateFailed": "Failed to update",
+    "deleteSuccess": "World deleted",
+    "deleteFailed": "Failed to delete"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "entities": {
+    "Character": "角色",
+    "Location": "地点",
+    "Item": "物品",
+    "Lore": "传说",
+    "Event": "事件",
+    "Novel": "小说",
+    "Chapter": "章节",
+    "Scene": "场景",
+    "Phase": "阶段",
+    "World": "世界"
+  },
+  "WORLD_NOT_FOUND": "未找到世界 ({{id}})",
+  "NOT_FOUND": "未找到{{entity}} ({{id}})",
+  "INTERNAL_ERROR": "发生内部错误"
+}

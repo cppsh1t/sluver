@@ -166,8 +166,17 @@ pub fn get_app_config(state: State<'_, DbManager>) -> Result<AppConfig, DbError>
             )
             .unwrap_or_else(|_| "neutral".to_string());
 
+        let locale = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'app.locale'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap_or_else(|_| "auto".to_string());
+
         Ok(AppConfig {
             appearance: Appearance { theme, color_theme },
+            locale,
         })
     })
 }
@@ -179,6 +188,7 @@ pub fn update_app_config(
 ) -> Result<AppConfig, DbError> {
     let theme = config.appearance.theme.clone();
     let color_theme = config.appearance.color_theme.clone();
+    let locale = config.locale.clone();
     state.with_meta(|conn| {
         conn.execute(
             "INSERT INTO settings (key, value) VALUES ('appearance.theme', ?1)
@@ -189,6 +199,11 @@ pub fn update_app_config(
             "INSERT INTO settings (key, value) VALUES ('appearance.colorTheme', ?1)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             params![color_theme],
+        )?;
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('app.locale', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![locale],
         )?;
         Ok(())
     })?;

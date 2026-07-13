@@ -1,0 +1,34 @@
+{
+  "title": "配置",
+  "subtitle": "调整 {{app}} 的外观与行为。",
+  "theme": {
+    "title": "外观",
+    "description": "选择浅色或深色。「跟随系统」会随操作系统的深浅色自动切换。",
+    "options": {
+      "light": "浅色",
+      "dark": "深色",
+      "system": "跟随系统"
+    }
+  },
+  "color": {
+    "title": "配色",
+    "description": "为界面选择一套色彩主题。",
+    "options": {
+      "neutral": "默认",
+      "parchment": "羊皮纸"
+    }
+  },
+  "language": {
+    "title": "语言",
+    "description": "选择界面语言。「跟随系统」会随操作系统的语言自动切换。",
+    "options": {
+      "auto": "跟随系统",
+      "zh-CN": "简体中文",
+      "en": "English"
+    }
+  },
+  "toast": {
+    "loadFailed": "加载配置失败",
+    "saveFailed": "保存失败"
+  }
+}

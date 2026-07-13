@@ -1,0 +1,26 @@
+{
+  "actions": {
+    "cancel": "Cancel",
+    "save": "Save",
+    "saving": "Saving…",
+    "create": "Create",
+    "creating": "Creating…",
+    "edit": "Edit",
+    "delete": "Delete",
+    "moreActions": "More actions"
+  },
+  "nav": {
+    "primaryNav": "Primary navigation",
+    "worlds": "Worlds",
+    "settings": "Settings",
+    "library": "Library",
+    "version": "v{{version}} · Preview"
+  },
+  "status": {
+    "worldWorkspaceComingSoon": "World workspace coming soon",
+    "libraryComingSoon": {
+      "title": "Library coming soon",
+      "description": "The library will collect characters, locations, items, and lore that can be reused across worlds. Not yet available in this version."
+    }
+  }
+}

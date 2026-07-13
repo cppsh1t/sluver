@@ -1,9 +1,15 @@
 import { useEffect, useState } from "react";
 import { createRoute } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { rootRoute } from "./__root";
 import { getAppConfig, updateAppConfig } from "@/api";
+import { toErrorPayload } from "@/api/client";
+import { resolveLocale, AUTO_LOCALE } from "@/i18n";
+import i18n from "@/i18n";
+import { locale as detectOsLocale } from "@tauri-apps/plugin-os";
+import { setDayjsLocale } from "@/lib/format";
 import {
   applyColorTheme,
   applyTheme,
@@ -11,41 +17,59 @@ import {
   type ThemeMode,
 } from "@/lib/theme";
 import { cn } from "@/lib/utils";
-
-const THEME_OPTIONS: { value: ThemeMode; label: string }[] = [
-  { value: "light", label: "浅色" },
-  { value: "dark", label: "深色" },
-  { value: "system", label: "跟随系统" },
-];
-
-const COLOR_OPTIONS: {
-  value: ColorTheme;
-  label: string;
-  /** Representative swatch color for the option. */
-  swatch: string;
-}[] = [
-  { value: "neutral", label: "默认", swatch: "oklch(0.205 0 0)" },
-  { value: "parchment", label: "羊皮纸", swatch: "oklch(0.598 0.135 42)" },
-];
+import type { AppConfig } from "@/types";
 
 function SettingsPage() {
+  const { t } = useTranslation(["settings", "common"]);
   const [theme, setTheme] = useState<ThemeMode>("system");
   const [colorTheme, setColorTheme] = useState<ColorTheme>("neutral");
+  const [locale, setLocale] = useState<AppConfig["locale"]>("auto");
   const [loading, setLoading] = useState(true);
+
+  const themeOptions: { value: ThemeMode; label: string }[] = [
+    { value: "light", label: t("settings:theme.options.light") },
+    { value: "dark", label: t("settings:theme.options.dark") },
+    { value: "system", label: t("settings:theme.options.system") },
+  ];
+
+  const colorOptions: {
+    value: ColorTheme;
+    label: string;
+    swatch: string;
+  }[] = [
+    { value: "neutral", label: t("settings:color.options.neutral"), swatch: "oklch(0.205 0 0)" },
+    { value: "parchment", label: t("settings:color.options.parchment"), swatch: "oklch(0.598 0.135 42)" },
+  ];
+
+  const languageOptions: { value: string; label: string }[] = [
+    { value: "auto", label: t("settings:language.options.auto") },
+    { value: "zh-CN", label: t("settings:language.options.zh-CN") },
+    { value: "en", label: t("settings:language.options.en") },
+  ];
 
   useEffect(() => {
     getAppConfig()
       .then((c) => {
         setTheme(c.appearance.theme);
         setColorTheme(c.appearance.colorTheme);
+        setLocale(c.locale);
       })
-      .catch((e) => toast.error("加载配置失败", { description: e as string }))
+      .catch((e) => {
+        // Async catch handler runs outside React's render cycle — use the
+        // global `i18n.t` rather than the hook `t` to avoid an
+        // exhaustive-deps warning without disabling the rule.
+        const payload = toErrorPayload(e);
+        toast.error(i18n.t("settings:toast.loadFailed"), {
+          description: payload.message,
+        });
+      })
       .finally(() => setLoading(false));
   }, []);
 
   async function persist(next: {
     theme?: ThemeMode;
     colorTheme?: ColorTheme;
+    locale?: AppConfig["locale"];
   }) {
     try {
       await updateAppConfig({
@@ -53,9 +77,13 @@ function SettingsPage() {
           theme: next.theme ?? theme,
           colorTheme: next.colorTheme ?? colorTheme,
         },
+        locale: next.locale ?? locale,
       });
     } catch (e) {
-      toast.error("保存失败", { description: e as string });
+      const payload = toErrorPayload(e);
+      toast.error(t("settings:toast.saveFailed"), {
+        description: payload.message,
+      });
       throw e;
     }
   }
@@ -86,37 +114,82 @@ function SettingsPage() {
     }
   }
 
+  async function handleChangeLanguage(next: AppConfig["locale"]) {
+    if (next === locale) return;
+    const prev = locale;
+
+    // Resolve the previous locale for rollback. `i18n.language` already
+    // holds the resolved SupportedLocale from bootstrap or the previous
+    // changeLanguage call, so it's the right value to revert to.
+    let prevResolved: string = prev;
+    if (prev === AUTO_LOCALE) {
+      try {
+        const os = await detectOsLocale();
+        prevResolved = os ? resolveLocale(os) : i18n.language;
+      } catch {
+        prevResolved = i18n.language;
+      }
+    }
+
+    setLocale(next);
+    let resolved: string;
+    if (next === AUTO_LOCALE) {
+      try {
+        const os = await detectOsLocale();
+        resolved = os ? resolveLocale(os) : i18n.language;
+      } catch {
+        resolved = i18n.language;
+      }
+    } else {
+      resolved = resolveLocale(next);
+    }
+
+    await i18n.changeLanguage(resolved);
+    setDayjsLocale(resolved);
+
+    try {
+      await persist({ locale: next });
+    } catch {
+      setLocale(prev);
+      await i18n.changeLanguage(prevResolved);
+      setDayjsLocale(prevResolved);
+    }
+  }
+
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
       <div className="mx-auto w-full max-w-2xl px-6 py-10">
         <header className="mb-8">
           <h1 className="font-heading text-xl font-semibold tracking-tight">
-            配置
+            {t("settings:title")}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            调整 sluver 的外观与行为。
+            {t("settings:subtitle", { app: "sluver" })}
           </p>
         </header>
 
         <section className="flex flex-col divide-y divide-border border-y border-border">
           <SettingRow
-            title="外观"
-            description="选择浅色或深色。「跟随系统」会随操作系统的深浅色自动切换。"
+            title={t("settings:theme.title")}
+            description={t("settings:theme.description")}
           >
             <Segmented
-              ariaLabel="外观"
+              ariaLabel={t("settings:theme.title")}
               loading={loading}
-              options={THEME_OPTIONS}
+              options={themeOptions}
               value={theme}
               onChange={(v) => handleChangeTheme(v as ThemeMode)}
             />
           </SettingRow>
 
-          <SettingRow title="配色" description="为界面选择一套色彩主题。">
+          <SettingRow
+            title={t("settings:color.title")}
+            description={t("settings:color.description")}
+          >
             <Segmented
-              ariaLabel="配色"
+              ariaLabel={t("settings:color.title")}
               loading={loading}
-              options={COLOR_OPTIONS}
+              options={colorOptions}
               value={colorTheme}
               onChange={(v) => handleChangeColor(v as ColorTheme)}
               renderLabel={(opt) => (
@@ -129,6 +202,19 @@ function SettingsPage() {
                   {opt.label}
                 </span>
               )}
+            />
+          </SettingRow>
+
+          <SettingRow
+            title={t("settings:language.title")}
+            description={t("settings:language.description")}
+          >
+            <Segmented
+              ariaLabel={t("settings:language.title")}
+              loading={loading}
+              options={languageOptions}
+              value={locale}
+              onChange={(v) => handleChangeLanguage(v as AppConfig["locale"])}
             />
           </SettingRow>
         </section>

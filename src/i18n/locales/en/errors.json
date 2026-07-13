@@ -1,0 +1,17 @@
+{
+  "entities": {
+    "Character": "Character",
+    "Location": "Location",
+    "Item": "Item",
+    "Lore": "Lore",
+    "Event": "Event",
+    "Novel": "Novel",
+    "Chapter": "Chapter",
+    "Scene": "Scene",
+    "Phase": "Phase",
+    "World": "World"
+  },
+  "WORLD_NOT_FOUND": "World not found ({{id}})",
+  "NOT_FOUND": "{{entity}} not found ({{id}})",
+  "INTERNAL_ERROR": "An internal error occurred"
+}

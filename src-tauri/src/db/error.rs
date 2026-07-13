@@ -1,9 +1,27 @@
 use serde::Serialize;
+use std::collections::HashMap;
+
+/// Structured payload that the frontend receives when a command rejects.
+///
+/// Business errors (WorldNotFound / NotFound) carry a stable `code` plus
+/// interpolation `args` so the frontend can translate them via i18n.
+/// Infrastructure errors (SQLite / IO / Migration / Serde) collapse to
+/// `code = "INTERNAL_ERROR"` with the raw English `message` as a fallback,
+/// since their underlying messages are dynamic and low-value to translate.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ErrorPayload {
+    pub code: String,
+    pub message: String,
+    pub args: HashMap<String, String>,
+}
 
 /// Unified error type for all database operations.
 ///
-/// Serialized as a plain string for Tauri command results — the frontend
-/// receives the human-readable error message via `invoke` rejection.
+/// The custom `Serialize` impl emits an [`ErrorPayload`] object so the
+/// frontend can branch on `code` for translated messages; the `thiserror`
+/// `Display` strings are kept for Rust-side logging and as the English
+/// fallback in `ErrorPayload::message`.
 #[derive(Debug, thiserror::Error)]
 pub enum DbError {
     #[error("SQLite error: {0}")]
@@ -25,11 +43,40 @@ pub enum DbError {
     Serde(#[from] serde_json::Error),
 }
 
+impl DbError {
+    /// Map this error into a serializable payload.
+    fn to_payload(&self) -> ErrorPayload {
+        let (code, args): (&'static str, HashMap<String, String>) = match self {
+            DbError::WorldNotFound(id) => (
+                "WORLD_NOT_FOUND",
+                HashMap::from([("id".to_string(), id.clone())]),
+            ),
+            DbError::NotFound(entity, id) => (
+                "NOT_FOUND",
+                HashMap::from([
+                    ("entity".to_string(), (*entity).to_string()),
+                    ("id".to_string(), id.clone()),
+                ]),
+            ),
+            // Infrastructure errors: opaque code, no structured args.
+            DbError::Sqlite(_)
+            | DbError::Io(_)
+            | DbError::Migration(_)
+            | DbError::Serde(_) => ("INTERNAL_ERROR", HashMap::new()),
+        };
+        ErrorPayload {
+            code: code.to_string(),
+            message: self.to_string(),
+            args,
+        }
+    }
+}
+
 impl Serialize for DbError {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&self.to_string())
+        self.to_payload().serialize(serializer)
     }
 }

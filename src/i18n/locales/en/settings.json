@@ -1,0 +1,34 @@
+{
+  "title": "Settings",
+  "subtitle": "Customize {{app}}'s appearance and behavior.",
+  "theme": {
+    "title": "Appearance",
+    "description": "Choose light or dark. \"System\" follows your OS setting automatically.",
+    "options": {
+      "light": "Light",
+      "dark": "Dark",
+      "system": "System"
+    }
+  },
+  "color": {
+    "title": "Color theme",
+    "description": "Choose a color palette for the interface.",
+    "options": {
+      "neutral": "Default",
+      "parchment": "Parchment"
+    }
+  },
+  "language": {
+    "title": "Language",
+    "description": "Choose the interface language. \"System\" follows your OS language automatically.",
+    "options": {
+      "auto": "System",
+      "zh-CN": "简体中文",
+      "en": "English"
+    }
+  },
+  "toast": {
+    "loadFailed": "Failed to load settings",
+    "saveFailed": "Failed to save"
+  }
+}

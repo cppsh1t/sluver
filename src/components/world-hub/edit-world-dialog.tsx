@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -35,6 +36,7 @@ function EditWorldDialog({
   onOpenChange,
   onUpdate,
 }: EditWorldDialogProps) {
+  const { t } = useTranslation(["world", "common"]);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -70,41 +72,41 @@ function EditWorldDialog({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>编辑世界</DialogTitle>
+          <DialogTitle>{t("world:editDialog.title")}</DialogTitle>
           <DialogDescription>
-            修改世界的名称与简介。
+            {t("world:editDialog.description")}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <FieldGroup>
             <Field>
-              <FieldLabel htmlFor="edit-world-name">名称</FieldLabel>
+              <FieldLabel htmlFor="edit-world-name">{t("world:editDialog.nameLabel")}</FieldLabel>
               <Input
                 id="edit-world-name"
                 value={name}
                 onChange={(e) => setName(e.currentTarget.value)}
-                placeholder="输入世界名称"
+                placeholder={t("world:editDialog.namePlaceholder")}
                 autoFocus
               />
-              <FieldDescription>给你的世界起一个名字。</FieldDescription>
+              <FieldDescription>{t("world:editDialog.nameDescription")}</FieldDescription>
             </Field>
             <Field>
-              <FieldLabel htmlFor="edit-world-desc">简介</FieldLabel>
+              <FieldLabel htmlFor="edit-world-desc">{t("world:editDialog.descriptionLabel")}</FieldLabel>
               <Textarea
                 id="edit-world-desc"
                 value={description}
                 onChange={(e) => setDescription(e.currentTarget.value)}
-                placeholder="简要描述这个世界的核心设定与风格"
+                placeholder={t("world:editDialog.descriptionPlaceholder")}
                 rows={3}
               />
             </Field>
           </FieldGroup>
           <DialogFooter className="mt-4">
             <DialogClose render={<Button variant="outline" type="button" />}>
-              取消
+              {t("common:actions.cancel")}
             </DialogClose>
             <Button type="submit" disabled={!name.trim() || submitting}>
-              {submitting ? "保存中…" : "保存"}
+              {submitting ? t("common:actions.saving") : t("common:actions.save")}
             </Button>
           </DialogFooter>
         </form>

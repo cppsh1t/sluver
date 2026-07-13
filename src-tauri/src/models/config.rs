@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
     pub appearance: Appearance,
+    /// `"auto"` follows the OS locale detected via `tauri-plugin-os`;
+    /// otherwise a BCP-47 tag like `"zh-CN"` or `"en"`.
+    pub locale: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,6 +26,7 @@ impl Default for AppConfig {
                 theme: "system".to_string(),
                 color_theme: "neutral".to_string(),
             },
+            locale: "auto".to_string(),
         }
     }
 }

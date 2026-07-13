@@ -65,7 +65,7 @@ util.rs         # new_id() = UUID v7; now_iso() = ISO 8601 ms precision
 db/
   manager.rs    # DbManager — the ONLY managed State. with_meta() / with_world() closure pattern
   migrations.rs # ALL migrations inline as &str SQL — NO .sql files. META_MIGRATIONS + WORLD_MIGRATIONS
-  error.rs      # DbError enum — serializes to a flat string (frontend receives string rejections)
+  error.rs      # DbError enum — serializes to ErrorPayload {code, message, args} (see Internationalization section)
 commands/       # One file per domain: world, character, element, event, novel
 models/         # One file per entity: structs with #[serde(rename_all = "camelCase")]
 ```
@@ -89,7 +89,7 @@ models/         # One file per entity: structs with #[serde(rename_all = "camelC
 ```
 main.tsx, App.tsx   # STILL DEFAULT TAURI BOILERPLATE — not yet wired to the api/ layer
 api/                # Typed IPC layer wrapping invoke()
-  client.ts         # call<T>(cmd, args?) → invoke<T>(). DbError → string, so rejections are `string`.
+  client.ts         # call<T>(cmd, args?) → invoke<T>(). Rejections carry ErrorPayload (see Internationalization section); use toErrorPayload() at catch sites.
   *.ts              # One file per domain: createX/getX/listX/updateX/deleteX. World-scoped take worldId first.
   types.ts          # CreateInput<T,R> derives input types from entity types (no field duplication).
 types/              # Zod schemas are the SINGLE SOURCE OF TRUTH; TS types via z.infer
@@ -113,6 +113,67 @@ lib/utils.ts        # cn() = clsx + tailwind-merge
 - **Icon library**: hugeicons (`components.json` → `iconLibrary: "hugeicons"`, baseColor `neutral`).
 - **Dark mode**: toggle by adding/removing `.dark` class. CSS uses `@custom-variant dark (&:is(.dark *))` pattern (Tailwind v4).
 - **Color system**: oklch, defined as CSS custom properties in `index.css` (`:root` / `.dark`).
+
+### Internationalization (i18n)
+
+**Stack**: `react-i18next` v17 + `i18next-resources-to-backend` (Vite dynamic `import()` → bundled chunks, no HTTP / no Tauri fs needed) + `@tauri-apps/plugin-os` (OS locale detection). User's choice persists in `meta.db` settings table under key `app.locale`.
+
+**Locale files** — `src/i18n/locales/{zh-CN,en}/{namespace}.json`:
+
+| Namespace | Use for |
+|---|---|
+| `common` | Shared UI atoms (actions.cancel/save/delete, nav labels, shared empty states) |
+| `world` | World hub page, world card, create/edit dialogs, world toasts |
+| `settings` | Settings page (theme/color/language options + toasts) |
+| `errors` | Error code translations + entity name map (Character→角色, Location→地点, etc.) |
+
+Add a namespace when a new domain (e.g. `novel`, `character`) accumulates enough strings. Add a locale by creating a new `{locale}/` folder with all namespace JSONs AND appending the code to `SUPPORTED_LOCALES` in `src/i18n/index.ts`.
+
+**Using translations in components:**
+
+```tsx
+import { useTranslation } from "react-i18next";
+
+function MyComponent() {
+  // List every namespace this component reads from.
+  const { t } = useTranslation(["world", "common"]);
+  return <h1>{t("world:hub.title")}</h1>;
+}
+```
+
+- **Key format**: `namespace:dotted.camelCase.path` (e.g. `world:card.deleteTitle`).
+- **Interpolation**: `t("world:card.deleteTitle", { name: world.name })` — JSON uses `{{name}}`.
+- **Async callbacks** (useEffect catch handlers, promise `.catch()`, event handler promise chains): use the **global** `i18n.t("ns:key")` from `@/i18n`, NOT the hook `t`. The hook `t` triggers `react-hooks/exhaustive-deps` warnings inside effects; the global `i18n` is correct for non-render contexts. The hook `t` is for JSX inside the render body.
+
+**Error translation pipeline (CRITICAL):**
+
+1. Rust `DbError` (in `src-tauri/src/db/error.rs`) serializes to `ErrorPayload { code: string, message: string, args: Record<string,string> }`:
+   - Business errors (`WorldNotFound`, `NotFound`) → stable `code` (e.g. `"WORLD_NOT_FOUND"`, `"NOT_FOUND"`) + structured `args` (e.g. `{entity, id}`).
+   - Infrastructure errors (SQLite/IO/Migration/Serde) → `code: "INTERNAL_ERROR"` with raw English `message` as fallback (dynamic, not worth translating).
+2. Frontend catch sites: `const payload = toErrorPayload(e)` (normalizes object/string/unknown), then `translateError(payload)` → looks up `errors:{code}` with localized entity name substitution; falls back to `payload.message` for `INTERNAL_ERROR` / unknown codes.
+3. Standard toast pattern:
+   ```tsx
+   toast.error(t("world:toast.createFailed"), {
+     description: translateError(toErrorPayload(e)),
+   });
+   ```
+
+When adding a new `DbError` variant: if it's a business error, give it a stable code in `to_payload()` and add the translation key to BOTH `errors.json` files. If it's infrastructure, leave it as `INTERNAL_ERROR`.
+
+**Locale resolution chain** (at bootstrap in `src/main.tsx`, runs BEFORE React renders — no flash of fallback language):
+1. `AppConfig.locale` from `meta.db` (`"auto"` = follow OS, otherwise a BCP-47 tag)
+2. `@tauri-apps/plugin-os` `locale()` — respects Windows system language (unlike `navigator.language` which is hardcoded by Chromium WebView2, see tauri#2735)
+3. `"en"` fallback
+
+`resolveLocale()` in `src/i18n/index.ts` normalizes any BCP-47 tag to a `SUPPORTED_LOCALES` value (all `zh-*` variants → `zh-CN`).
+
+**Language switching at runtime** — `i18n.changeLanguage(lng)` + `setDayjsLocale(lng)` (from `@/lib/format`) MUST be called together so dayjs relative times follow. See `handleChangeLanguage` in `src/routes/settings.tsx` for the optimistic-update-with-rollback pattern.
+
+**Adding a new user-facing string (checklist):**
+1. Pick the namespace + design a key path (e.g. `novel:editor.wordCount`).
+2. Add the key to BOTH `src/i18n/locales/zh-CN/{ns}.json` AND `src/i18n/locales/en/{ns}.json`. Missing either side → fallback shown to users.
+3. In the component: `const { t } = useTranslation(["{ns}", "common"]);` then `t("{ns}:your.key")`.
+4. If the string lives inside an async callback (effect/promise), use `i18n.t("{ns}:your.key")` from the global import instead (see rule above).
 
 ## Agent Skills
 

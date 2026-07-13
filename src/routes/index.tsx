@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { createRoute, useNavigate } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { rootRoute } from "./__root";
@@ -18,10 +19,14 @@ import { Add01Icon, Globe02Icon } from "@hugeicons/core-free-icons";
 import { CreateWorldDialog } from "@/components/world-hub/create-world-dialog";
 import { WorldCard } from "@/components/world-hub/world-card";
 import { createWorld, deleteWorld, listWorlds, updateWorld } from "@/api";
+import { toErrorPayload } from "@/api/client";
+import { translateError } from "@/i18n/errors";
+import i18n from "@/i18n";
 import type { CreateWorldInput, UpdateWorldInput } from "@/api";
 import type { World } from "@/types";
 
 function WorldHubPage() {
+  const { t } = useTranslation(["world", "common"]);
   const navigate = useNavigate();
   const [worlds, setWorlds] = useState<World[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,7 +36,13 @@ function WorldHubPage() {
     listWorlds()
       .then(setWorlds)
       .catch((e) => {
-        toast.error("加载世界列表失败", { description: e as string });
+        // Async catch handler runs outside React's render cycle, so the
+        // global `i18n.t` is appropriate here (avoids exhaustive-deps
+        // warning without disabling the rule).
+        const payload = toErrorPayload(e);
+        toast.error(i18n.t("world:toast.loadFailed"), {
+          description: translateError(payload),
+        });
       })
       .finally(() => setLoading(false));
   }, []);
@@ -44,9 +55,12 @@ function WorldHubPage() {
     try {
       const world = await createWorld(input);
       setWorlds((prev) => [world, ...prev]);
-      toast.success("世界创建成功");
+      toast.success(t("world:toast.createSuccess"));
     } catch (e) {
-      toast.error("创建失败", { description: e as string });
+      const payload = toErrorPayload(e);
+      toast.error(t("world:toast.createFailed"), {
+        description: translateError(payload),
+      });
       throw e;
     }
   }
@@ -57,9 +71,12 @@ function WorldHubPage() {
       setWorlds((prev) =>
         prev.map((w) => (w.id === updated.id ? updated : w)),
       );
-      toast.success("世界已更新");
+      toast.success(t("world:toast.updateSuccess"));
     } catch (e) {
-      toast.error("更新失败", { description: e as string });
+      const payload = toErrorPayload(e);
+      toast.error(t("world:toast.updateFailed"), {
+        description: translateError(payload),
+      });
       throw e;
     }
   }
@@ -68,9 +85,12 @@ function WorldHubPage() {
     try {
       await deleteWorld(world.id);
       setWorlds((prev) => prev.filter((w) => w.id !== world.id));
-      toast.success("世界已删除");
+      toast.success(t("world:toast.deleteSuccess"));
     } catch (e) {
-      toast.error("删除失败", { description: e as string });
+      const payload = toErrorPayload(e);
+      toast.error(t("world:toast.deleteFailed"), {
+        description: translateError(payload),
+      });
     }
   }
 
@@ -80,15 +100,15 @@ function WorldHubPage() {
         <div className="mb-8 flex items-end justify-between gap-4">
           <div>
             <h1 className="font-heading text-xl font-semibold tracking-tight">
-              世界
+              {t("world:hub.title")}
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              管理你的世界观宇宙，进入开始创作。
+              {t("world:hub.subtitle")}
             </p>
           </div>
           <Button onClick={() => setCreateOpen(true)}>
             <HugeiconsIcon icon={Add01Icon} strokeWidth={2} />
-            新建世界
+            {t("world:hub.createButton")}
           </Button>
         </div>
 
@@ -113,15 +133,15 @@ function WorldHubPage() {
               <EmptyMedia variant="icon">
                 <HugeiconsIcon icon={Globe02Icon} strokeWidth={2} />
               </EmptyMedia>
-              <EmptyTitle>还没有创建世界</EmptyTitle>
+              <EmptyTitle>{t("world:hub.empty.title")}</EmptyTitle>
               <EmptyDescription>
-                创建你的第一个世界观宇宙，开始角色设定、事件编织和小说创作。
+                {t("world:hub.empty.description")}
               </EmptyDescription>
             </EmptyHeader>
             <EmptyContent>
               <Button onClick={() => setCreateOpen(true)}>
                 <HugeiconsIcon icon={Add01Icon} strokeWidth={2} />
-                创建第一个世界
+                {t("world:hub.empty.cta")}
               </Button>
             </EmptyContent>
           </Empty>

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -46,6 +47,7 @@ interface WorldCardProps {
 }
 
 function WorldCard({ world, onOpen, onUpdate, onDelete }: WorldCardProps) {
+  const { t } = useTranslation(["world", "common"]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
 
@@ -77,7 +79,7 @@ function WorldCard({ world, onOpen, onUpdate, onDelete }: WorldCardProps) {
                 }
               >
                 <HugeiconsIcon icon={MoreHorizontalIcon} strokeWidth={2} />
-                <span className="sr-only">更多操作</span>
+                <span className="sr-only">{t("common:actions.moreActions")}</span>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
@@ -87,7 +89,7 @@ function WorldCard({ world, onOpen, onUpdate, onDelete }: WorldCardProps) {
                   }}
                 >
                   <HugeiconsIcon icon={PencilEdit01Icon} strokeWidth={2} />
-                  编辑世界
+                  {t("world:card.editAction")}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -98,7 +100,7 @@ function WorldCard({ world, onOpen, onUpdate, onDelete }: WorldCardProps) {
                   }}
                 >
                   <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
-                  删除世界
+                  {t("world:card.deleteAction")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -109,7 +111,7 @@ function WorldCard({ world, onOpen, onUpdate, onDelete }: WorldCardProps) {
           onClick={() => onOpen(world)}
         >
           <p className="line-clamp-2 min-h-8 flex-1 text-muted-foreground">
-            {world.description || "暂无简介"}
+            {world.description || t("world:card.noDescription")}
           </p>
           <p className="text-xs text-muted-foreground/70">
             {formatRelativeTime(world.updatedAt)}
@@ -127,18 +129,20 @@ function WorldCard({ world, onOpen, onUpdate, onDelete }: WorldCardProps) {
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>删除「{world.name}」？</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("world:card.deleteTitle", { name: world.name })}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              此操作不可撤销。该世界下的所有角色、地点、物品、传说、事件及小说数据将被永久删除。
+              {t("world:card.deleteDescription")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t("common:actions.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               onClick={() => onDelete(world)}
             >
-              删除
+              {t("common:actions.delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
