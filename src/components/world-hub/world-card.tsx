@@ -22,6 +22,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -29,19 +30,28 @@ import {
   Delete02Icon,
   Globe02Icon,
   MoreHorizontalIcon,
+  PencilEdit01Icon,
 } from "@hugeicons/core-free-icons";
 
+import { EditWorldDialog } from "@/components/world-hub/edit-world-dialog";
 import { formatRelativeTime } from "@/lib/format";
+import type { UpdateWorldInput } from "@/api";
 import type { World } from "@/types";
 
 interface WorldCardProps {
   world: World;
   onOpen: (world: World) => void;
+  onUpdate: (world: World, input: UpdateWorldInput) => Promise<void>;
   onDelete: (world: World) => void;
 }
 
-function WorldCard({ world, onOpen, onDelete }: WorldCardProps) {
+function WorldCard({ world, onOpen, onUpdate, onDelete }: WorldCardProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+
+  async function handleUpdate(input: UpdateWorldInput) {
+    await onUpdate(world, input);
+  }
 
   return (
     <>
@@ -71,6 +81,16 @@ function WorldCard({ world, onOpen, onDelete }: WorldCardProps) {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditOpen(true);
+                  }}
+                >
+                  <HugeiconsIcon icon={PencilEdit01Icon} strokeWidth={2} />
+                  编辑世界
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
                   variant="destructive"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -96,6 +116,13 @@ function WorldCard({ world, onOpen, onDelete }: WorldCardProps) {
           </p>
         </CardContent>
       </Card>
+
+      <EditWorldDialog
+        world={editOpen ? world : null}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        onUpdate={handleUpdate}
+      />
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>

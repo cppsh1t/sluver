@@ -17,8 +17,8 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { Add01Icon, Globe02Icon } from "@hugeicons/core-free-icons";
 import { CreateWorldDialog } from "@/components/world-hub/create-world-dialog";
 import { WorldCard } from "@/components/world-hub/world-card";
-import { createWorld, deleteWorld, listWorlds } from "@/api";
-import type { CreateWorldInput } from "@/api";
+import { createWorld, deleteWorld, listWorlds, updateWorld } from "@/api";
+import type { CreateWorldInput, UpdateWorldInput } from "@/api";
 import type { World } from "@/types";
 
 function WorldHubPage() {
@@ -47,6 +47,19 @@ function WorldHubPage() {
       toast.success("世界创建成功");
     } catch (e) {
       toast.error("创建失败", { description: e as string });
+      throw e;
+    }
+  }
+
+  async function handleUpdate(world: World, input: UpdateWorldInput) {
+    try {
+      const updated = await updateWorld(world.id, input);
+      setWorlds((prev) =>
+        prev.map((w) => (w.id === updated.id ? updated : w)),
+      );
+      toast.success("世界已更新");
+    } catch (e) {
+      toast.error("更新失败", { description: e as string });
       throw e;
     }
   }
@@ -119,6 +132,7 @@ function WorldHubPage() {
                 key={world.id}
                 world={world}
                 onOpen={handleOpen}
+                onUpdate={handleUpdate}
                 onDelete={handleDelete}
               />
             ))}
