@@ -1,0 +1,52 @@
+{
+  "entityName": {
+    "location": { "singular": "地点", "plural": "地点" },
+    "item": { "singular": "物品", "plural": "物品" },
+    "lore": { "singular": "设定", "plural": "设定" }
+  },
+  "list": {
+    "title": "{{entity}}",
+    "subtitle": "管理世界中的{{entity}}",
+    "createButton": "创建{{entity}}"
+  },
+  "empty": {
+    "title": "还没有{{entity}}",
+    "description": "创建第一个{{entity}}来开始构建你的世界",
+    "cta": "创建{{entity}}"
+  },
+  "search": {
+    "placeholder": "搜索名称或标签...",
+    "noResults": "没有找到匹配「{{query}}」的结果",
+    "noResultsDescription": "试试其他关键词"
+  },
+  "form": {
+    "createTitle": "创建{{entity}}",
+    "createDescription": "添加一个新的{{entity}}到这个世界",
+    "editTitle": "编辑{{entity}}",
+    "editDescription": "修改这个{{entity}}的信息",
+    "nameLabel": "名称",
+    "namePlaceholder": "输入名称...",
+    "nameDescription": "在同一世界中必须唯一",
+    "descriptionLabel": "描述",
+    "descriptionPlaceholder": "简要描述...",
+    "notesLabel": "备注",
+    "notesPlaceholder": "自由记录任何细节...",
+    "tagsLabel": "标签",
+    "tagsPlaceholder": "输入标签后回车..."
+  },
+  "card": {
+    "editAction": "编辑",
+    "deleteAction": "删除",
+    "deleteTitle": "删除{{entity}}",
+    "deleteDescription": "确定要删除「{{name}}」吗？此操作无法撤销。"
+  },
+  "toast": {
+    "createSuccess": "{{entity}}创建成功",
+    "createFailed": "创建失败",
+    "updateSuccess": "{{entity}}更新成功",
+    "updateFailed": "更新失败",
+    "deleteSuccess": "{{entity}}已删除",
+    "deleteFailed": "删除失败",
+    "loadFailed": "加载{{entity}}失败"
+  }
+}

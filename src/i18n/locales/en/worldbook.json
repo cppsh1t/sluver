@@ -1,0 +1,52 @@
+{
+  "entityName": {
+    "location": { "singular": "Location", "plural": "Locations" },
+    "item": { "singular": "Item", "plural": "Items" },
+    "lore": { "singular": "Lore", "plural": "Lore" }
+  },
+  "list": {
+    "title": "{{entity}}",
+    "subtitle": "Manage {{entity}} in this world",
+    "createButton": "New {{entity}}"
+  },
+  "empty": {
+    "title": "No {{entity}} yet",
+    "description": "Create your first {{entity}} to start building this world",
+    "cta": "Create first {{entity}}"
+  },
+  "search": {
+    "placeholder": "Search by name or tag...",
+    "noResults": "No results for \"{{query}}\"",
+    "noResultsDescription": "Try a different search term"
+  },
+  "form": {
+    "createTitle": "New {{entity}}",
+    "createDescription": "Add a new {{entity}} to this world",
+    "editTitle": "Edit {{entity}}",
+    "editDescription": "Update this {{entity}}'s information",
+    "nameLabel": "Name",
+    "namePlaceholder": "Enter name...",
+    "nameDescription": "Must be unique within this world",
+    "descriptionLabel": "Description",
+    "descriptionPlaceholder": "Brief description...",
+    "notesLabel": "Notes",
+    "notesPlaceholder": "Free-form details...",
+    "tagsLabel": "Tags",
+    "tagsPlaceholder": "Type a tag and press Enter..."
+  },
+  "card": {
+    "editAction": "Edit",
+    "deleteAction": "Delete",
+    "deleteTitle": "Delete {{entity}}",
+    "deleteDescription": "Are you sure you want to delete \"{{name}}\"? This cannot be undone."
+  },
+  "toast": {
+    "createSuccess": "{{entity}} created",
+    "createFailed": "Failed to create",
+    "updateSuccess": "{{entity}} updated",
+    "updateFailed": "Failed to update",
+    "deleteSuccess": "{{entity}} deleted",
+    "deleteFailed": "Failed to delete",
+    "loadFailed": "Failed to load {{entity}}"
+  }
+}

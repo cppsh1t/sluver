@@ -14,7 +14,16 @@
     "worlds": "Worlds",
     "settings": "Settings",
     "library": "Library",
-    "version": "v{{version}} · Preview"
+    "version": "v{{version}} · Preview",
+    "backToWorlds": "All Worlds",
+    "worldbook": "Worldbook",
+    "writing": "Writing",
+    "worldbook.characters": "Characters",
+    "worldbook.events": "Events",
+    "worldbook.locations": "Locations",
+    "worldbook.items": "Items",
+    "worldbook.lore": "Lore",
+    "writing.novels": "Novels"
   },
   "status": {
     "worldWorkspaceComingSoon": "World workspace coming soon",

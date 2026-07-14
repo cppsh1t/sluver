@@ -14,7 +14,16 @@
     "worlds": "世界",
     "settings": "配置",
     "library": "资料库",
-    "version": "v{{version}} · 预览版"
+    "version": "v{{version}} · 预览版",
+    "backToWorlds": "所有世界",
+    "worldbook": "世界集",
+    "writing": "写作",
+    "worldbook.characters": "角色",
+    "worldbook.events": "事件",
+    "worldbook.locations": "地点",
+    "worldbook.items": "物品",
+    "worldbook.lore": "设定",
+    "writing.novels": "小说"
   },
   "status": {
     "worldWorkspaceComingSoon": "世界工作区即将推出",

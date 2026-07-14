@@ -22,7 +22,7 @@ export const FALLBACK_LOCALE: SupportedLocale = "en";
  */
 export const AUTO_LOCALE = "auto";
 
-export const NAMESPACES = ["common", "world", "settings", "errors"] as const;
+export const NAMESPACES = ["common", "world", "worldbook", "settings", "errors"] as const;
 export type Namespace = (typeof NAMESPACES)[number];
 
 export const DEFAULT_NAMESPACE = "common" satisfies Namespace;
