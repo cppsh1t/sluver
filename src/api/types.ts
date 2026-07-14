@@ -38,7 +38,7 @@ type PhaseFields = Pick<CharacterPhase, 'appearance' | 'changes' | 'triggerEvent
 type CharacterFields = Pick<Character, 'name' | 'aliases' | 'description' | 'notes' | 'tags'>;
 type ElementFields = Pick<Location, 'name' | 'description' | 'notes' | 'tags'>;
 type EventFields = Pick<Event, 'name' | 'description' | 'startAt' | 'endAt' | 'characterRefs' | 'locationId' | 'notes' | 'tags'>;
-type NovelFields = Pick<Novel, 'title' | 'tags'>;
+type NovelFields = Pick<Novel, 'title' | 'description' | 'tags'>;
 type ChapterFields = Pick<Chapter, 'title' | 'summary'>;
 type SceneFields = Pick<Scene, 'title' | 'summary' | 'content' | 'startAt' | 'endAt' | 'characterRefs' | 'locationId' | 'itemIds' | 'eventIds'>;
 

@@ -16,13 +16,14 @@ fn load_novel(
     id: &str,
     world_id: &str,
 ) -> Result<Novel, DbError> {
-    let (title, tags_json, created_at, updated_at) = conn
+    let (title, description, tags_json, created_at, updated_at) = conn
         .query_row(
-            "SELECT title, tags, created_at, updated_at FROM novels WHERE id = ?1",
+            "SELECT title, description, tags, created_at, updated_at FROM novels WHERE id = ?1",
             params![id],
             |row| {
                 Ok((
                     row.get::<_, String>("title")?,
+                    row.get::<_, String>("description")?,
                     row.get::<_, String>("tags")?,
                     row.get::<_, String>("created_at")?,
                     row.get::<_, String>("updated_at")?,
@@ -45,6 +46,7 @@ fn load_novel(
         id: id.to_string(),
         world_id: world_id.to_string(),
         title,
+        description,
         chapter_ids,
         tags: serde_json::from_str(&tags_json).unwrap_or_default(),
         created_at,
@@ -182,9 +184,9 @@ pub fn create_novel(
 
     state.with_world(&world_id, |conn| {
         conn.execute(
-            "INSERT INTO novels (id, title, tags, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![id, input.title, tags_json, now, now],
+            "INSERT INTO novels (id, title, description, tags, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id, input.title, input.description, tags_json, now, now],
         )?;
         load_novel(conn, &id, &world_id)
     })
@@ -226,8 +228,8 @@ pub fn update_novel(
 
     state.with_world(&world_id, |conn| {
         let updated = conn.execute(
-            "UPDATE novels SET title = ?1, tags = ?2, updated_at = ?3 WHERE id = ?4",
-            params![input.title, tags_json, now, id],
+            "UPDATE novels SET title = ?1, description = ?2, tags = ?3, updated_at = ?4 WHERE id = ?5",
+            params![input.title, input.description, tags_json, now, id],
         )?;
         if updated == 0 {
             return Err(DbError::NotFound("Novel", id));

@@ -9,6 +9,7 @@ pub struct Novel {
     pub id: String,
     pub world_id: String,
     pub title: String,
+    pub description: String,
     pub chapter_ids: Vec<String>,
     pub tags: Vec<String>,
     pub created_at: String,
@@ -20,6 +21,8 @@ pub struct Novel {
 pub struct CreateNovelInput {
     pub title: String,
     #[serde(default)]
+    pub description: String,
+    #[serde(default)]
     pub tags: Vec<String>,
 }
 
@@ -27,6 +30,7 @@ pub struct CreateNovelInput {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateNovelInput {
     pub title: String,
+    pub description: String,
     pub tags: Vec<String>,
 }
 
