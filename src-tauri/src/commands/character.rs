@@ -359,6 +359,13 @@ pub fn reorder_phases(
     state.with_world(&world_id, |conn| {
         let tx = conn.transaction()?;
 
+        // Shift to a temporary range to avoid UNIQUE(character_id, position) violations
+        // during per-row updates.
+        tx.execute(
+            "UPDATE character_phases SET position = position + 1000000 WHERE character_id = ?1",
+            params![character_id],
+        )?;
+
         for (i, ph_id) in phase_ids.iter().enumerate() {
             let pos = i as i64;
             let affected = tx.execute(

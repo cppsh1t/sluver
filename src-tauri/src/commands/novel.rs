@@ -337,6 +337,13 @@ pub fn reorder_chapters(
     state.with_world(&world_id, |conn| {
         let tx = conn.transaction()?;
 
+        // Shift to a temporary range to avoid UNIQUE(novel_id, position) violations
+        // during per-row updates.
+        tx.execute(
+            "UPDATE chapters SET position = position + 1000000 WHERE novel_id = ?1",
+            params![novel_id],
+        )?;
+
         for (i, ch_id) in chapter_ids.iter().enumerate() {
             let pos = i as i64;
             let affected = tx.execute(
@@ -521,6 +528,13 @@ pub fn reorder_scenes(
 ) -> Result<(), DbError> {
     state.with_world(&world_id, |conn| {
         let tx = conn.transaction()?;
+
+        // Shift to a temporary range to avoid UNIQUE(chapter_id, position) violations
+        // during per-row updates.
+        tx.execute(
+            "UPDATE scenes SET position = position + 1000000 WHERE chapter_id = ?1",
+            params![chapter_id],
+        )?;
 
         for (i, sc_id) in scene_ids.iter().enumerate() {
             let pos = i as i64;
