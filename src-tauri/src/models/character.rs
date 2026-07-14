@@ -14,6 +14,7 @@ pub struct CharacterRef {
 pub struct CharacterPhase {
     pub id: String,
     pub character_id: String,
+    pub name: String,
     pub appearance: String,
     pub changes: String,
     pub trigger_event_id: Option<String>,
@@ -25,6 +26,7 @@ pub struct CharacterPhase {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreatePhaseInput {
+    pub name: String,
     pub appearance: String,
     #[serde(default)]
     pub changes: String,
@@ -36,6 +38,7 @@ pub struct CreatePhaseInput {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdatePhaseInput {
+    pub name: String,
     pub appearance: String,
     pub changes: String,
     pub trigger_event_id: Option<String>,
@@ -57,7 +60,7 @@ pub struct Character {
     pub updated_at: String,
 }
 
-/// Input for creating a character (requires an initial phase).
+/// Input for creating a character (no initial phase — characters start with zero phases).
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateCharacterInput {
@@ -70,7 +73,6 @@ pub struct CreateCharacterInput {
     pub notes: String,
     #[serde(default)]
     pub tags: Vec<String>,
-    pub initial_phase: CreatePhaseInput,
 }
 
 /// Input for updating a character (full replacement, phases managed separately).

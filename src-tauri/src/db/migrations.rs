@@ -194,5 +194,13 @@ const WORLD_MIGRATION_002: &str = r#"
     ALTER TABLE novels ADD COLUMN description TEXT NOT NULL DEFAULT '';
 "#;
 
-const WORLD_SLICE: &[M] = &[M::up(WORLD_SQL), M::up(WORLD_MIGRATION_002)];
+const WORLD_MIGRATION_003: &str = r#"
+    -- Character phase name column.
+    -- Uniqueness within a character is a domain rule (CONTEXT.md) enforced at the
+    -- application layer, not via a DB index — a unique index here would fail on
+    -- existing multi-phase characters whose rows all default to name = ''.
+    ALTER TABLE character_phases ADD COLUMN name TEXT NOT NULL DEFAULT '';
+"#;
+
+const WORLD_SLICE: &[M] = &[M::up(WORLD_SQL), M::up(WORLD_MIGRATION_002), M::up(WORLD_MIGRATION_003)];
 pub const WORLD_MIGRATIONS: Migrations = Migrations::from_slice(WORLD_SLICE);
