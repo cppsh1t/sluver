@@ -101,8 +101,8 @@ function WorldSidebar() {
           </p>
           <nav className="flex flex-col gap-1" aria-label={section.label}>
             {section.items.map((item) => {
-              const active = pathname ===
-                item.to.replace("$worldId", worldId);
+              const segmentPath = item.to.replace("$worldId", worldId);
+              const active = pathname === segmentPath || pathname.startsWith(segmentPath + "/");
               return (
                 <Link
                   key={item.to}

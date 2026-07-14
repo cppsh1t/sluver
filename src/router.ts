@@ -8,6 +8,7 @@ import { libraryRoute } from "./routes/library";
 import { worldLayoutRoute } from "./routes/world.$worldId/_world";
 import { worldIndexRoute } from "./routes/world.$worldId/index";
 import { charactersRoute } from "./routes/world.$worldId/characters";
+import { characterDetailRoute } from "./routes/world.$worldId/characters.$characterId";
 import { eventsRoute } from "./routes/world.$worldId/events";
 import { locationsRoute } from "./routes/world.$worldId/locations";
 import { itemsRoute } from "./routes/world.$worldId/items";
@@ -19,6 +20,7 @@ const routeTree = rootRoute.addChildren([
   worldLayoutRoute.addChildren([
     worldIndexRoute,
     charactersRoute,
+    characterDetailRoute,
     eventsRoute,
     locationsRoute,
     itemsRoute,
