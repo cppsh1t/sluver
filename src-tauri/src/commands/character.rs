@@ -303,3 +303,31 @@ pub fn delete_phase(world_id: String, phase_id: String, state: State<'_, DbManag
 // Suppress unused import warning — CharacterRef will be used by other command modules.
 #[allow(dead_code)]
 fn _ensure_character_ref_used(_: CharacterRef) {}
+
+// ─── Phase reorder ───────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn reorder_phases(
+    world_id: String,
+    character_id: String,
+    phase_ids: Vec<String>,
+    state: State<'_, DbManager>,
+) -> Result<(), DbError> {
+    state.with_world(&world_id, |conn| {
+        let tx = conn.transaction()?;
+
+        for (i, ph_id) in phase_ids.iter().enumerate() {
+            let pos = i as i64;
+            let affected = tx.execute(
+                "UPDATE character_phases SET position = ?1 WHERE id = ?2 AND character_id = ?3",
+                params![pos, ph_id, character_id],
+            )?;
+            if affected == 0 {
+                return Err(DbError::NotFound("Phase", ph_id.clone()));
+            }
+        }
+
+        tx.commit()?;
+        Ok(())
+    })
+}

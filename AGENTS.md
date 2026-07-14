@@ -74,7 +74,7 @@ models/         # One file per entity: structs with #[serde(rename_all = "camelC
 - Signature: `fn create_x(world_id: String, input: CreateXInput, state: State<'_, DbManager>) -> Result<X, DbError>`. World-scoped commands take `world_id` first; world/config commands use `with_meta()` directly.
 - Updates are **full replacement** (not PATCH). Check `rows_affected == 0` → `NotFound`. Read back the entity after mutation.
 - Junction refs (Event `character_refs`, Scene `character_refs`/`item_ids`/`event_ids`) = delete-all + re-insert in a transaction.
-- Reorder commands (`reorder_chapters`, `reorder_scenes`) take `Vec<String>` of IDs, set `position = index`.
+- Reorder commands (`reorder_chapters`, `reorder_scenes`, `reorder_phases`) take `Vec<String>` of IDs, set `position = index`.
 - `commands/element.rs` uses a `load_element!` macro — Location/Item/Lore share identical schema.
 
 **Rust gotchas:**

@@ -60,3 +60,11 @@ export function updatePhase(
 export function deletePhase(worldId: WorldId, phaseId: PhaseId): Promise<void> {
   return call<void>('delete_phase', { worldId, phaseId });
 }
+
+export function reorderPhases(
+  worldId: WorldId,
+  characterId: CharacterId,
+  phaseIds: PhaseId[],
+): Promise<void> {
+  return call<void>('reorder_phases', { worldId, characterId, phaseIds });
+}

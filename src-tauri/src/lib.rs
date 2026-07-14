@@ -61,6 +61,7 @@ pub fn run() {
             commands::character::add_phase,
             commands::character::update_phase,
             commands::character::delete_phase,
+            commands::character::reorder_phases,
             // Location
             commands::element::create_location,
             commands::element::get_location,
