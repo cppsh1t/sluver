@@ -21,7 +21,7 @@ A single individual in a World — typically a person, but also any autonomous b
 _Avoid_: NPC, Actor, Role, Person, Persona, Figure
 
 **CharacterPhase** (canonical short form: **Phase**):
-A segment of a Character's life defined by their emotional or circumstantial state. Each Phase has a short `name` — the label for this period (e.g. "生活美满时", "重大变故时", "黑化报复社会时") — plus its own `appearance` (physical description in this period) and `changes` (a free-form note of what defines this period). MAY name a `triggerEventId` — the Event that caused the Character to enter this Phase.
+A segment of a Character's life defined by their emotional or circumstantial state. Each Phase has a short `name` — the label for this period (e.g. "Before the Fall", "In Exile") — plus its own `appearance` (physical description in this period) and `changes` (a free-form note of what defines this period). MAY name a `triggerEventId` — the Event that caused the Character to enter this Phase.
 _Avoid_: Stage, LifeStage, Version, Era, State, Milestone, Arc
 
 **Event**:
