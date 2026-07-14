@@ -34,7 +34,7 @@ type CreateInput<T, R extends keyof T> = Pick<T, R> & Partial<Omit<T, R>>;
 // ─── Editable field sets (shared between Create and Update) ─────────────────
 
 type WorldFields = Pick<World, 'name' | 'description'>;
-type PhaseFields = Pick<CharacterPhase, 'appearance' | 'changes' | 'triggerEventId'>;
+type PhaseFields = Pick<CharacterPhase, 'name' | 'appearance' | 'changes' | 'triggerEventId'>;
 type CharacterFields = Pick<Character, 'name' | 'aliases' | 'description' | 'notes' | 'tags'>;
 type ElementFields = Pick<Location, 'name' | 'description' | 'notes' | 'tags'>;
 type EventFields = Pick<Event, 'name' | 'description' | 'startAt' | 'endAt' | 'characterRefs' | 'locationId' | 'notes' | 'tags'>;
@@ -49,12 +49,10 @@ export type UpdateWorldInput = WorldFields;
 
 // ─── Character + Phase ──────────────────────────────────────────────────────
 
-export type CreatePhaseInput = CreateInput<PhaseFields, 'appearance'>;
+export type CreatePhaseInput = CreateInput<PhaseFields, 'name' | 'appearance'>;
 export type UpdatePhaseInput = PhaseFields;
 
-export type CreateCharacterInput = CreateInput<CharacterFields, 'name'> & {
-  initialPhase: CreatePhaseInput;
-};
+export type CreateCharacterInput = CreateInput<CharacterFields, 'name'>;
 export type UpdateCharacterInput = CharacterFields;
 
 // ─── Location / Item / Lore (identical shape) ───────────────────────────────

@@ -23,9 +23,10 @@ export type PhaseId = z.infer<typeof phaseIdSchema>;
 /**
  * A single phase / period in a character's life.
  *
- * Keeps the essential identity anchors (`appearance`, temporal `triggerEventId`)
- * and collapses all narrative-state detail (identity, personality, relationships,
- * abilities, etc.) into a single free-form `changes` field.
+ * Keeps the essential identity anchors (`name`, `appearance`, temporal
+ * `triggerEventId`) and collapses all narrative-state detail (identity,
+ * personality, relationships, abilities, etc.) into a single free-form
+ * `changes` field.
  *
  * Phase ordering within a character is determined by array position in
  * `Character.phases` (position 0 = earliest period). No separate `order` field.
@@ -33,6 +34,8 @@ export type PhaseId = z.infer<typeof phaseIdSchema>;
 export const characterPhaseSchema = z.object({
   id: phaseIdSchema,
   characterId: characterIdSchema,
+  /** 名称 — short label for this life period (e.g. "生活美满时"). */
+  name: z.string(),
   /** 外观 — physical appearance description in this period. */
   appearance: z.string(),
   /** 变化 — free-form description of this period's state and changes
@@ -56,7 +59,7 @@ export const characterSchema = z.object({
   aliases: z.array(z.string()),
   /** Base-level info that doesn't change across phases. */
   description: z.string(),
-  /** Ordered list of phases (position 0 = earliest period). At least one phase always exists. */
+  /** Ordered list of phases (position 0 = earliest period). May be empty — a zero-phase Character is a valid stub. */
   phases: z.array(characterPhaseSchema),
   /** Free-form notes (markdown). */
   notes: z.string(),
