@@ -29,3 +29,15 @@ export {
   useUpdateLore,
   useDeleteLore,
 } from "./use-lore";
+
+export {
+  useCharacters,
+  useCharacter,
+  useCreateCharacter,
+  useUpdateCharacter,
+  useDeleteCharacter,
+  useAddPhase,
+  useUpdatePhase,
+  useDeletePhase,
+  useReorderPhases,
+} from "./use-characters";
