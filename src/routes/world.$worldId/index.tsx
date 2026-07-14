@@ -5,6 +5,6 @@ export const worldIndexRoute = createRoute({
   getParentRoute: () => worldLayoutRoute,
   path: "/",
   beforeLoad: ({ params }) => {
-    throw redirect({ to: "/world/$worldId/locations", params });
+    throw redirect({ to: "/world/$worldId/characters", params });
   },
 });

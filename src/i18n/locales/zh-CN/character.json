@@ -15,7 +15,7 @@
     "noResultsDescription": "试试其他关键词"
   },
   "card": {
-    "phaseCount": "{{count}} 个阶段",
+    "noPhases": "暂无阶段",
     "aliasesLabel": "又名",
     "editAction": "编辑信息",
     "deleteAction": "删除",
@@ -59,7 +59,7 @@
     "edit": "编辑",
     "delete": "删除",
     "nameLabel": "阶段名称",
-    "namePlaceholder": "如：生活美满时",
+    "namePlaceholder": "该时期的简短名称",
     "appearanceLabel": "外观",
     "appearancePlaceholder": "该阶段的外貌描述...",
     "changesLabel": "变化",

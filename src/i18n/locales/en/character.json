@@ -15,9 +15,7 @@
     "noResultsDescription": "Try a different search term"
   },
   "card": {
-    "phaseCount_zero": "No phases",
-    "phaseCount_one": "{{count}} phase",
-    "phaseCount_other": "{{count}} phases",
+    "noPhases": "No phases",
     "aliasesLabel": "aka",
     "editAction": "Edit info",
     "deleteAction": "Delete",
@@ -61,7 +59,7 @@
     "edit": "Edit",
     "delete": "Delete",
     "nameLabel": "Phase name",
-    "namePlaceholder": "e.g. Before the tragedy",
+    "namePlaceholder": "Short label for this period",
     "appearanceLabel": "Appearance",
     "appearancePlaceholder": "Physical appearance in this period...",
     "changesLabel": "Changes",

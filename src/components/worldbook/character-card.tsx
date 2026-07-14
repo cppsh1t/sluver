@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -29,12 +29,109 @@ import {
 } from "@hugeicons/core-free-icons";
 import { formatRelativeTime } from "@/lib/format";
 
+// ─── Phase stepper ───────────────────────────────────────────────────────────
+
+interface PhaseStepperProps {
+  phaseNames: string[];
+}
+
+function PhaseStepper({ phaseNames }: PhaseStepperProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const dragState = useRef({ dragging: false, startX: 0, startScroll: 0, moved: false });
+  const [overflow, setOverflow] = useState(false);
+
+  // Track whether the content overflows (gates drag + cursor + wheel).
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const check = () => setOverflow(el.scrollWidth > el.clientWidth);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [phaseNames]);
+
+  // Mouse wheel → horizontal scroll (non-passive listener so we can preventDefault).
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    function onWheel(e: WheelEvent) {
+      const node = scrollRef.current;
+      if (!node || !overflow || e.deltaY === 0) return;
+      e.preventDefault();
+      node.scrollLeft += e.deltaY;
+    }
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [overflow]);
+
+  // Drag-to-scroll (document-level listeners for smooth tracking beyond the element bounds).
+  useEffect(() => {
+    function onMouseMove(e: MouseEvent) {
+      if (!dragState.current.dragging) return;
+      e.preventDefault();
+      const el = scrollRef.current;
+      if (!el) return;
+      el.scrollLeft = dragState.current.startScroll - (e.pageX - dragState.current.startX);
+      dragState.current.moved = true;
+    }
+    function onMouseUp() {
+      dragState.current.dragging = false;
+    }
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
+
+  function handleMouseDown(e: React.MouseEvent<HTMLDivElement>) {
+    const el = scrollRef.current;
+    if (!el || !overflow) return;
+    dragState.current = { dragging: true, startX: e.pageX, startScroll: el.scrollLeft, moved: false };
+  }
+
+  // Suppress card click after a drag (moved !== click).
+  function handleClick(e: React.MouseEvent) {
+    if (dragState.current.moved) {
+      dragState.current.moved = false;
+      e.stopPropagation();
+    }
+  }
+
+  return (
+    <div
+      ref={scrollRef}
+      onMouseDown={handleMouseDown}
+      onClick={handleClick}
+      className={[
+        "flex select-none items-center gap-1.5 overflow-x-auto",
+        "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        overflow ? "cursor-grab active:cursor-grabbing" : "",
+      ].join(" ")}
+    >
+      {phaseNames.map((name, i) => (
+        <Fragment key={i}>
+          {i > 0 && <span className="shrink-0 text-xs text-muted-foreground/40">→</span>}
+          <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+            <span className="size-1.5 shrink-0 rounded-full bg-primary/40" />
+            <span className="whitespace-nowrap">{name}</span>
+          </span>
+        </Fragment>
+      ))}
+    </div>
+  );
+}
+
+// ─── Character card ──────────────────────────────────────────────────────────
+
 interface CharacterCardProps {
   name: string;
   aliases: string[];
   description: string;
   tags: string[];
-  phaseCount: number;
+  phaseNames: string[];
   updatedAt: string;
   onClick: () => void;
   onDelete: () => void;
@@ -45,7 +142,7 @@ function CharacterCard({
   aliases,
   description,
   tags,
-  phaseCount,
+  phaseNames,
   updatedAt,
   onClick,
   onDelete,
@@ -123,9 +220,13 @@ function CharacterCard({
           <p className="line-clamp-2 min-h-8 flex-1 text-sm text-muted-foreground">
             {description}
           </p>
-          <span className="inline-flex w-fit items-center rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-            {t("character:card.phaseCount", { count: phaseCount })}
-          </span>
+          {phaseNames.length > 0 ? (
+            <PhaseStepper phaseNames={phaseNames} />
+          ) : (
+            <span className="text-xs text-muted-foreground/60">
+              {t("character:card.noPhases")}
+            </span>
+          )}
           {tags.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {visibleTags.map((tag) => (

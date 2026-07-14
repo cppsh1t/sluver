@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   createRoute,
   useNavigate,
@@ -6,6 +6,8 @@ import {
 } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+
+import i18n from "@/i18n";
 
 import { DndContext, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import type { DragEndEvent } from "@dnd-kit/core";
@@ -106,12 +108,21 @@ function CharacterDetailPage() {
 
   const [editBaseOpen, setEditBaseOpen] = useState(false);
   const [draftActive, setDraftActive] = useState(false);
+  // Optimistic order override — set synchronously in onDragEnd so the DOM
+  // reorders before dnd-kit clears its transforms (prevents the drop twitch).
+  const [overridePhases, setOverridePhases] = useState<CharacterPhase[] | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
 
-  const phases = character?.phases ?? [];
+  // Clear the override once server data refreshes (success brings matching
+  // order; error brings the original order via onSettled refetch).
+  useEffect(() => {
+    setOverridePhases(null);
+  }, [character]);
+
+  const phases = overridePhases ?? character?.phases ?? [];
 
   async function handleUpdateBase(input: UpdateCharacterInput) {
     try {
@@ -170,7 +181,7 @@ function CharacterDetailPage() {
     }
   }
 
-  async function handleDragEnd(event: DragEndEvent) {
+  function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
@@ -178,18 +189,22 @@ function CharacterDetailPage() {
     const newIndex = phases.findIndex((p) => p.id === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
 
+    // Optimistic: reorder locally so dnd-kit's transform reset aligns with
+    // the new positions → smooth settle animation instead of a twitch.
     const reordered = arrayMove(phases, oldIndex, newIndex);
-    try {
-      await reorderMut.mutateAsync({
+    setOverridePhases(reordered);
+
+    reorderMut
+      .mutateAsync({
         characterId: cid,
         phaseIds: reordered.map((p) => p.id),
-      });
-      toast.success(t("character:toast.reorderSuccess"));
-    } catch (e) {
-      toast.error(t("character:toast.reorderFailed"), {
-        description: translateError(toErrorPayload(e)),
-      });
-    }
+      })
+      .then(() => toast.success(i18n.t("character:toast.reorderSuccess")))
+      .catch((e) =>
+        toast.error(i18n.t("character:toast.reorderFailed"), {
+          description: translateError(toErrorPayload(e)),
+        }),
+      );
   }
 
   if (isLoading) {

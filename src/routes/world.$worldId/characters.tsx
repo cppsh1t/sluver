@@ -171,7 +171,7 @@ function CharactersPage() {
                 aliases={entity.aliases}
                 description={entity.description}
                 tags={entity.tags}
-                phaseCount={entity.phases.length}
+                phaseNames={entity.phases.map((p) => p.name)}
                 updatedAt={entity.updatedAt}
                 onClick={() =>
                   navigate({

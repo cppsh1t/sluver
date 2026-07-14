@@ -94,6 +94,8 @@ export const useReorderPhases = (worldId: WorldId) => {
   return useMutation({
     mutationFn: ({ characterId, phaseIds }: { characterId: CharacterId; phaseIds: PhaseId[] }) =>
       reorderPhases(worldId, characterId, phaseIds),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["characters", worldId] }),
+    // onSettled (not onSuccess) so failed reorders also refetch → rollback the
+    // optimistic local override in the detail page.
+    onSettled: () => qc.invalidateQueries({ queryKey: ["characters", worldId] }),
   });
 };

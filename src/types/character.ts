@@ -34,7 +34,7 @@ export type PhaseId = z.infer<typeof phaseIdSchema>;
 export const characterPhaseSchema = z.object({
   id: phaseIdSchema,
   characterId: characterIdSchema,
-  /** 名称 — short label for this life period (e.g. "生活美满时"). */
+  /** 名称 — short label for this life period. */
   name: z.string(),
   /** 外观 — physical appearance description in this period. */
   appearance: z.string(),

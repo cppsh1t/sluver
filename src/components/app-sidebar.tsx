@@ -22,16 +22,16 @@ function AppSidebar() {
       isActive: (p: string) => p === "/" || p.startsWith("/world"),
     },
     {
-      label: t("nav.settings"),
-      to: "/settings",
-      icon: Settings02Icon,
-      isActive: (p: string) => p === "/settings",
-    },
-    {
       label: t("nav.library"),
       to: "/library",
       icon: BookOpen02Icon,
       isActive: (p: string) => p === "/library",
+    },
+    {
+      label: t("nav.settings"),
+      to: "/settings",
+      icon: Settings02Icon,
+      isActive: (p: string) => p === "/settings",
     },
   ];
 
