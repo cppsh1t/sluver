@@ -10,6 +10,8 @@ Tauri v2 desktop app for **worldbuilding & novel writing**. React 19 + TypeScrip
   - [ADR-0002](./docs/adr/0002-character-ref-composite-pk.md) — CharacterRef composite PK includes phase_id
   - [ADR-0003](./docs/adr/0003-trigger-event-vs-character-refs-independence.md) — trigger_event_id vs character_refs semantic independence
   - [ADR-0004](./docs/adr/0004-world-isolation.md) — World isolation (no cross-World references)
+  - [ADR-0005](./docs/adr/0005-workspace-shell-layout.md) — Workspace shell layout (dual layout: app vs world)
+  - [ADR-0006](./docs/adr/0006-deletion-cascade-to-character-refs.md) — Phase/Character deletion cascades to CharacterRefs, with pre-delete disclosure
 
 ## Git commit style
 

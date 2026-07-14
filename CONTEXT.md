@@ -17,11 +17,11 @@ The complete body of worldbuilding material in a World — its Characters, Event
 _Avoid_: Codex, Compendium, Encyclopedia, Wiki, Bestiary
 
 **Character**:
-A single individual in a World — typically a person, but also any autonomous being that participates in the plot (e.g. an active deity). The atomic unit of agency: only Characters can participate in Events and appear in Scenes. Has a lifecycle composed of one or more Phases that mark distinct segments of their personal journey.
+A single individual in a World — typically a person, but also any autonomous being that participates in the plot (e.g. an active deity). The atomic unit of agency: only Characters can participate in Events and appear in Scenes. Has a lifecycle composed of **zero or more** Phases that mark distinct segments of their personal journey. A Character with zero Phases is a valid stub; because participation in Events and Scenes is pinned to a specific Phase (see CharacterRef), a zero-Phase Character cannot participate until at least one Phase is defined.
 _Avoid_: NPC, Actor, Role, Person, Persona, Figure
 
 **CharacterPhase** (canonical short form: **Phase**):
-A segment of a Character's life defined by their emotional or circumstantial state — e.g. "生活美满时", "重大变故时", "黑化报复社会时". Each Phase carries its own appearance description and a note of what changed. MAY name a `triggerEventId` — the Event that caused the Character to enter this Phase.
+A segment of a Character's life defined by their emotional or circumstantial state. Each Phase has a short `name` — the label for this period (e.g. "生活美满时", "重大变故时", "黑化报复社会时") — plus its own `appearance` (physical description in this period) and `changes` (a free-form note of what defines this period). MAY name a `triggerEventId` — the Event that caused the Character to enter this Phase.
 _Avoid_: Stage, LifeStage, Version, Era, State, Milestone, Arc
 
 **Event**:
@@ -60,7 +60,7 @@ _Avoid_: Sequence, Beat, Moment, Setup, Fragment
 
 ## Conventions
 
-**Name uniqueness**: Within each scope, the `name` or `title` field is unique — `World.name` globally; `Character.name`, `Location.name`, `Item.name`, `Lore.name`, `Event.name`, `Novel.title` within their World; `Chapter.title` within their Novel; `Scene.title` within their Chapter. Identity is always by `id` (UUID v7); the display label is scoped-unique.
+**Name uniqueness**: Within each scope, the `name` or `title` field is unique — `World.name` globally; `Character.name`, `Location.name`, `Item.name`, `Lore.name`, `Event.name`, `Novel.title` within their World; `CharacterPhase.name` within their Character; `Chapter.title` within their Novel; `Scene.title` within their Chapter. Identity is always by `id` (UUID v7); the display label is scoped-unique.
 
 **World isolation**: Worlds share no data. There is no cross-World reference at any layer (schema, query, or UI). Worlds that need to share content must duplicate it.
 
