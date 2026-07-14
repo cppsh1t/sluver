@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { createRoute, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
-import { rootRoute } from "./__root";
+import { appLayoutRoute } from "./_app";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -18,34 +18,25 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { Add01Icon, Globe02Icon } from "@hugeicons/core-free-icons";
 import { CreateWorldDialog } from "@/components/world-hub/create-world-dialog";
 import { WorldCard } from "@/components/world-hub/world-card";
-import { createWorld, deleteWorld, listWorlds, updateWorld } from "@/api";
 import { toErrorPayload } from "@/api/client";
 import { translateError } from "@/i18n/errors";
-import i18n from "@/i18n";
+import {
+  useWorlds,
+  useCreateWorld,
+  useUpdateWorld,
+  useDeleteWorld,
+} from "@/hooks";
 import type { CreateWorldInput, UpdateWorldInput } from "@/api";
 import type { World } from "@/types";
 
 function WorldHubPage() {
   const { t } = useTranslation(["world", "common"]);
   const navigate = useNavigate();
-  const [worlds, setWorlds] = useState<World[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: worlds = [], isLoading: loading } = useWorlds();
+  const createMutation = useCreateWorld();
+  const updateMutation = useUpdateWorld();
+  const deleteMutation = useDeleteWorld();
   const [createOpen, setCreateOpen] = useState(false);
-
-  useEffect(() => {
-    listWorlds()
-      .then(setWorlds)
-      .catch((e) => {
-        // Async catch handler runs outside React's render cycle, so the
-        // global `i18n.t` is appropriate here (avoids exhaustive-deps
-        // warning without disabling the rule).
-        const payload = toErrorPayload(e);
-        toast.error(i18n.t("world:toast.loadFailed"), {
-          description: translateError(payload),
-        });
-      })
-      .finally(() => setLoading(false));
-  }, []);
 
   function handleOpen(world: World) {
     navigate({ to: "/world/$worldId", params: { worldId: world.id } });
@@ -53,8 +44,7 @@ function WorldHubPage() {
 
   async function handleCreate(input: CreateWorldInput) {
     try {
-      const world = await createWorld(input);
-      setWorlds((prev) => [world, ...prev]);
+      await createMutation.mutateAsync(input);
       toast.success(t("world:toast.createSuccess"));
     } catch (e) {
       const payload = toErrorPayload(e);
@@ -67,10 +57,7 @@ function WorldHubPage() {
 
   async function handleUpdate(world: World, input: UpdateWorldInput) {
     try {
-      const updated = await updateWorld(world.id, input);
-      setWorlds((prev) =>
-        prev.map((w) => (w.id === updated.id ? updated : w)),
-      );
+      await updateMutation.mutateAsync({ id: world.id, input });
       toast.success(t("world:toast.updateSuccess"));
     } catch (e) {
       const payload = toErrorPayload(e);
@@ -83,8 +70,7 @@ function WorldHubPage() {
 
   async function handleDelete(world: World) {
     try {
-      await deleteWorld(world.id);
-      setWorlds((prev) => prev.filter((w) => w.id !== world.id));
+      await deleteMutation.mutateAsync(world.id);
       toast.success(t("world:toast.deleteSuccess"));
     } catch (e) {
       const payload = toErrorPayload(e);
@@ -170,7 +156,7 @@ function WorldHubPage() {
 }
 
 export const indexRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appLayoutRoute,
   path: "/",
   component: WorldHubPage,
 });

@@ -1,7 +1,7 @@
 import { createRoute } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 
-import { rootRoute } from "./__root";
+import { appLayoutRoute } from "./_app";
 import {
   Empty,
   EmptyDescription,
@@ -35,7 +35,7 @@ function LibraryPage() {
 }
 
 export const libraryRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appLayoutRoute,
   path: "/library",
   component: LibraryPage,
 });

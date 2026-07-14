@@ -1,7 +1,6 @@
 import { useEffect } from "react";
 import { Outlet, createRootRoute } from "@tanstack/react-router";
 
-import { AppSidebar } from "@/components/app-sidebar";
 import { TitleBar } from "@/components/title-bar";
 import { Toaster } from "@/components/ui/sonner";
 import { getAppConfig } from "@/api";
@@ -36,10 +35,7 @@ function RootLayout() {
     <div className="flex h-svh flex-col overflow-hidden bg-background text-foreground">
       <TitleBar />
       <div className="flex flex-1 overflow-hidden">
-        <AppSidebar />
-        <main className="flex flex-1 flex-col overflow-hidden">
-          <Outlet />
-        </main>
+        <Outlet />
       </div>
       <Toaster />
     </div>

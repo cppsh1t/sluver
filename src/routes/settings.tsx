@@ -3,7 +3,7 @@ import { createRoute } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
-import { rootRoute } from "./__root";
+import { appLayoutRoute } from "./_app";
 import { getAppConfig, setTrayLocale, updateAppConfig } from "@/api";
 import { toErrorPayload } from "@/api/client";
 import { resolveLocale, AUTO_LOCALE } from "@/i18n";
@@ -295,7 +295,7 @@ function Segmented<T extends { value: string; label: string }>({
 }
 
 export const settingsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appLayoutRoute,
   path: "/settings",
   component: SettingsPage,
 });
