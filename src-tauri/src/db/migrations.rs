@@ -166,9 +166,33 @@ const WORLD_SQL: &str = r#"
 "#;
 
 /// Migrations for `meta.db` (world registry + app settings).
-const META_SLICE: &[M] = &[M::up(META_SQL)];
+const META_MIGRATION_002: &str = r#"
+    CREATE UNIQUE INDEX idx_worlds_name ON worlds(name);
+"#;
+
+const META_SLICE: &[M] = &[M::up(META_SQL), M::up(META_MIGRATION_002)];
 pub const META_MIGRATIONS: Migrations = Migrations::from_slice(META_SLICE);
 
 /// Migrations for each world DB file (all world-scoped tables).
-const WORLD_SLICE: &[M] = &[M::up(WORLD_SQL)];
+const WORLD_MIGRATION_002: &str = r#"
+    -- Name/title uniqueness
+    CREATE UNIQUE INDEX idx_characters_name ON characters(name);
+    CREATE UNIQUE INDEX idx_locations_name ON locations(name);
+    CREATE UNIQUE INDEX idx_items_name ON items(name);
+    CREATE UNIQUE INDEX idx_lores_name ON lores(name);
+    CREATE UNIQUE INDEX idx_events_name ON events(name);
+    CREATE UNIQUE INDEX idx_novels_title ON novels(title);
+    CREATE UNIQUE INDEX idx_chapters_novel_title ON chapters(novel_id, title);
+    CREATE UNIQUE INDEX idx_scenes_chapter_title ON scenes(chapter_id, title);
+
+    -- Position uniqueness per parent scope
+    CREATE UNIQUE INDEX idx_character_phases_char_pos ON character_phases(character_id, position);
+    CREATE UNIQUE INDEX idx_chapters_novel_pos ON chapters(novel_id, position);
+    CREATE UNIQUE INDEX idx_scenes_chapter_pos ON scenes(chapter_id, position);
+
+    -- Novel description column
+    ALTER TABLE novels ADD COLUMN description TEXT NOT NULL DEFAULT '';
+"#;
+
+const WORLD_SLICE: &[M] = &[M::up(WORLD_SQL), M::up(WORLD_MIGRATION_002)];
 pub const WORLD_MIGRATIONS: Migrations = Migrations::from_slice(WORLD_SLICE);
