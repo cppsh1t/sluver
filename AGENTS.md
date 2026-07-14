@@ -2,6 +2,15 @@
 
 Tauri v2 desktop app for **worldbuilding & novel writing**. React 19 + TypeScript frontend, Rust backend backed by SQLite. Package manager: **pnpm**.
 
+## Project Documentation
+
+- **[CONTEXT.md](./CONTEXT.md)** — Domain glossary. Single source of truth for ubiquitous language (World, Character, Phase, CharacterRef, Event, Location, Item, Lore, Novel, Chapter, Scene) plus cross-cutting conventions (name uniqueness, World isolation, position uniqueness).
+- **[docs/adr/](./docs/adr/)** — Architecture Decision Records. Read before questioning "why is X like this?":
+  - [ADR-0001](./docs/adr/0001-two-database-design.md) — Two-database design (meta.db + per-World files)
+  - [ADR-0002](./docs/adr/0002-character-ref-composite-pk.md) — CharacterRef composite PK includes phase_id
+  - [ADR-0003](./docs/adr/0003-trigger-event-vs-character-refs-independence.md) — trigger_event_id vs character_refs semantic independence
+  - [ADR-0004](./docs/adr/0004-world-isolation.md) — World isolation (no cross-World references)
+
 ## Git commit style
 
 Conventional Commits: `type(scope): description`
@@ -36,25 +45,11 @@ Scope is optional but encouraged for clarity (e.g. `feat(tauri):`, `fix(ui):`, `
 
 ### Domain model
 
-```
-World (top-level container — one .db file per world)
-├── Character ─ CharacterPhase[]      (lifecycle stages; each may trigger an Event)
-├── Location, Item, Lore              (shared "element" schema: name/description/notes/tags)
-├── Event                             (references CharacterRef = {characterId, phaseId}, optional Location)
-└── Novel ─ Chapter[] ─ Scene[]       (Scene = prose leaf unit; refs characters/items/events/location)
-```
+See **[CONTEXT.md](./CONTEXT.md)** for the full glossary. In short: a World contains Characters (with Phases), Locations, Items, Lore, Events, and Novels (Chapters → Scenes); Scenes reference back into the worldbuilding material.
 
-### Two-database design (CRITICAL)
+### Two-database design
 
-```
-{app_data_dir}/
-  meta.db            # World registry (worlds table) + app settings (settings KV table). Always open.
-  worlds/
-    {uuid7}.db       # One DB file per world — ALL world-scoped data lives here.
-```
-
-- **`world_id` is NOT a column** in world-scoped tables. Each world IS its own database file. `world_id` is passed as a command arg and injected into responses at query time.
-- `meta.db` is always open; world DBs are opened lazily and cached in `DbManager`.
+Each World is its own SQLite file (`worlds/{uuid}.db`); `meta.db` holds only the world registry + app settings. World-scoped tables have NO `world_id` column. See **[ADR-0001](./docs/adr/0001-two-database-design.md)** for rationale, **[ADR-0004](./docs/adr/0004-world-isolation.md)** for the isolation rule.
 
 ### Backend (Rust) — `src-tauri/src/`
 
@@ -82,7 +77,7 @@ models/         # One file per entity: structs with #[serde(rename_all = "camelC
 - All connections enable `foreign_keys = ON` + `journal_mode = WAL`.
 - All IDs are **UUID v7** (time-sortable). No sequential IDs anywhere.
 - `#[serde(rename_all = "camelCase")]` on ALL models — Rust snake_case internally, frontend camelCase.
-- DbManager lock ordering: `with_world()` resolves the world DB path via the `meta` lock, releases it, THEN acquires the `worlds` cache lock — reversing this order deadlocks.
+- DbManager lock ordering: `with_world()` resolves the world DB path via the `meta` lock, releases it, THEN acquires the `worlds` cache lock — reversing this order deadlocks (see ADR-0001).
 
 ### Frontend — `src/`
 
@@ -104,7 +99,7 @@ lib/utils.ts        # cn() = clsx + tailwind-merge
 - `types/element.ts` defines `elementBaseSchema` shared by Location/Item/Lore; each extends it with a branded ID.
 - App.tsx is boilerplate calling `invoke("greet")` — a command no longer registered in `lib.rs`. The real API surface lives in `src/api/` + `src/types/`. When building UI, import from `@/api` and `@/types`, do not extend App.tsx's demo code.
 - No router, no state management library, no `hooks/` dir, no tests yet.
-- `markdown-it` and `@hugeicons/react` are declared deps but **not yet imported** anywhere in `src/` (reserved for Scene.content rendering and UI icons).
+- `markdown-it` and `@hugeicons/react` are declared deps but not yet imported anywhere in `src/`. Scene `content` is **plain text by design** (see CONTEXT.md) — `markdown-it` is no longer earmarked for it. `@hugeicons/react` is reserved for UI icons.
 
 ### Key patterns
 
