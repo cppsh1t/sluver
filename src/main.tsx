@@ -1,5 +1,7 @@
 import React, { Suspense } from "react";
 import { createRoot } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { RouterProvider } from "@tanstack/react-router";
 import { locale as detectOsLocale } from "@tauri-apps/plugin-os";
 
@@ -14,6 +16,16 @@ import i18n from "@/i18n";
 import { setDayjsLocale } from "@/lib/format";
 
 import "./index.css";
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60,
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 /**
  * Resolve the active UI locale at startup.
@@ -82,12 +94,15 @@ resolveInitialLocale()
   .finally(() => {
     createRoot(document.getElementById("root") as HTMLElement).render(
       <React.StrictMode>
-        {/* Suspense catches the (rare) case where a lazy namespace chunk
-            is still loading after bootstrap, e.g. user switched language
-            post-mount and triggered a re-fetch. */}
-        <Suspense fallback={null}>
-          <RouterProvider router={router} />
-        </Suspense>
+        <QueryClientProvider client={queryClient}>
+          {/* Suspense catches the (rare) case where a lazy namespace chunk
+              is still loading after bootstrap, e.g. user switched language
+              post-mount and triggered a re-fetch. */}
+          <Suspense fallback={null}>
+            <RouterProvider router={router} />
+          </Suspense>
+          {import.meta.env.DEV && <ReactQueryDevtools />}
+        </QueryClientProvider>
       </React.StrictMode>,
     );
   });
