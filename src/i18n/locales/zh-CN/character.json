@@ -1,0 +1,89 @@
+{
+  "list": {
+    "title": "角色",
+    "subtitle": "管理这个世界中的角色及其生命阶段",
+    "createButton": "新建角色"
+  },
+  "empty": {
+    "title": "还没有角色",
+    "description": "创建第一个角色来开始构建你的世界",
+    "cta": "新建角色"
+  },
+  "search": {
+    "placeholder": "搜索名称、别名或标签...",
+    "noResults": "没有找到匹配「{{query}}」的角色",
+    "noResultsDescription": "试试其他关键词"
+  },
+  "card": {
+    "phaseCount": "{{count}} 个阶段",
+    "aliasesLabel": "又名",
+    "editAction": "编辑信息",
+    "deleteAction": "删除",
+    "deleteTitle": "删除角色",
+    "deleteDescription": "确定要删除「{{name}}」吗？该角色的所有阶段将被一并删除，此操作无法撤销。"
+  },
+  "create": {
+    "title": "新建角色",
+    "description": "创建一个角色",
+    "hint": "创建后可在详情页继续添加阶段与详细信息"
+  },
+  "edit": {
+    "title": "编辑角色信息",
+    "description": "修改角色的基础信息"
+  },
+  "form": {
+    "nameLabel": "名称",
+    "namePlaceholder": "角色名称",
+    "nameDescription": "在同一世界中必须唯一",
+    "aliasesLabel": "别名",
+    "aliasesPlaceholder": "输入别名后回车...",
+    "descriptionLabel": "描述",
+    "descriptionPlaceholder": "角色的基础描述...",
+    "notesLabel": "备注",
+    "notesPlaceholder": "自由记录任何细节...",
+    "tagsLabel": "标签",
+    "tagsPlaceholder": "输入标签后回车..."
+  },
+  "detail": {
+    "back": "角色",
+    "editBase": "编辑信息",
+    "phasesTitle": "阶段",
+    "addPhase": "添加阶段",
+    "emptyPhasesTitle": "还没有阶段",
+    "emptyPhasesDescription": "为这个角色添加生命阶段，记录不同时期的状态与变化。",
+    "emptyPhasesCta": "添加阶段"
+  },
+  "phase": {
+    "save": "保存",
+    "cancel": "取消",
+    "edit": "编辑",
+    "delete": "删除",
+    "nameLabel": "阶段名称",
+    "namePlaceholder": "如：生活美满时",
+    "appearanceLabel": "外观",
+    "appearancePlaceholder": "该阶段的外貌描述...",
+    "changesLabel": "变化",
+    "changesPlaceholder": "该阶段的状态、身份、关系等变化...",
+    "deleteTitle": "删除阶段",
+    "deleteDescription": "确定要删除阶段「{{name}}」吗？",
+    "nameRequired": "请填写阶段名称",
+    "appearanceRequired": "请填写外观描述"
+  },
+  "toast": {
+    "createSuccess": "角色创建成功",
+    "createFailed": "创建角色失败",
+    "updateSuccess": "角色信息已更新",
+    "updateFailed": "更新角色失败",
+    "deleteSuccess": "角色已删除",
+    "deleteFailed": "删除角色失败",
+    "loadFailed": "加载角色失败",
+    "phaseCreateSuccess": "阶段已添加",
+    "phaseCreateFailed": "添加阶段失败",
+    "phaseUpdateSuccess": "阶段已更新",
+    "phaseUpdateFailed": "更新阶段失败",
+    "phaseDeleteSuccess": "阶段已删除",
+    "phaseDeleteFailed": "删除阶段失败",
+    "reorderSuccess": "阶段顺序已更新",
+    "reorderFailed": "更新顺序失败"
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "list": {
+    "title": "Characters",
+    "subtitle": "Manage characters and their life phases in this world",
+    "createButton": "New Character"
+  },
+  "empty": {
+    "title": "No characters yet",
+    "description": "Create your first character to start building this world",
+    "cta": "New Character"
+  },
+  "search": {
+    "placeholder": "Search by name, alias, or tag...",
+    "noResults": "No characters matching \"{{query}}\"",
+    "noResultsDescription": "Try a different search term"
+  },
+  "card": {
+    "phaseCount_zero": "No phases",
+    "phaseCount_one": "{{count}} phase",
+    "phaseCount_other": "{{count}} phases",
+    "aliasesLabel": "aka",
+    "editAction": "Edit info",
+    "deleteAction": "Delete",
+    "deleteTitle": "Delete character",
+    "deleteDescription": "Delete \"{{name}}\"? All of this character's phases will be removed. This cannot be undone."
+  },
+  "create": {
+    "title": "New Character",
+    "description": "Create a character",
+    "hint": "You can add phases and details on the character page after creating."
+  },
+  "edit": {
+    "title": "Edit Character",
+    "description": "Update this character's basic information"
+  },
+  "form": {
+    "nameLabel": "Name",
+    "namePlaceholder": "Character name",
+    "nameDescription": "Must be unique within this world",
+    "aliasesLabel": "Aliases",
+    "aliasesPlaceholder": "Type an alias and press Enter...",
+    "descriptionLabel": "Description",
+    "descriptionPlaceholder": "Base-level description...",
+    "notesLabel": "Notes",
+    "notesPlaceholder": "Free-form details...",
+    "tagsLabel": "Tags",
+    "tagsPlaceholder": "Type a tag and press Enter..."
+  },
+  "detail": {
+    "back": "Characters",
+    "editBase": "Edit info",
+    "phasesTitle": "Phases",
+    "addPhase": "Add phase",
+    "emptyPhasesTitle": "No phases yet",
+    "emptyPhasesDescription": "Add life phases to this character to record their state and changes across different periods.",
+    "emptyPhasesCta": "Add phase"
+  },
+  "phase": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "edit": "Edit",
+    "delete": "Delete",
+    "nameLabel": "Phase name",
+    "namePlaceholder": "e.g. Before the tragedy",
+    "appearanceLabel": "Appearance",
+    "appearancePlaceholder": "Physical appearance in this period...",
+    "changesLabel": "Changes",
+    "changesPlaceholder": "State, identity, relationships, abilities in this period...",
+    "deleteTitle": "Delete phase",
+    "deleteDescription": "Delete phase \"{{name}}\"?",
+    "nameRequired": "Phase name is required",
+    "appearanceRequired": "Appearance is required"
+  },
+  "toast": {
+    "createSuccess": "Character created",
+    "createFailed": "Failed to create character",
+    "updateSuccess": "Character updated",
+    "updateFailed": "Failed to update character",
+    "deleteSuccess": "Character deleted",
+    "deleteFailed": "Failed to delete character",
+    "loadFailed": "Failed to load character",
+    "phaseCreateSuccess": "Phase added",
+    "phaseCreateFailed": "Failed to add phase",
+    "phaseUpdateSuccess": "Phase updated",
+    "phaseUpdateFailed": "Failed to update phase",
+    "phaseDeleteSuccess": "Phase deleted",
+    "phaseDeleteFailed": "Failed to delete phase",
+    "reorderSuccess": "Phase order updated",
+    "reorderFailed": "Failed to update order"
+  }
+}
