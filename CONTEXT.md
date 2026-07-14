@@ -1,0 +1,67 @@
+# Sluver
+
+A desktop worldbuilding & novel-writing application. Each World is a fully isolated fiction project — its Characters, Locations, Items, Lore, Events, and Novels never reference or appear in other Worlds. Within a World, Novels contain Chapters and Scenes that reference back into the worldbuilding material.
+
+## Language
+
+### Container
+
+**World**:
+The top-level container and isolation boundary for a single fiction project. Holds all Characters, Locations, Items, Lore, Events, and Novels as a closed universe — nothing crosses between Worlds. Identity is by `id` (UUID v7); `name` is a display label unique across the registry.
+_Avoid_: Project, Universe, Campaign, Setting
+
+### Characters
+
+**Character**:
+A single individual in a World — typically a person, but also any autonomous being that participates in the plot (e.g. an active deity). The atomic unit of agency: only Characters can participate in Events and appear in Scenes. Has a lifecycle composed of one or more Phases that mark distinct segments of their personal journey.
+_Avoid_: NPC, Actor, Role, Person, Persona, Figure
+
+**CharacterPhase** (canonical short form: **Phase**):
+A segment of a Character's life defined by their emotional or circumstantial state — e.g. "生活美满时", "重大变故时", "黑化报复社会时". Each Phase carries its own appearance description and a note of what changed. MAY name a `triggerEventId` — the Event that caused the Character to enter this Phase.
+_Avoid_: Stage, LifeStage, Version, Era, State, Milestone, Arc
+
+### Events
+
+**Event**:
+Something that happens in a World — optionally over a time range (`startAt` / `endAt`), optionally at a Location. Has a participation set (`characterRefs`) listing the Characters involved, each pinned to the Phase they were in at the time.
+_Avoid_: Incident, Occurrence, Action, Happening
+
+**CharacterRef**:
+An appearance of a Character at a specific Phase. The atomic unit of participation in an Event or Scene; always a pair `{ characterId, phaseId }` where the pair — not the `characterId` alone — is the identity. The same Character MAY appear multiple times in the same Event or Scene with different Phases (e.g. flashback, timeskip, parallel timelines); each pair is a distinct appearance, never a duplicate.
+_Avoid_: CharacterLink, CharacterMention
+
+### Worldbook
+
+**Location**:
+A place within a World. Can anchor Events and Scenes to where they happen.
+_Avoid_: Place, Setting, Scene, Area, Zone
+
+**Item**:
+A physical object within a World that can appear in Scenes.
+_Avoid_: Object, Artifact, Thing, Prop, Relic
+
+**Lore**:
+Supplementary setting material for a World — history, culture, magic systems, cosmology, mythology, organizations, or any background knowledge the author wants to record. Standalone by design: never participates in Events or Scenes. (An organization that needs to "act" in the story is modeled as individual Characters plus a Lore entry describing the org itself; purely mythological deities live here, active deities live as Characters.)
+_Avoid_: Background, Wiki Entry, Encyclopedia Entry, Setting Note
+
+### Novels
+
+**Novel**:
+A prose work within a World. An ordered collection of Chapters. Has a `title`, `description`, and `tags`.
+_Avoid_: Book, Story, Manuscript
+
+**Chapter**:
+An ordered subdivision of a Novel. An ordered collection of Scenes. Has a `title` and `summary` — the chapter's outline or purpose, not the prose itself.
+_Avoid_: Section, Part
+
+**Scene**:
+The leaf unit of prose in a Novel — the only entity that carries narrative text (`content`, plain text). Optionally anchored to a time range and a Location. References the Characters (at specific Phases), Items, and Events that appear in it.
+_Avoid_: Sequence, Beat, Moment, Setup, Fragment
+
+## Conventions
+
+**Name uniqueness**: Within each scope, the `name` or `title` field is unique — `World.name` globally; `Character.name`, `Location.name`, `Item.name`, `Lore.name`, `Event.name`, `Novel.title` within their World; `Chapter.title` within their Novel; `Scene.title` within their Chapter. Identity is always by `id` (UUID v7); the display label is scoped-unique.
+
+**World isolation**: Worlds share no data. There is no cross-World reference at any layer (schema, query, or UI). Worlds that need to share content must duplicate it.
+
+**Position uniqueness**: Within each ordered collection, the `position` field is unique to its parent — `CharacterPhase.position` within their Character, `Chapter.position` within their Novel, `Scene.position` within their Chapter. Ordering is mutable via `reorder_*` commands.
