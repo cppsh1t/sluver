@@ -63,6 +63,29 @@ macro_rules! load_element {
     }};
 }
 
+macro_rules! list_element {
+    ($conn:expr, $world_id:expr, $table:literal, $Entity:ident) => {{
+        let mut stmt = $conn
+            .prepare(&format!("SELECT {SELECT_COLS} FROM {} ORDER BY created_at", $table))?;
+        let entities = stmt
+            .query_map([], |row| {
+                let raw = row_to_element_raw(row)?;
+                Ok($Entity {
+                    id: raw.id,
+                    world_id: $world_id.clone(),
+                    name: raw.name,
+                    description: raw.description,
+                    notes: raw.notes,
+                    tags: raw.tags,
+                    created_at: raw.created_at,
+                    updated_at: raw.updated_at,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(entities)
+    }};
+}
+
 // ─── Location CRUD ───────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -78,7 +101,7 @@ pub fn create_location(
     state.with_world(&world_id, |conn| {
         conn.execute(
             "INSERT INTO locations (id, name, description, notes, tags, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![id, input.name, input.description, input.notes, tags_json, now, now],
         )?;
         load_element!(conn, &id, &world_id, "locations", Location, "Location")
@@ -102,14 +125,7 @@ pub fn list_locations(
     state: State<'_, DbManager>,
 ) -> Result<Vec<Location>, DbError> {
     state.with_world(&world_id, |conn| {
-        let ids: Vec<String> = conn
-            .prepare("SELECT id FROM locations ORDER BY created_at")?
-            .query_map([], |row| row.get(0))?
-            .collect::<Result<Vec<_>, _>>()?;
-
-        ids.iter()
-            .map(|id| load_element!(conn, id, &world_id, "locations", Location, "Location"))
-            .collect()
+        list_element!(conn, world_id, "locations", Location)
     })
 }
 
@@ -167,7 +183,7 @@ pub fn create_item(
     state.with_world(&world_id, |conn| {
         conn.execute(
             "INSERT INTO items (id, name, description, notes, tags, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![id, input.name, input.description, input.notes, tags_json, now, now],
         )?;
         load_element!(conn, &id, &world_id, "items", Item, "Item")
@@ -191,14 +207,7 @@ pub fn list_items(
     state: State<'_, DbManager>,
 ) -> Result<Vec<Item>, DbError> {
     state.with_world(&world_id, |conn| {
-        let ids: Vec<String> = conn
-            .prepare("SELECT id FROM items ORDER BY created_at")?
-            .query_map([], |row| row.get(0))?
-            .collect::<Result<Vec<_>, _>>()?;
-
-        ids.iter()
-            .map(|id| load_element!(conn, id, &world_id, "items", Item, "Item"))
-            .collect()
+        list_element!(conn, world_id, "items", Item)
     })
 }
 
@@ -256,7 +265,7 @@ pub fn create_lore(
     state.with_world(&world_id, |conn| {
         conn.execute(
             "INSERT INTO lores (id, name, description, notes, tags, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![id, input.name, input.description, input.notes, tags_json, now, now],
         )?;
         load_element!(conn, &id, &world_id, "lores", Lore, "Lore")
@@ -280,14 +289,7 @@ pub fn list_lores(
     state: State<'_, DbManager>,
 ) -> Result<Vec<Lore>, DbError> {
     state.with_world(&world_id, |conn| {
-        let ids: Vec<String> = conn
-            .prepare("SELECT id FROM lores ORDER BY created_at")?
-            .query_map([], |row| row.get(0))?
-            .collect::<Result<Vec<_>, _>>()?;
-
-        ids.iter()
-            .map(|id| load_element!(conn, id, &world_id, "lores", Lore, "Lore"))
-            .collect()
+        list_element!(conn, world_id, "lores", Lore)
     })
 }
 
