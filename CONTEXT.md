@@ -10,7 +10,11 @@ A desktop worldbuilding & novel-writing application. Each World is a fully isola
 The top-level container and isolation boundary for a single fiction project. Holds all Characters, Locations, Items, Lore, Events, and Novels as a closed universe — nothing crosses between Worlds. Identity is by `id` (UUID v7); `name` is a display label unique across the registry.
 _Avoid_: Project, Universe, Campaign, Setting
 
-### Characters
+### The Worldbook
+
+**Worldbook**:
+The complete body of worldbuilding material in a World — its Characters, Events, Locations, Items, and Lore. Everything the author defines as true about the world, as distinct from the Novels (prose) written from it. The conceptual boundary between "what exists in the world" and "what is narrated."
+_Avoid_: Codex, Compendium, Encyclopedia, Wiki, Bestiary
 
 **Character**:
 A single individual in a World — typically a person, but also any autonomous being that participates in the plot (e.g. an active deity). The atomic unit of agency: only Characters can participate in Events and appear in Scenes. Has a lifecycle composed of one or more Phases that mark distinct segments of their personal journey.
@@ -20,8 +24,6 @@ _Avoid_: NPC, Actor, Role, Person, Persona, Figure
 A segment of a Character's life defined by their emotional or circumstantial state — e.g. "生活美满时", "重大变故时", "黑化报复社会时". Each Phase carries its own appearance description and a note of what changed. MAY name a `triggerEventId` — the Event that caused the Character to enter this Phase.
 _Avoid_: Stage, LifeStage, Version, Era, State, Milestone, Arc
 
-### Events
-
 **Event**:
 Something that happens in a World — optionally over a time range (`startAt` / `endAt`), optionally at a Location. Has a participation set (`characterRefs`) listing the Characters involved, each pinned to the Phase they were in at the time.
 _Avoid_: Incident, Occurrence, Action, Happening
@@ -29,8 +31,6 @@ _Avoid_: Incident, Occurrence, Action, Happening
 **CharacterRef**:
 An appearance of a Character at a specific Phase. The atomic unit of participation in an Event or Scene; always a pair `{ characterId, phaseId }` where the pair — not the `characterId` alone — is the identity. The same Character MAY appear multiple times in the same Event or Scene with different Phases (e.g. flashback, timeskip, parallel timelines); each pair is a distinct appearance, never a duplicate.
 _Avoid_: CharacterLink, CharacterMention
-
-### Worldbook
 
 **Location**:
 A place within a World. Can anchor Events and Scenes to where they happen.
@@ -41,7 +41,7 @@ A physical object within a World that can appear in Scenes.
 _Avoid_: Object, Artifact, Thing, Prop, Relic
 
 **Lore**:
-Supplementary setting material for a World — history, culture, magic systems, cosmology, mythology, organizations, or any background knowledge the author wants to record. Standalone by design: never participates in Events or Scenes. (An organization that needs to "act" in the story is modeled as individual Characters plus a Lore entry describing the org itself; purely mythological deities live here, active deities live as Characters.)
+Supplementary setting material within the Worldbook — history, culture, magic systems, cosmology, mythology, organizations, or any background knowledge the author wants to record. Standalone by design: never participates in Events or Scenes. (An organization that needs to "act" in the story is modeled as individual Characters plus a Lore entry describing the org itself; purely mythological deities live here, active deities live as Characters.)
 _Avoid_: Background, Wiki Entry, Encyclopedia Entry, Setting Note
 
 ### Novels
