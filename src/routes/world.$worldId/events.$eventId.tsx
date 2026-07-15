@@ -17,13 +17,10 @@ import {
 import { CharacterRefPicker } from "@/components/worldbook/character-ref-picker";
 import { LocationRefPicker } from "@/components/worldbook/location-ref-picker";
 import { EventFormDialog } from "@/components/worldbook/event-form-dialog";
+import { ParticipantCard } from "@/components/worldbook/participant-card";
+import { EntityCard } from "@/components/worldbook/entity-card";
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  ArrowLeft02Icon,
-  Cancel01Icon,
-  MapPinIcon,
-  PencilEdit01Icon,
-} from "@hugeicons/core-free-icons";
+import { ArrowLeft02Icon, PencilEdit01Icon } from "@hugeicons/core-free-icons";
 import { toErrorPayload } from "@/api/client";
 import { translateError } from "@/i18n/errors";
 import {
@@ -88,11 +85,6 @@ function EventDetailPage() {
     return m;
   }, [characters]);
 
-  const locationName = useMemo(() => {
-    if (!event?.locationId) return null;
-    return (locations ?? []).find((l) => l.id === event.locationId)?.name ?? null;
-  }, [event?.locationId, locations]);
-
   // ─── Mutation handlers (full-replacement update pattern) ───────────────────
 
   async function handleUpdateBasics(input: EventBasics) {
@@ -115,14 +107,14 @@ function EventDetailPage() {
     }
   }
 
-  async function handleAddRef(ref: CharacterRef) {
+  async function handleCommitRefs(refs: CharacterRef[]) {
     if (!event) return;
     try {
       await updateMut.mutateAsync({
         id: eid,
         input: {
           ...toFullInput(event),
-          characterRefs: [...event.characterRefs, ref],
+          characterRefs: refs,
         },
       });
       toast.success(t("event:toast.updateSuccess"));
@@ -229,14 +221,6 @@ function EventDetailPage() {
     return `${s} ~ ${e}`;
   })();
 
-  function resolveRefLabel(ref: CharacterRef): string | null {
-    const c = charMap.get(ref.characterId);
-    if (!c) return null;
-    const p = c.phases.find((ph) => ph.id === ref.phaseId);
-    if (!p) return null;
-    return `${c.name} @ ${p.name}`;
-  }
-
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
       <div className="mx-auto w-full max-w-3xl px-4 py-8">
@@ -312,7 +296,7 @@ function EventDetailPage() {
               worldId={wid}
               selectedRefs={event.characterRefs}
               characters={characters ?? []}
-              onAdd={handleAddRef}
+              onCommit={handleCommitRefs}
             />
           </div>
 
@@ -331,30 +315,21 @@ function EventDetailPage() {
               </EmptyHeader>
             </Empty>
           ) : (
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {event.characterRefs.map((ref) => {
-                const label = resolveRefLabel(ref);
+                const c = charMap.get(ref.characterId);
+                const p = c?.phases.find((ph) => ph.id === ref.phaseId);
+                if (!c || !p) return null;
                 return (
-                  <span
+                  <ParticipantCard
                     key={`${ref.characterId}-${ref.phaseId}`}
-                    className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-xs"
-                  >
-                    <span className="truncate">
-                      {label ?? ref.characterId}
-                    </span>
-                    <button
-                      type="button"
-                      className="inline-flex text-muted-foreground/70 hover:text-foreground"
-                      aria-label={t("common:actions.delete")}
-                      onClick={() => handleRemoveRef(ref)}
-                    >
-                      <HugeiconsIcon
-                        icon={Cancel01Icon}
-                        strokeWidth={2}
-                        className="size-3"
-                      />
-                    </button>
-                  </span>
+                    characterName={c.name}
+                    characterAliases={c.aliases}
+                    phaseName={p.name}
+                    phaseAppearance={p.appearance}
+                    phaseChanges={p.changes}
+                    onRemove={() => handleRemoveRef(ref)}
+                  />
                 );
               })}
             </div>
@@ -375,16 +350,36 @@ function EventDetailPage() {
               onSelect={handleSelectLocation}
             />
           </div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <HugeiconsIcon
-              icon={MapPinIcon}
-              strokeWidth={2}
-              className="size-4 text-muted-foreground"
-            />
-            <span>
-              {locationName ?? t("event:detail.location.none")}
-            </span>
-          </div>
+          {event.locationId ? (
+            (() => {
+              const loc = (locations ?? []).find((l) => l.id === event.locationId);
+              if (!loc) {
+                return (
+                  <p className="text-sm text-muted-foreground">
+                    {t("event:detail.location.none")}
+                  </p>
+                );
+              }
+              return (
+                <div className="max-w-sm">
+                  <EntityCard
+                    name={loc.name}
+                    description={loc.description}
+                    tags={loc.tags}
+                    updatedAt={loc.updatedAt}
+                    entityType="location"
+                    selectable
+                    selected
+                    onRemove={() => handleSelectLocation(null)}
+                  />
+                </div>
+              );
+            })()
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {t("event:detail.location.none")}
+            </p>
+          )}
         </div>
 
         <Separator className="my-6" />

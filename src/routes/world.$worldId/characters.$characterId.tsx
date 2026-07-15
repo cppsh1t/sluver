@@ -43,15 +43,17 @@ import {
   useDeletePhase,
   useReorderPhases,
   useEvents,
+  useLocations,
 } from "@/hooks";
 import type { UpdateCharacterInput, CreatePhaseInput } from "@/api";
-import type { CharacterId, CharacterPhase, Event, WorldId } from "@/types";
+import type { CharacterId, CharacterPhase, Event, Location, WorldId } from "@/types";
 
 // ─── Sortable wrapper ────────────────────────────────────────────────────────
 
 interface SortablePhaseCardProps {
   worldId: WorldId;
   events: Event[];
+  locations: Location[];
   phase: CharacterPhase;
   onUpdatePhase: (phaseId: string, input: CreatePhaseInput) => Promise<void>;
   onDeletePhase: (phaseId: string) => Promise<void>;
@@ -60,6 +62,7 @@ interface SortablePhaseCardProps {
 function SortablePhaseCard({
   worldId,
   events,
+  locations,
   phase,
   onUpdatePhase,
   onDeletePhase,
@@ -85,6 +88,7 @@ function SortablePhaseCard({
       <PhaseCard
         worldId={worldId}
         events={events}
+        locations={locations}
         phase={phase}
         isDragging={isDragging}
         dragHandleProps={{ ...attributes, ...listeners }}
@@ -108,6 +112,7 @@ function CharacterDetailPage() {
 
   const { data: character, isLoading, isError } = useCharacter(wid, cid);
   const { data: events } = useEvents(wid);
+  const { data: locations } = useLocations(wid);
   const updateCharacterMut = useUpdateCharacter(wid);
   const addPhaseMut = useAddPhase(wid);
   const updatePhaseMut = useUpdatePhase(wid);
@@ -373,6 +378,7 @@ function CharacterDetailPage() {
                         key={phase.id}
                         worldId={wid}
                         events={events ?? []}
+                        locations={locations ?? []}
                         phase={phase}
                         onUpdatePhase={handleUpdatePhase}
                         onDeletePhase={handleDeletePhase}
@@ -387,6 +393,7 @@ function CharacterDetailPage() {
                 <PhaseCard
                   worldId={wid}
                   events={events ?? []}
+                  locations={locations ?? []}
                   onSave={handleAddPhase}
                   onCancel={() => setDraftActive(false)}
                 />
