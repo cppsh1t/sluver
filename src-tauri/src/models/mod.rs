@@ -5,4 +5,5 @@ pub mod item;
 pub mod location;
 pub mod lore;
 pub mod novel;
+pub mod ref_counts;
 pub mod world;

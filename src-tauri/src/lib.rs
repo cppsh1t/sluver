@@ -86,6 +86,8 @@ pub fn run() {
             commands::event::list_events,
             commands::event::update_event,
             commands::event::delete_event,
+            commands::event::count_phase_refs,
+            commands::event::count_character_refs,
             // Novel
             commands::novel::create_novel,
             commands::novel::get_novel,
