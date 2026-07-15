@@ -20,7 +20,9 @@
     "editAction": "编辑信息",
     "deleteAction": "删除",
     "deleteTitle": "删除角色",
-    "deleteDescription": "确定要删除「{{name}}」吗？该角色的所有阶段将被一并删除，此操作无法撤销。"
+    "deleteDescription": "确定要删除「{{name}}」吗？该角色的所有阶段将被一并删除，此操作无法撤销。",
+    "deleteDisclosableTitle": "删除角色「{{name}}」",
+    "deleteDisclosableDescription": "这将连带移除它在 {{events}} 个事件、{{scenes}} 个场景中的所有出场记录，以及 {{phases}} 个阶段。此操作不可撤销。"
   },
   "create": {
     "title": "新建角色",
@@ -66,6 +68,8 @@
     "changesPlaceholder": "该阶段的状态、身份、关系等变化...",
     "deleteTitle": "删除阶段",
     "deleteDescription": "确定要删除阶段「{{name}}」吗？",
+    "deleteDisclosableTitle": "删除阶段「{{name}}」",
+    "deleteDisclosableDescription": "这将连带移除它在 {{events}} 个事件、{{scenes}} 个场景中的出场记录。此操作不可撤销。",
     "nameRequired": "请填写阶段名称",
     "appearanceRequired": "请填写外观描述"
   },

@@ -42,19 +42,24 @@ import {
   useUpdatePhase,
   useDeletePhase,
   useReorderPhases,
+  useEvents,
 } from "@/hooks";
 import type { UpdateCharacterInput, CreatePhaseInput } from "@/api";
-import type { CharacterId, CharacterPhase, WorldId } from "@/types";
+import type { CharacterId, CharacterPhase, Event, WorldId } from "@/types";
 
 // ─── Sortable wrapper ────────────────────────────────────────────────────────
 
 interface SortablePhaseCardProps {
+  worldId: WorldId;
+  events: Event[];
   phase: CharacterPhase;
   onUpdatePhase: (phaseId: string, input: CreatePhaseInput) => Promise<void>;
   onDeletePhase: (phaseId: string) => Promise<void>;
 }
 
 function SortablePhaseCard({
+  worldId,
+  events,
   phase,
   onUpdatePhase,
   onDeletePhase,
@@ -78,6 +83,8 @@ function SortablePhaseCard({
   return (
     <div ref={setNodeRef} style={style}>
       <PhaseCard
+        worldId={worldId}
+        events={events}
         phase={phase}
         isDragging={isDragging}
         dragHandleProps={{ ...attributes, ...listeners }}
@@ -100,6 +107,7 @@ function CharacterDetailPage() {
   const navigate = useNavigate();
 
   const { data: character, isLoading, isError } = useCharacter(wid, cid);
+  const { data: events } = useEvents(wid);
   const updateCharacterMut = useUpdateCharacter(wid);
   const addPhaseMut = useAddPhase(wid);
   const updatePhaseMut = useUpdatePhase(wid);
@@ -150,7 +158,6 @@ function CharacterDetailPage() {
   }
 
   async function handleUpdatePhase(phaseId: string, input: CreatePhaseInput) {
-    const existing = phases.find((p) => p.id === phaseId);
     try {
       await updatePhaseMut.mutateAsync({
         phaseId: phaseId as CharacterPhase["id"],
@@ -158,7 +165,7 @@ function CharacterDetailPage() {
           name: input.name,
           appearance: input.appearance,
           changes: input.changes ?? "",
-          triggerEventId: existing?.triggerEventId ?? null,
+          triggerEventId: input.triggerEventId ?? null,
         },
       });
       toast.success(t("character:toast.phaseUpdateSuccess"));
@@ -364,6 +371,8 @@ function CharacterDetailPage() {
                     {phases.map((phase) => (
                       <SortablePhaseCard
                         key={phase.id}
+                        worldId={wid}
+                        events={events ?? []}
                         phase={phase}
                         onUpdatePhase={handleUpdatePhase}
                         onDeletePhase={handleDeletePhase}
@@ -376,6 +385,8 @@ function CharacterDetailPage() {
               {/* Draft card (outside SortableContext, not draggable) */}
               {draftActive && (
                 <PhaseCard
+                  worldId={wid}
+                  events={events ?? []}
                   onSave={handleAddPhase}
                   onCancel={() => setDraftActive(false)}
                 />

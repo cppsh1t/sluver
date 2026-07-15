@@ -28,6 +28,8 @@ import {
   UserMultiple02Icon,
 } from "@hugeicons/core-free-icons";
 import { formatRelativeTime } from "@/lib/format";
+import { countCharacterRefs, type RefCounts } from "@/api";
+import type { CharacterId, WorldId } from "@/types";
 
 // ─── Phase stepper ───────────────────────────────────────────────────────────
 
@@ -127,6 +129,8 @@ function PhaseStepper({ phaseNames }: PhaseStepperProps) {
 // ─── Character card ──────────────────────────────────────────────────────────
 
 interface CharacterCardProps {
+  worldId: WorldId;
+  characterId: CharacterId;
   name: string;
   aliases: string[];
   description: string;
@@ -138,6 +142,8 @@ interface CharacterCardProps {
 }
 
 function CharacterCard({
+  worldId,
+  characterId,
   name,
   aliases,
   description,
@@ -149,9 +155,35 @@ function CharacterCard({
 }: CharacterCardProps) {
   const { t } = useTranslation(["character", "common"]);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [disclosureCounts, setDisclosureCounts] = useState<RefCounts | null>(
+    null,
+  );
+  const [loadingCounts, setLoadingCounts] = useState(false);
 
   const visibleTags = tags.slice(0, 3);
   const extraCount = tags.length - 3;
+
+  // ADR-0006: before deleting, count how many events/scenes reference this
+  // character. If > 0, disclose the blast radius before the cascade.
+  async function handleDeleteClick(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (loadingCounts) return;
+    setLoadingCounts(true);
+    try {
+      const counts = await countCharacterRefs(worldId, characterId);
+      setDisclosureCounts(counts);
+    } catch {
+      // Count failed — fall back to the simple (non-disclosure) confirm.
+      setDisclosureCounts(null);
+    } finally {
+      setLoadingCounts(false);
+      setConfirmOpen(true);
+    }
+  }
+
+  const isDisclosable =
+    disclosureCounts !== null &&
+    (disclosureCounts.events > 0 || disclosureCounts.scenes > 0);
 
   return (
     <>
@@ -199,10 +231,7 @@ function CharacterCard({
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   variant="destructive"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setConfirmOpen(true);
-                  }}
+                  onClick={handleDeleteClick}
                 >
                   <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
                   {t("character:card.deleteAction")}
@@ -254,10 +283,19 @@ function CharacterCard({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {t("character:card.deleteTitle")}
+              {isDisclosable
+                ? t("character:card.deleteDisclosableTitle", { name })
+                : t("character:card.deleteTitle")}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {t("character:card.deleteDescription", { name })}
+              {isDisclosable
+                ? t("character:card.deleteDisclosableDescription", {
+                    name,
+                    events: disclosureCounts!.events,
+                    scenes: disclosureCounts!.scenes,
+                    phases: phaseNames.length,
+                  })
+                : t("character:card.deleteDescription", { name })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

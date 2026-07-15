@@ -167,6 +167,8 @@ function CharactersPage() {
             {filtered.map((entity) => (
               <CharacterCard
                 key={entity.id}
+                worldId={wid}
+                characterId={entity.id}
                 name={entity.name}
                 aliases={entity.aliases}
                 description={entity.description}

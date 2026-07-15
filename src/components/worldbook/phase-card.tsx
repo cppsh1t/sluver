@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,7 @@ import {
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { EventRefPicker } from "@/components/worldbook/event-ref-picker";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Cancel01Icon,
@@ -39,10 +41,13 @@ import {
   PencilEdit01Icon,
   SaveIcon,
 } from "@hugeicons/core-free-icons";
-import type { CharacterPhase } from "@/types";
+import { countPhaseRefs, type RefCounts } from "@/api";
 import type { CreatePhaseInput } from "@/api";
+import type { CharacterPhase, Event, EventId, WorldId } from "@/types";
 
 interface PhaseCardProps {
+  worldId: WorldId;
+  events: Event[];
   phase?: CharacterPhase;
   isDragging?: boolean;
   dragHandleProps?: React.HTMLAttributes<HTMLElement>;
@@ -52,6 +57,8 @@ interface PhaseCardProps {
 }
 
 function PhaseCard({
+  worldId,
+  events,
   phase,
   isDragging,
   dragHandleProps,
@@ -59,14 +66,21 @@ function PhaseCard({
   onCancel,
   onDelete,
 }: PhaseCardProps) {
-  const { t } = useTranslation(["character", "common"]);
+  const { t } = useTranslation(["character", "common", "event"]);
   const isDraft = !phase;
 
   const [editing, setEditing] = useState(!phase);
   const [name, setName] = useState(phase?.name ?? "");
   const [appearance, setAppearance] = useState(phase?.appearance ?? "");
   const [changes, setChanges] = useState(phase?.changes ?? "");
+  const [triggerEventId, setTriggerEventId] = useState<EventId | null>(
+    phase?.triggerEventId ?? null,
+  );
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [disclosureCounts, setDisclosureCounts] = useState<RefCounts | null>(
+    null,
+  );
+  const [loadingCounts, setLoadingCounts] = useState(false);
   const [saving, setSaving] = useState(false);
 
   function resetToPhase() {
@@ -74,6 +88,7 @@ function PhaseCard({
       setName(phase.name);
       setAppearance(phase.appearance);
       setChanges(phase.changes);
+      setTriggerEventId(phase.triggerEventId);
     }
   }
 
@@ -88,6 +103,7 @@ function PhaseCard({
         name: trimmedName,
         appearance: trimmedAppearance,
         changes: changes.trim(),
+        triggerEventId,
       });
       if (!isDraft) {
         setEditing(false);
@@ -112,6 +128,31 @@ function PhaseCard({
     resetToPhase();
     setEditing(true);
   }
+
+  // ADR-0006: before deleting, count how many events/scenes reference this
+  // phase. If > 0, disclose the blast radius before the cascade.
+  async function handleDeleteClick() {
+    if (loadingCounts) return;
+    setLoadingCounts(true);
+    try {
+      const counts = await countPhaseRefs(worldId, phase!.id);
+      setDisclosureCounts(counts);
+    } catch {
+      // Count failed — fall back to the simple (non-disclosure) confirm.
+      setDisclosureCounts(null);
+    } finally {
+      setLoadingCounts(false);
+      setConfirmOpen(true);
+    }
+  }
+
+  const isDisclosable =
+    disclosureCounts !== null &&
+    (disclosureCounts.events > 0 || disclosureCounts.scenes > 0);
+
+  const triggerEvent = phase?.triggerEventId
+    ? events.find((e) => e.id === phase.triggerEventId)
+    : undefined;
 
   if (editing) {
     // ─── Edit mode ──────────────────────────────────────────────────────────
@@ -153,6 +194,14 @@ function PhaseCard({
                 onChange={(e) => setChanges(e.currentTarget.value)}
                 placeholder={t("character:phase.changesPlaceholder")}
                 rows={3}
+              />
+            </Field>
+            <Field>
+              <FieldLabel>{t("event:picker.event.title")}</FieldLabel>
+              <EventRefPicker
+                events={events}
+                selectedEventId={triggerEventId}
+                onSelect={setTriggerEventId}
               />
             </Field>
           </FieldGroup>
@@ -210,7 +259,7 @@ function PhaseCard({
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   variant="destructive"
-                  onClick={() => setConfirmOpen(true)}
+                  onClick={handleDeleteClick}
                 >
                   <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
                   {t("character:phase.delete")}
@@ -228,6 +277,20 @@ function PhaseCard({
               {phase!.changes}
             </p>
           )}
+          {triggerEvent && (
+            <p className="text-sm text-muted-foreground">
+              <Link
+                to="/world/$worldId/events/$eventId"
+                params={{
+                  worldId,
+                  eventId: triggerEvent.id,
+                }}
+                className="underline-offset-4 hover:text-foreground hover:underline"
+              >
+                {triggerEvent.name}
+              </Link>
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -235,10 +298,20 @@ function PhaseCard({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {t("character:phase.deleteTitle")}
+              {isDisclosable
+                ? t("character:phase.deleteDisclosableTitle", {
+                    name: phase!.name,
+                  })
+                : t("character:phase.deleteTitle")}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {t("character:phase.deleteDescription", { name: phase!.name })}
+              {isDisclosable
+                ? t("character:phase.deleteDisclosableDescription", {
+                    name: phase!.name,
+                    events: disclosureCounts!.events,
+                    scenes: disclosureCounts!.scenes,
+                  })
+                : t("character:phase.deleteDescription", { name: phase!.name })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

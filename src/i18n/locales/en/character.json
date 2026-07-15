@@ -20,7 +20,9 @@
     "editAction": "Edit info",
     "deleteAction": "Delete",
     "deleteTitle": "Delete character",
-    "deleteDescription": "Delete \"{{name}}\"? All of this character's phases will be removed. This cannot be undone."
+    "deleteDescription": "Delete \"{{name}}\"? All of this character's phases will be removed. This cannot be undone.",
+    "deleteDisclosableTitle": "Delete character \"{{name}}\"",
+    "deleteDisclosableDescription": "This will also remove all its appearances in {{events}} event(s) and {{scenes}} scene(s), as well as {{phases}} phase(s). This cannot be undone."
   },
   "create": {
     "title": "New Character",
@@ -66,6 +68,8 @@
     "changesPlaceholder": "State, identity, relationships, abilities in this period...",
     "deleteTitle": "Delete phase",
     "deleteDescription": "Delete phase \"{{name}}\"?",
+    "deleteDisclosableTitle": "Delete phase \"{{name}}\"",
+    "deleteDisclosableDescription": "This will also remove its appearances in {{events}} event(s) and {{scenes}} scene(s). This cannot be undone.",
     "nameRequired": "Phase name is required",
     "appearanceRequired": "Appearance is required"
   },
