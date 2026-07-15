@@ -16,7 +16,9 @@ export { eventIdSchema, type EventId } from "./ids";
  * discoveries, transformations, etc. They contain:
  * - 参与角色 (participating characters, referenced at specific phases)
  * - 地点 (location, referenced by ID — single location per event)
- * - 时间范围 (startAt / endAt — in-fiction dates, ISO 8601 strings)
+ * - 时间范围 (startAt / endAt — stored as ISO 8601 datetime, the canonical
+ *   anchor on the story timeline; fictional-calendar input via a future
+ *   time-converter feature, decoupled from storage)
  * - 描述 (description)
  *
  * Events also serve as **phase transition triggers** for characters
@@ -31,9 +33,12 @@ export const eventSchema = z.object({
   name: z.string(),
   /** What happened. */
   description: z.string(),
-  /** Story timeline — when the event starts (ISO 8601). `null` if unspecified. */
+  /** Story timeline — when the event starts. Stored as ISO 8601 datetime
+   *  (canonical anchor); fictional-calendar input via a future time-converter.
+   *  `null` if unspecified. */
   startAt: z.iso.datetime().nullable(),
-  /** Story timeline — when the event ends (ISO 8601). `null` if unspecified. */
+  /** Story timeline — when the event ends. Same storage semantics as `startAt`.
+   *  `null` if unspecified. */
   endAt: z.iso.datetime().nullable(),
   /** Characters who participate in this event, pinned to their phase at the time. */
   characterRefs: z.array(characterRefSchema),
