@@ -1,0 +1,93 @@
+{
+  "entityName": { "singular": "Event", "plural": "Events" },
+  "list": {
+    "title": "Events",
+    "subtitle": "Important events that happened in the world",
+    "createButton": "New Event",
+    "searchPlaceholder": "Search events...",
+    "empty": {
+      "title": "No events yet",
+      "description": "Create the first event to record important moments in the world."
+    },
+    "noResults": "No matching events found"
+  },
+  "form": {
+    "createTitle": "New {{entity}}",
+    "editTitle": "Edit {{entity}}",
+    "createDescription": "You can add participants, location, and more on the detail page.",
+    "editDescription": "Update this event's basic information.",
+    "nameLabel": "Name",
+    "namePlaceholder": "Event name",
+    "nameDescription": "Must be unique within this world",
+    "descriptionLabel": "Description",
+    "descriptionPlaceholder": "What happened...",
+    "notesLabel": "Notes",
+    "notesPlaceholder": "Additional notes...",
+    "tagsLabel": "Tags",
+    "tagsPlaceholder": "Add tags...",
+    "startAtLabel": "Start time",
+    "endAtLabel": "End time"
+  },
+  "card": {
+    "participantsCount": "{{count}} participants",
+    "noParticipants": "No participants",
+    "noLocation": "No location",
+    "noTime": "No time specified",
+    "timeRange": "{{start}} ~ {{end}}",
+    "deleteAction": "Delete",
+    "deleteTitle": "Delete {{entity}}",
+    "deleteDescription": "Are you sure you want to delete \"{{name}}\"? This cannot be undone."
+  },
+  "detail": {
+    "editBasics": "Edit basic info",
+    "participants": {
+      "title": "Participants",
+      "add": "Add participant",
+      "empty": "No participants yet",
+      "emptyHint": "Select a character and a phase to add a participant"
+    },
+    "location": {
+      "title": "Location",
+      "change": "Change",
+      "none": "No location specified",
+      "selectNone": "No location"
+    },
+    "notes": {
+      "title": "Notes",
+      "empty": "No notes"
+    },
+    "timeSummary": {
+      "unspecified": "No time specified"
+    }
+  },
+  "picker": {
+    "character": {
+      "title": "Select character",
+      "searchPlaceholder": "Search characters...",
+      "zeroPhasesHint": "{{count}} characters have no phases and cannot participate",
+      "phaseCount": "{{count}} phases",
+      "noPhases": "No phases"
+    },
+    "phase": {
+      "title": "Select phase",
+      "back": "Back to character selection",
+      "alreadySelected": "Already added"
+    },
+    "location": {
+      "title": "Select location",
+      "none": "No location"
+    },
+    "event": {
+      "title": "Select trigger event",
+      "none": "No trigger event"
+    }
+  },
+  "toast": {
+    "createSuccess": "Event created",
+    "updateSuccess": "Event updated",
+    "deleteSuccess": "Event deleted",
+    "createFailed": "Failed to create",
+    "updateFailed": "Failed to update",
+    "deleteFailed": "Failed to delete"
+  }
+}

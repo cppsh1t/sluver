@@ -1,0 +1,93 @@
+{
+  "entityName": { "singular": "事件", "plural": "事件" },
+  "list": {
+    "title": "事件",
+    "subtitle": "世界中发生的重要事件",
+    "createButton": "新建事件",
+    "searchPlaceholder": "搜索事件...",
+    "empty": {
+      "title": "还没有事件",
+      "description": "创建第一个事件，记录世界中发生的重要时刻。"
+    },
+    "noResults": "没有找到匹配的事件"
+  },
+  "form": {
+    "createTitle": "新建{{entity}}",
+    "editTitle": "编辑{{entity}}",
+    "createDescription": "创建后可在详情页补充参与者、地点等信息。",
+    "editDescription": "修改事件的基础信息。",
+    "nameLabel": "名称",
+    "namePlaceholder": "事件名称",
+    "nameDescription": "在世界中唯一",
+    "descriptionLabel": "描述",
+    "descriptionPlaceholder": "发生了什么...",
+    "notesLabel": "备注",
+    "notesPlaceholder": "额外记录...",
+    "tagsLabel": "标签",
+    "tagsPlaceholder": "添加标签...",
+    "startAtLabel": "开始时间",
+    "endAtLabel": "结束时间"
+  },
+  "card": {
+    "participantsCount": "{{count}} 个参与者",
+    "noParticipants": "无参与者",
+    "noLocation": "无地点",
+    "noTime": "未指定时间",
+    "timeRange": "{{start}} ~ {{end}}",
+    "deleteAction": "删除",
+    "deleteTitle": "删除{{entity}}",
+    "deleteDescription": "确定要删除「{{name}}」吗？此操作不可撤销。"
+  },
+  "detail": {
+    "editBasics": "编辑基础信息",
+    "participants": {
+      "title": "参与者",
+      "add": "添加参与者",
+      "empty": "尚未添加参与者",
+      "emptyHint": "选择角色及其阶段来添加参与者"
+    },
+    "location": {
+      "title": "地点",
+      "change": "更改",
+      "none": "未指定地点",
+      "selectNone": "无地点"
+    },
+    "notes": {
+      "title": "备注",
+      "empty": "暂无备注"
+    },
+    "timeSummary": {
+      "unspecified": "未指定时间"
+    }
+  },
+  "picker": {
+    "character": {
+      "title": "选择角色",
+      "searchPlaceholder": "搜索角色...",
+      "zeroPhasesHint": "{{count}} 个角色尚无阶段，无法参与",
+      "phaseCount": "{{count}} 个阶段",
+      "noPhases": "无阶段"
+    },
+    "phase": {
+      "title": "选择阶段",
+      "back": "返回选择角色",
+      "alreadySelected": "已添加"
+    },
+    "location": {
+      "title": "选择地点",
+      "none": "无地点"
+    },
+    "event": {
+      "title": "选择触发事件",
+      "none": "无触发事件"
+    }
+  },
+  "toast": {
+    "createSuccess": "事件已创建",
+    "updateSuccess": "事件已更新",
+    "deleteSuccess": "事件已删除",
+    "createFailed": "创建失败",
+    "updateFailed": "更新失败",
+    "deleteFailed": "删除失败"
+  }
+}
