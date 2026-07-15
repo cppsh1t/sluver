@@ -60,26 +60,28 @@ function SearchablePickerDialog({
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
 
-        <div className="relative px-4 pb-2">
-          <HugeiconsIcon
-            icon={Search01Icon}
-            strokeWidth={2}
-            className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-          />
-          <Input
-            type="search"
-            value={searchValue}
-            onChange={(e) => onSearchChange(e.target.value)}
-            placeholder={searchPlaceholder}
-            className="h-9 pl-8"
-          />
+        <div className="px-4 pb-2">
+          <div className="relative">
+            <HugeiconsIcon
+              icon={Search01Icon}
+              strokeWidth={2}
+              className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              type="search"
+              value={searchValue}
+              onChange={(e) => onSearchChange(e.target.value)}
+              placeholder={searchPlaceholder}
+              className="h-9 pl-8"
+            />
+          </div>
         </div>
 
         {mode === "single" ? (
           <div className="flex-1 overflow-y-auto p-4">{children}</div>
         ) : (
           <div className="flex flex-1 gap-2 overflow-hidden px-4">
-            <div className="flex-1 overflow-y-auto">{children}</div>
+            <div className="min-w-0 flex-1 overflow-y-auto p-1">{children}</div>
             {sidePanel ? (
               <div className="w-64 shrink-0 overflow-y-auto border-l pl-2">
                 {sidePanel}
