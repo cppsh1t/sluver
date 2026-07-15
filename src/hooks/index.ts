@@ -41,3 +41,11 @@ export {
   useDeletePhase,
   useReorderPhases,
 } from "./use-characters";
+
+export {
+  useEvents,
+  useEvent,
+  useCreateEvent,
+  useUpdateEvent,
+  useDeleteEvent,
+} from "./use-events";
