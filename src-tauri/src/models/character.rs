@@ -18,6 +18,7 @@ pub struct CharacterPhase {
     pub appearance: String,
     pub changes: String,
     pub trigger_event_id: Option<String>,
+    pub trigger_event_name: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }

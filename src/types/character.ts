@@ -43,6 +43,8 @@ export const characterPhaseSchema = z.object({
   changes: z.string(),
   /** ID of the Event that triggered the transition INTO this phase. `null` for the initial phase. */
   triggerEventId: eventIdSchema.nullable(),
+  /** Resolved name of the trigger event (LEFT JOIN from events table). `null` when `triggerEventId` is null. */
+  triggerEventName: z.string().nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });

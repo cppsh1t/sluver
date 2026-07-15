@@ -40,8 +40,10 @@ fn row_to_character_raw(row: &rusqlite::Row) -> rusqlite::Result<CharacterRaw> {
 
 fn load_phases(conn: &rusqlite::Connection, character_id: &str) -> rusqlite::Result<Vec<CharacterPhase>> {
     let mut stmt = conn.prepare(
-        "SELECT id, character_id, name, appearance, changes, trigger_event_id, created_at, updated_at
-         FROM character_phases WHERE character_id = ?1 ORDER BY position",
+        "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.changes, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name
+         FROM character_phases cp
+         LEFT JOIN events e ON cp.trigger_event_id = e.id
+         WHERE cp.character_id = ?1 ORDER BY cp.position",
     )?;
     let phases = stmt
         .query_map(params![character_id], |row| {
@@ -52,6 +54,7 @@ fn load_phases(conn: &rusqlite::Connection, character_id: &str) -> rusqlite::Res
                 appearance: row.get("appearance")?,
                 changes: row.get("changes")?,
                 trigger_event_id: row.get("trigger_event_id")?,
+                trigger_event_name: row.get("trigger_event_name")?,
                 created_at: row.get("created_at")?,
                 updated_at: row.get("updated_at")?,
             })
@@ -141,8 +144,10 @@ pub fn list_characters(world_id: String, state: State<'_, DbManager>) -> Result<
 
         // (b) Batch-load ALL phases
         let mut phase_stmt = conn.prepare(
-            "SELECT id, character_id, name, appearance, changes, trigger_event_id, created_at, updated_at
-             FROM character_phases ORDER BY character_id, position",
+            "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.changes, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name
+             FROM character_phases cp
+             LEFT JOIN events e ON cp.trigger_event_id = e.id
+             ORDER BY cp.character_id, cp.position",
         )?;
         let all_phases: Vec<(String, CharacterPhase)> = phase_stmt
             .query_map([], |row| {
@@ -156,6 +161,7 @@ pub fn list_characters(world_id: String, state: State<'_, DbManager>) -> Result<
                         appearance: row.get("appearance")?,
                         changes: row.get("changes")?,
                         trigger_event_id: row.get("trigger_event_id")?,
+                        trigger_event_name: row.get("trigger_event_name")?,
                         created_at: row.get("created_at")?,
                         updated_at: row.get("updated_at")?,
                     },
@@ -271,8 +277,10 @@ pub fn add_phase(
 
         // Read back
         conn.query_row(
-            "SELECT id, character_id, name, appearance, changes, trigger_event_id, created_at, updated_at
-             FROM character_phases WHERE id = ?1",
+            "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.changes, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name
+             FROM character_phases cp
+             LEFT JOIN events e ON cp.trigger_event_id = e.id
+             WHERE cp.id = ?1",
             params![phase_id],
             |row| {
                 Ok(CharacterPhase {
@@ -282,6 +290,7 @@ pub fn add_phase(
                     appearance: row.get("appearance")?,
                     changes: row.get("changes")?,
                     trigger_event_id: row.get("trigger_event_id")?,
+                    trigger_event_name: row.get("trigger_event_name")?,
                     created_at: row.get("created_at")?,
                     updated_at: row.get("updated_at")?,
                 })
@@ -312,8 +321,10 @@ pub fn update_phase(
         }
 
         conn.query_row(
-            "SELECT id, character_id, name, appearance, changes, trigger_event_id, created_at, updated_at
-             FROM character_phases WHERE id = ?1",
+            "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.changes, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name
+             FROM character_phases cp
+             LEFT JOIN events e ON cp.trigger_event_id = e.id
+             WHERE cp.id = ?1",
             params![phase_id],
             |row| {
                 Ok(CharacterPhase {
@@ -323,6 +334,7 @@ pub fn update_phase(
                     appearance: row.get("appearance")?,
                     changes: row.get("changes")?,
                     trigger_event_id: row.get("trigger_event_id")?,
+                    trigger_event_name: row.get("trigger_event_name")?,
                     created_at: row.get("created_at")?,
                     updated_at: row.get("updated_at")?,
                 })
