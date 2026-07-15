@@ -44,7 +44,8 @@
       "title": "参与者",
       "add": "添加参与者",
       "empty": "尚未添加参与者",
-      "emptyHint": "选择角色及其阶段来添加参与者"
+      "emptyHint": "选择角色及其阶段来添加参与者",
+      "removeAriaLabel": "移除参与者"
     },
     "location": {
       "title": "地点",
@@ -71,15 +72,22 @@
     "phase": {
       "title": "选择阶段",
       "back": "返回选择角色",
-      "alreadySelected": "已添加"
+      "alreadySelected": "已添加",
+      "selectCharacter": "选择左侧角色查看阶段",
+      "selectedCount": "已选 {{count}} 个阶段"
     },
     "location": {
       "title": "选择地点",
-      "none": "无地点"
+      "none": "无地点",
+      "searchPlaceholder": "搜索地点..."
     },
     "event": {
       "title": "选择触发事件",
-      "none": "无触发事件"
+      "none": "无触发事件",
+      "searchPlaceholder": "搜索事件..."
+    },
+    "participants": {
+      "commit": "保存更改"
     }
   },
   "toast": {

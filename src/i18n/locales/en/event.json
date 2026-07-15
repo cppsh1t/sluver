@@ -44,7 +44,8 @@
       "title": "Participants",
       "add": "Add participant",
       "empty": "No participants yet",
-      "emptyHint": "Select a character and a phase to add a participant"
+      "emptyHint": "Select a character and a phase to add a participant",
+      "removeAriaLabel": "Remove participant"
     },
     "location": {
       "title": "Location",
@@ -71,15 +72,22 @@
     "phase": {
       "title": "Select phase",
       "back": "Back to character selection",
-      "alreadySelected": "Already added"
+      "alreadySelected": "Already added",
+      "selectCharacter": "Select a character to view phases",
+      "selectedCount": "{{count}} phases selected"
     },
     "location": {
       "title": "Select location",
-      "none": "No location"
+      "none": "No location",
+      "searchPlaceholder": "Search locations..."
     },
     "event": {
       "title": "Select trigger event",
-      "none": "No trigger event"
+      "none": "No trigger event",
+      "searchPlaceholder": "Search events..."
+    },
+    "participants": {
+      "commit": "Save changes"
     }
   },
   "toast": {
