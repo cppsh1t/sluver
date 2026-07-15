@@ -68,3 +68,18 @@ export function reorderPhases(
 ): Promise<void> {
   return call<void>('reorder_phases', { worldId, characterId, phaseIds });
 }
+
+// ─── Ref counts (disclosure before delete) ──────────────────────────────────
+
+export interface RefCounts {
+  events: number;
+  scenes: number;
+}
+
+export function countPhaseRefs(worldId: WorldId, phaseId: PhaseId): Promise<RefCounts> {
+  return call<RefCounts>('count_phase_refs', { worldId, phaseId });
+}
+
+export function countCharacterRefs(worldId: WorldId, characterId: CharacterId): Promise<RefCounts> {
+  return call<RefCounts>('count_character_refs', { worldId, characterId });
+}
