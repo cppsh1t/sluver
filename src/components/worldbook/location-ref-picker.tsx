@@ -1,12 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { SearchablePickerDialog } from "@/components/worldbook/searchable-picker-dialog";
+import { EntityCard } from "@/components/worldbook/entity-card";
+import { cn } from "@/lib/utils";
 import type { Location } from "@/types";
 
 interface LocationRefPickerProps {
@@ -16,8 +14,8 @@ interface LocationRefPickerProps {
 }
 
 /**
- * Single-step popover for picking a Location (or clearing it via "无地点").
- * Each location shows its name and a 1–2 line description preview.
+ * Single-panel searchable dialog for picking a Location (or clearing it via
+ * "无地点"). Selecting a card commits immediately and closes the dialog.
  */
 function LocationRefPicker({
   locations,
@@ -26,51 +24,72 @@ function LocationRefPicker({
 }: LocationRefPickerProps) {
   const { t } = useTranslation(["event", "common"]);
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return locations;
+    return locations.filter((loc) =>
+      loc.name.toLowerCase().includes(q),
+    );
+  }, [locations, search]);
 
   function handleSelect(id: string | null) {
     onSelect(id);
     setOpen(false);
   }
 
+  function handleOpenChange(next: boolean) {
+    setOpen(next);
+    if (next) setSearch("");
+  }
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger render={<Button variant="outline" size="sm" />}>
+    <>
+      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
         {t("event:detail.location.change")}
-      </PopoverTrigger>
-      <PopoverContent className="w-80 p-0" align="start">
-        <p className="px-2 pt-2 text-xs font-medium text-muted-foreground">
-          {t("event:picker.location.title")}
-        </p>
-        <div className="flex max-h-72 flex-col overflow-y-auto p-1">
+      </Button>
+      <SearchablePickerDialog
+        open={open}
+        onOpenChange={handleOpenChange}
+        title={t("event:picker.location.title")}
+        searchPlaceholder={t("event:picker.location.searchPlaceholder")}
+        searchValue={search}
+        onSearchChange={setSearch}
+        mode="single"
+      >
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <button
             type="button"
-            className="rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted"
             onClick={() => handleSelect(null)}
+            className={cn(
+              "flex items-center justify-center rounded-lg border-2 border-dashed p-4 text-sm text-muted-foreground transition-colors hover:bg-muted",
+              selectedLocationId === null && "border-primary text-primary",
+            )}
           >
             {t("event:picker.location.none")}
           </button>
-          {locations.map((loc) => {
-            const active = loc.id === selectedLocationId;
-            return (
-              <button
-                key={loc.id}
-                type="button"
-                aria-current={active ? true : undefined}
-                className="flex flex-col gap-0.5 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted aria-current:bg-muted"
-                onClick={() => handleSelect(loc.id)}
-              >
-                <span className="truncate font-medium">{loc.name}</span>
-                {loc.description && (
-                  <span className="line-clamp-2 text-muted-foreground">
-                    {loc.description}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+          {filtered.map((loc) => (
+            <EntityCard
+              key={loc.id}
+              name={loc.name}
+              description={loc.description}
+              tags={loc.tags}
+              updatedAt={loc.updatedAt}
+              entityType="location"
+              selectable
+              selected={loc.id === selectedLocationId}
+              onSelect={() => handleSelect(loc.id)}
+            />
+          ))}
         </div>
-      </PopoverContent>
-    </Popover>
+        {filtered.length === 0 && (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            {t("event:list.noResults")}
+          </p>
+        )}
+      </SearchablePickerDialog>
+    </>
   );
 }
 

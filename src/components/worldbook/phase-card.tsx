@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { useMemo, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,7 @@ import {
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { EventCard } from "@/components/worldbook/event-card";
 import { EventRefPicker } from "@/components/worldbook/event-ref-picker";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -43,11 +44,12 @@ import {
 } from "@hugeicons/core-free-icons";
 import { countPhaseRefs, type RefCounts } from "@/api";
 import type { CreatePhaseInput } from "@/api";
-import type { CharacterPhase, Event, EventId, WorldId } from "@/types";
+import type { CharacterPhase, Event, EventId, Location, WorldId } from "@/types";
 
 interface PhaseCardProps {
   worldId: WorldId;
   events: Event[];
+  locations: Location[];
   phase?: CharacterPhase;
   isDragging?: boolean;
   dragHandleProps?: React.HTMLAttributes<HTMLElement>;
@@ -59,6 +61,7 @@ interface PhaseCardProps {
 function PhaseCard({
   worldId,
   events,
+  locations,
   phase,
   isDragging,
   dragHandleProps,
@@ -67,6 +70,7 @@ function PhaseCard({
   onDelete,
 }: PhaseCardProps) {
   const { t } = useTranslation(["character", "common", "event"]);
+  const navigate = useNavigate();
   const isDraft = !phase;
 
   const [editing, setEditing] = useState(!phase);
@@ -154,6 +158,14 @@ function PhaseCard({
     ? events.find((e) => e.id === phase.triggerEventId)
     : undefined;
 
+  const locationNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const loc of locations) {
+      map.set(loc.id, loc.name);
+    }
+    return map;
+  }, [locations]);
+
   if (editing) {
     // ─── Edit mode ──────────────────────────────────────────────────────────
     return (
@@ -199,7 +211,9 @@ function PhaseCard({
             <Field>
               <FieldLabel>{t("event:picker.event.title")}</FieldLabel>
               <EventRefPicker
+                worldId={worldId}
                 events={events}
+                locations={locations}
                 selectedEventId={triggerEventId}
                 onSelect={setTriggerEventId}
               />
@@ -278,18 +292,23 @@ function PhaseCard({
             </p>
           )}
           {triggerEvent && (
-            <p className="text-sm text-muted-foreground">
-              <Link
-                to="/world/$worldId/events/$eventId"
-                params={{
-                  worldId,
-                  eventId: triggerEvent.id,
-                }}
-                className="underline-offset-4 hover:text-foreground hover:underline"
-              >
-                {triggerEvent.name}
-              </Link>
-            </p>
+            <EventCard
+              event={triggerEvent}
+              worldId={worldId}
+              locationName={
+                triggerEvent.locationId
+                  ? (locationNameById.get(triggerEvent.locationId) ?? null)
+                  : null
+              }
+              selectable
+              selected
+              onSelect={() =>
+                navigate({
+                  to: "/world/$worldId/events/$eventId",
+                  params: { worldId, eventId: triggerEvent.id },
+                })
+              }
+            />
           )}
         </CardContent>
       </Card>

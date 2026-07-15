@@ -2,190 +2,230 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { SearchablePickerDialog } from "@/components/worldbook/searchable-picker-dialog";
+import { CharacterCard } from "@/components/worldbook/character-card";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Add01Icon, ArrowLeft02Icon } from "@hugeicons/core-free-icons";
+import { Add01Icon, Tick02Icon } from "@hugeicons/core-free-icons";
+import { cn } from "@/lib/utils";
 import type { CharacterRef, Character, WorldId } from "@/types";
 
 interface CharacterRefPickerProps {
   worldId: WorldId;
   selectedRefs: CharacterRef[];
   characters: Character[];
-  onAdd: (ref: CharacterRef) => void;
+  /** Fires on commit with the FULL updated participant list (not a delta). */
+  onCommit: (refs: CharacterRef[]) => void;
 }
 
 /**
- * Two-step popover for adding a `{ characterId, phaseId }` participant ref.
+ * `{characterId}:${phaseId}` — both IDs are UUID v7 (hex + hyphens only), so
+ * `:` is a safe delimiter that can never collide with the ID contents.
+ */
+function pairKey(characterId: string, phaseId: string): string {
+  return `${characterId}:${phaseId}`;
+}
+
+/**
+ * Two-panel dialog for composing the participant list of an event.
  *
- * Step 1 — pick a Character (only those with ≥1 phase are eligible; a muted
- * hint reports how many characters have zero phases and are excluded).
- * Step 2 — pick a Phase belonging to that character; already-selected pairs
- * are greyed out with an "已添加" label.
+ * Left panel — searchable grid of eligible characters (those with ≥1 phase).
+ *   Clicking a card *focuses* it (ring); the selection unit is the
+ *   { character, phase } pair, not the character alone, so a click never
+ *   toggles selection by itself.
+ * Right panel — phases of the focused character. Clicking a phase toggles
+ *   the pair in the local selection set. Selections persist across character
+ *   switches (only the right-panel view changes).
+ * Footer — Cancel (discard local edits) / Commit (send the full list via
+ *   `onCommit`). The dialog is a sibling of the trigger button, not a child.
+ *
+ * See ADR-0007 for the two-panel picker layout rationale.
  */
 function CharacterRefPicker({
+  worldId,
   selectedRefs,
   characters,
-  onAdd,
+  onCommit,
 }: CharacterRefPickerProps) {
   const { t } = useTranslation(["event", "common"]);
   const [open, setOpen] = useState(false);
-  const [step, setStep] = useState<"character" | "phase">("character");
-  const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(
+  const [query, setQuery] = useState("");
+  const [focusedCharacterId, setFocusedCharacterId] = useState<string | null>(
     null,
   );
-  const [query, setQuery] = useState("");
+  const [selectedPairs, setSelectedPairs] = useState<Set<string>>(new Set());
 
   // Only characters with at least one phase can participate.
   const eligible = useMemo(
     () => characters.filter((c) => c.phases.length > 0),
     [characters],
   );
-  const zeroPhaseCount = characters.length - eligible.length;
 
+  // Search matches name OR any alias (case-insensitive).
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return eligible;
-    return eligible.filter((c) => c.name.toLowerCase().includes(q));
+    return eligible.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        c.aliases.some((a) => a.toLowerCase().includes(q)),
+    );
   }, [eligible, query]);
 
-  const selectedCharacter = useMemo(
-    () => eligible.find((c) => c.id === selectedCharacterId) ?? null,
-    [eligible, selectedCharacterId],
+  const focusedCharacter = useMemo(
+    () => characters.find((c) => c.id === focusedCharacterId) ?? null,
+    [characters, focusedCharacterId],
   );
 
-  function isRefSelected(characterId: string, phaseId: string): boolean {
-    return selectedRefs.some(
-      (r) => r.characterId === characterId && r.phaseId === phaseId,
-    );
-  }
-
-  // Reset internal navigation state when the popover closes so the next open
-  // always starts on the character step.
   function handleOpenChange(next: boolean) {
     setOpen(next);
-    if (!next) {
-      setStep("character");
-      setSelectedCharacterId(null);
+    if (next) {
+      // Re-seed local state from the committed refs on every open.
+      setSelectedPairs(
+        new Set(selectedRefs.map((r) => pairKey(r.characterId, r.phaseId))),
+      );
       setQuery("");
+      setFocusedCharacterId(null);
     }
   }
 
-  function handlePickCharacter(id: string) {
-    setSelectedCharacterId(id);
-    setStep("phase");
+  function togglePair(characterId: string, phaseId: string) {
+    setSelectedPairs((prev) => {
+      const key = pairKey(characterId, phaseId);
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
   }
 
-  function handlePickPhase(characterId: string, phaseId: string) {
-    onAdd({
-      characterId: characterId as CharacterRef["characterId"],
-      phaseId: phaseId as CharacterRef["phaseId"],
+  function handleCommit() {
+    const refs: CharacterRef[] = Array.from(selectedPairs).map((key) => {
+      const [charId, phaseId] = key.split(":");
+      return {
+        characterId: charId as CharacterRef["characterId"],
+        phaseId: phaseId as CharacterRef["phaseId"],
+      };
     });
-    handleOpenChange(false);
+    onCommit(refs);
+    setOpen(false);
   }
+
+  const commitLabel = t("event:picker.participants.commit");
 
   return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger render={<Button size="sm" />}>
+    <>
+      <Button size="sm" onClick={() => handleOpenChange(true)}>
         <HugeiconsIcon
           icon={Add01Icon}
           strokeWidth={2}
           data-icon="inline-start"
         />
         {t("event:detail.participants.add")}
-      </PopoverTrigger>
-      <PopoverContent className="w-80 p-0" align="start">
-        {step === "character" ? (
-          <div className="flex flex-col gap-2 p-2">
-            <p className="px-1 text-xs font-medium text-muted-foreground">
-              {t("event:picker.character.title")}
-            </p>
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.currentTarget.value)}
-              placeholder={t("event:picker.character.searchPlaceholder")}
-              className="h-7"
-            />
-            <div className="flex max-h-64 flex-col overflow-y-auto">
-              {filtered.length === 0 ? (
-                <p className="px-1 py-2 text-xs text-muted-foreground">
-                  {t("event:list.noResults")}
-                </p>
-              ) : (
-                filtered.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
-                    onClick={() => handlePickCharacter(c.id)}
-                  >
-                    <span className="truncate">{c.name}</span>
-                    <span className="shrink-0 text-muted-foreground">
-                      {t("event:picker.character.phaseCount", {
-                        count: c.phases.length,
-                      })}
-                    </span>
-                  </button>
-                ))
-              )}
-            </div>
-            {zeroPhaseCount > 0 && (
-              <p className="px-1 text-[0.625rem] text-muted-foreground/70">
-                {t("event:picker.character.zeroPhasesHint", {
-                  count: zeroPhaseCount,
-                })}
+      </Button>
+
+      <SearchablePickerDialog
+        open={open}
+        onOpenChange={handleOpenChange}
+        title={t("event:picker.character.title")}
+        searchPlaceholder={t("event:picker.character.searchPlaceholder")}
+        searchValue={query}
+        onSearchChange={setQuery}
+        mode="two-panel"
+        dialogClassName="sm:max-w-4xl"
+        sidePanel={
+          focusedCharacter ? (
+            <div className="flex flex-col gap-2 py-1">
+              <p className="px-1 text-xs font-medium text-muted-foreground">
+                {focusedCharacter.name}
               </p>
-            )}
-          </div>
-        ) : (
-          <div className="flex flex-col gap-1 p-2">
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => setStep("character")}
-              >
-                <HugeiconsIcon icon={ArrowLeft02Icon} strokeWidth={2} />
-                <span className="sr-only">
-                  {t("event:picker.phase.back")}
-                </span>
-              </Button>
-              <p className="text-xs font-medium">
-                {selectedCharacter?.name}
-              </p>
-            </div>
-            <div className="flex max-h-64 flex-col overflow-y-auto">
-              {selectedCharacter?.phases.map((p) => {
-                const taken = isRefSelected(selectedCharacter.id, p.id);
+              {focusedCharacter.phases.map((p) => {
+                const selected = selectedPairs.has(
+                  pairKey(focusedCharacter.id, p.id),
+                );
                 return (
                   <button
                     key={p.id}
                     type="button"
-                    disabled={taken}
-                    className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
-                    onClick={() =>
-                      !taken &&
-                      handlePickPhase(selectedCharacter.id, p.id)
-                    }
+                    onClick={() => togglePair(focusedCharacter.id, p.id)}
+                    className={cn(
+                      "flex flex-col items-start gap-1 rounded-md border p-2 text-left transition-colors hover:bg-muted",
+                      selected && "border-transparent bg-accent",
+                    )}
                   >
-                    <span className="truncate">{p.name}</span>
-                    {taken && (
-                      <span className="shrink-0 text-muted-foreground">
-                        {t("event:picker.phase.alreadySelected")}
-                      </span>
+                    <div className="flex w-full items-center justify-between gap-2">
+                      <span className="text-sm font-semibold">{p.name}</span>
+                      {selected && (
+                        <HugeiconsIcon
+                          icon={Tick02Icon}
+                          strokeWidth={2}
+                          className="size-4 text-primary"
+                        />
+                      )}
+                    </div>
+                    {p.appearance && (
+                      <p className="line-clamp-2 text-xs text-muted-foreground">
+                        {p.appearance}
+                      </p>
+                    )}
+                    {p.changes && (
+                      <p className="line-clamp-2 text-xs text-muted-foreground/80">
+                        {p.changes}
+                      </p>
                     )}
                   </button>
                 );
               })}
             </div>
+          ) : (
+            <p className="px-1 py-2 text-sm text-muted-foreground">
+              {t("event:picker.phase.selectCharacter")}
+            </p>
+          )
+        }
+        footer={
+          <div className="flex items-center gap-2">
+            <span className="flex-1 text-sm text-muted-foreground">
+              {t("event:card.participantsCount", {
+                count: selectedPairs.size,
+              })}
+            </span>
+            <Button variant="outline" onClick={() => handleOpenChange(false)}>
+              {t("common:actions.cancel")}
+            </Button>
+            <Button onClick={handleCommit}>{commitLabel}</Button>
+          </div>
+        }
+      >
+        {filtered.length === 0 ? (
+          <p className="px-1 py-2 text-sm text-muted-foreground">
+            {t("event:list.noResults")}
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            {filtered.map((c) => (
+              <CharacterCard
+                key={c.id}
+                worldId={worldId}
+                characterId={c.id}
+                name={c.name}
+                aliases={c.aliases}
+                description={c.description}
+                tags={c.tags}
+                phases={c.phases}
+                updatedAt={c.updatedAt}
+                selectable
+                focused={c.id === focusedCharacterId}
+                onSelect={() => setFocusedCharacterId(c.id)}
+                onFocus={() => setFocusedCharacterId(c.id)}
+              />
+            ))}
           </div>
         )}
-      </PopoverContent>
-    </Popover>
+      </SearchablePickerDialog>
+    </>
   );
 }
 

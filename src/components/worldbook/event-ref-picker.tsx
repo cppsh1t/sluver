@@ -1,54 +1,74 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Tick02Icon } from "@hugeicons/core-free-icons";
+import { SearchablePickerDialog } from "@/components/worldbook/searchable-picker-dialog";
+import { EventCard } from "@/components/worldbook/event-card";
 import { cn } from "@/lib/utils";
-import type { Event, EventId } from "@/types";
+import type { Event, EventId, Location, WorldId } from "@/types";
 
-/**
- * Single-step popover picker for an Event reference (`triggerEventId`).
- *
- * Shows the full list of world events plus a "no trigger event" option that
- * selects `null`. Used by {@link PhaseCard} to set the event that triggered a
- * character's transition into a phase (see CONTEXT.md → CharacterPhase).
- */
 interface EventRefPickerProps {
+  worldId: WorldId;
   events: Event[];
+  locations: Location[];
   selectedEventId: EventId | null;
   onSelect: (eventId: EventId | null) => void;
 }
 
+/**
+ * Single-panel searchable dialog picker for an Event reference
+ * (`triggerEventId`).
+ *
+ * Shows the full list of world events plus a "no trigger event" option that
+ * selects `null`. Selecting a card commits immediately and closes the dialog.
+ * Used by {@link PhaseCard} to set the event that triggered a character's
+ * transition into a phase (see CONTEXT.md → CharacterPhase).
+ */
 function EventRefPicker({
+  worldId,
   events,
+  locations,
   selectedEventId,
   onSelect,
 }: EventRefPickerProps) {
   const { t } = useTranslation(["event", "common"]);
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
 
   const selected = events.find((e) => e.id === selectedEventId);
+
+  const locationNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const loc of locations) {
+      map.set(loc.id, loc.name);
+    }
+    return map;
+  }, [locations]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return events;
+    return events.filter((event) =>
+      event.name.toLowerCase().includes(q),
+    );
+  }, [events, search]);
 
   function handleSelect(id: EventId | null) {
     onSelect(id);
     setOpen(false);
   }
 
+  function handleOpenChange(next: boolean) {
+    setOpen(next);
+    if (next) setSearch("");
+  }
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        render={
-          <Button
-            variant="outline"
-            className="w-full justify-start font-normal"
-          />
-        }
+    <>
+      <Button
+        variant="outline"
+        className="w-full justify-start font-normal"
+        onClick={() => setOpen(true)}
       >
         {selected ? (
           selected.name
@@ -57,65 +77,50 @@ function EventRefPicker({
             {t("event:picker.event.none")}
           </span>
         )}
-      </PopoverTrigger>
-      <PopoverContent className="max-h-72 overflow-y-auto p-1">
-        <div role="listbox" className="flex flex-col">
+      </Button>
+      <SearchablePickerDialog
+        open={open}
+        onOpenChange={handleOpenChange}
+        title={t("event:picker.event.title")}
+        searchPlaceholder={t("event:picker.event.searchPlaceholder")}
+        searchValue={search}
+        onSearchChange={setSearch}
+        mode="single"
+      >
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <button
             type="button"
-            role="option"
-            aria-selected={selectedEventId === null}
             onClick={() => handleSelect(null)}
             className={cn(
-              "flex items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent",
-              selectedEventId === null && "bg-accent",
+              "flex items-center justify-center rounded-lg border-2 border-dashed p-4 text-sm text-muted-foreground transition-colors hover:bg-muted",
+              selectedEventId === null && "border-primary text-primary",
             )}
           >
-            <span className="flex-1 text-muted-foreground">
-              {t("event:picker.event.none")}
-            </span>
-            {selectedEventId === null && (
-              <HugeiconsIcon
-                icon={Tick02Icon}
-                strokeWidth={2}
-                className="text-primary"
-              />
-            )}
+            {t("event:picker.event.none")}
           </button>
-          {events.map((event) => {
-            const active = event.id === selectedEventId;
-            return (
-              <button
-                key={event.id}
-                type="button"
-                role="option"
-                aria-selected={active}
-                onClick={() => handleSelect(event.id)}
-                className={cn(
-                  "flex flex-col gap-0.5 rounded-sm px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent",
-                  active && "bg-accent",
-                )}
-              >
-                <span className="flex items-center justify-between gap-2">
-                  <span className="truncate font-medium">{event.name}</span>
-                  {active && (
-                    <HugeiconsIcon
-                      icon={Tick02Icon}
-                      strokeWidth={2}
-                      className="shrink-0 text-primary"
-                    />
-                  )}
-                </span>
-                {event.description && (
-                  <span className="line-clamp-1 text-xs text-muted-foreground">
-                    {event.description}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+          {filtered.map((event) => (
+            <EventCard
+              key={event.id}
+              event={event}
+              worldId={worldId}
+              locationName={
+                event.locationId
+                  ? (locationNameById.get(event.locationId) ?? null)
+                  : null
+              }
+              selectable
+              selected={event.id === selectedEventId}
+              onSelect={() => handleSelect(event.id)}
+            />
+          ))}
         </div>
-      </PopoverContent>
-    </Popover>
+        {filtered.length === 0 && (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            {t("event:list.noResults")}
+          </p>
+        )}
+      </SearchablePickerDialog>
+    </>
   );
 }
 
