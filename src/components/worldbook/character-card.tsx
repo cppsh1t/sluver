@@ -22,22 +22,30 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
+  Cancel01Icon,
   Delete02Icon,
   MoreHorizontalIcon,
   PencilEdit01Icon,
+  Tick02Icon,
   UserMultiple02Icon,
 } from "@hugeicons/core-free-icons";
 import { formatRelativeTime } from "@/lib/format";
 import { countCharacterRefs, type RefCounts } from "@/api";
+import { cn } from "@/lib/utils";
 import type { CharacterId, WorldId } from "@/types";
 
 // ─── Phase stepper ───────────────────────────────────────────────────────────
 
-interface PhaseStepperProps {
-  phaseNames: string[];
+interface PhaseInfo {
+  name: string;
+  triggerEventName: string | null;
 }
 
-function PhaseStepper({ phaseNames }: PhaseStepperProps) {
+interface PhaseStepperProps {
+  phases: PhaseInfo[];
+}
+
+function PhaseStepper({ phases }: PhaseStepperProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const dragState = useRef({ dragging: false, startX: 0, startScroll: 0, moved: false });
   const [overflow, setOverflow] = useState(false);
@@ -51,7 +59,7 @@ function PhaseStepper({ phaseNames }: PhaseStepperProps) {
     const ro = new ResizeObserver(check);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [phaseNames]);
+  }, [phases]);
 
   // Mouse wheel → horizontal scroll (non-passive listener so we can preventDefault).
   useEffect(() => {
@@ -113,12 +121,16 @@ function PhaseStepper({ phaseNames }: PhaseStepperProps) {
         overflow ? "cursor-grab active:cursor-grabbing" : "",
       ].join(" ")}
     >
-      {phaseNames.map((name, i) => (
+      {phases.map((phase, i) => (
         <Fragment key={i}>
           {i > 0 && <span className="shrink-0 text-xs text-muted-foreground/40">→</span>}
-          <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-            <span className="size-1.5 shrink-0 rounded-full bg-primary/40" />
-            <span className="whitespace-nowrap">{name}</span>
+          <span className="flex shrink-0 flex-col gap-0">
+            <span className="whitespace-nowrap text-xs text-muted-foreground">{phase.name}</span>
+            {phase.triggerEventName && (
+              <span className="whitespace-nowrap text-[0.625rem] text-muted-foreground/60">
+                ↓ {phase.triggerEventName}
+              </span>
+            )}
           </span>
         </Fragment>
       ))}
@@ -135,10 +147,16 @@ interface CharacterCardProps {
   aliases: string[];
   description: string;
   tags: string[];
-  phaseNames: string[];
+  phases: PhaseInfo[];
   updatedAt: string;
-  onClick: () => void;
-  onDelete: () => void;
+  onClick?: () => void;
+  onDelete?: () => void;
+  selectable?: boolean;
+  selected?: boolean;
+  focused?: boolean;
+  onSelect?: () => void;
+  onFocus?: () => void;
+  onRemove?: () => void;
 }
 
 function CharacterCard({
@@ -148,16 +166,20 @@ function CharacterCard({
   aliases,
   description,
   tags,
-  phaseNames,
+  phases,
   updatedAt,
   onClick,
   onDelete,
+  selectable,
+  selected,
+  focused,
+  onSelect,
+  onFocus,
+  onRemove,
 }: CharacterCardProps) {
   const { t } = useTranslation(["character", "common"]);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [disclosureCounts, setDisclosureCounts] = useState<RefCounts | null>(
-    null,
-  );
+  const [disclosureCounts, setDisclosureCounts] = useState<RefCounts | null>(null);
   const [loadingCounts, setLoadingCounts] = useState(false);
 
   const visibleTags = tags.slice(0, 3);
@@ -185,18 +207,37 @@ function CharacterCard({
     disclosureCounts !== null &&
     (disclosureCounts.events > 0 || disclosureCounts.scenes > 0);
 
+  function handleCardClick() {
+    if (selectable) {
+      if (focused) {
+        onFocus?.();
+      } else {
+        onSelect?.();
+      }
+    } else {
+      onClick?.();
+    }
+  }
+
+  function handleCardKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      handleCardClick();
+    }
+  }
+
   return (
     <>
       <Card
         role="button"
         tabIndex={0}
-        onClick={onClick}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onClick();
-          }
-        }}
+        onClick={handleCardClick}
+        onKeyDown={handleCardKeyDown}
+        className={cn(
+          selectable && "relative cursor-pointer",
+          selected && "ring-2 ring-primary",
+          focused && "ring-2 ring-primary/50",
+        )}
       >
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -207,38 +248,40 @@ function CharacterCard({
             />
             <span className="truncate">{name}</span>
           </CardTitle>
-          <CardAction>
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                onClick={(e) => e.stopPropagation()}
-                render={
-                  <Button variant="ghost" size="icon-sm" />
-                }
-              >
-                <HugeiconsIcon icon={MoreHorizontalIcon} strokeWidth={2} />
-                <span className="sr-only">{t("common:actions.moreActions")}</span>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onClick();
-                  }}
+          {!selectable && (
+            <CardAction>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  onClick={(e) => e.stopPropagation()}
+                  render={
+                    <Button variant="ghost" size="icon-sm" />
+                  }
                 >
-                  <HugeiconsIcon icon={PencilEdit01Icon} strokeWidth={2} />
-                  {t("character:card.editAction")}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  variant="destructive"
-                  onClick={handleDeleteClick}
-                >
-                  <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
-                  {t("character:card.deleteAction")}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </CardAction>
+                  <HugeiconsIcon icon={MoreHorizontalIcon} strokeWidth={2} />
+                  <span className="sr-only">{t("common:actions.moreActions")}</span>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onClick?.();
+                    }}
+                  >
+                    <HugeiconsIcon icon={PencilEdit01Icon} strokeWidth={2} />
+                    {t("character:card.editAction")}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onClick={handleDeleteClick}
+                  >
+                    <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
+                    {t("character:card.deleteAction")}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </CardAction>
+          )}
         </CardHeader>
         <CardContent className="flex flex-1 flex-col gap-2">
           {aliases.length > 0 && (
@@ -249,8 +292,8 @@ function CharacterCard({
           <p className="line-clamp-2 min-h-8 flex-1 text-sm text-muted-foreground">
             {description}
           </p>
-          {phaseNames.length > 0 ? (
-            <PhaseStepper phaseNames={phaseNames} />
+          {phases.length > 0 ? (
+            <PhaseStepper phases={phases} />
           ) : (
             <span className="text-xs text-muted-foreground/60">
               {t("character:card.noPhases")}
@@ -277,41 +320,63 @@ function CharacterCard({
             {formatRelativeTime(updatedAt)}
           </p>
         </CardContent>
+
+        {selectable && selected && !onRemove && (
+          <HugeiconsIcon
+            icon={Tick02Icon}
+            strokeWidth={2}
+            className="absolute top-2 right-2 size-4 text-primary"
+          />
+        )}
+        {selectable && onRemove && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+            className="absolute top-2 right-2 flex size-6 items-center justify-center rounded-full bg-background/80 text-muted-foreground hover:bg-background hover:text-foreground"
+          >
+            <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} className="size-4" />
+          </button>
+        )}
       </Card>
 
-      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {isDisclosable
-                ? t("character:card.deleteDisclosableTitle", { name })
-                : t("character:card.deleteTitle")}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {isDisclosable
-                ? t("character:card.deleteDisclosableDescription", {
-                    name,
-                    events: disclosureCounts!.events,
-                    scenes: disclosureCounts!.scenes,
-                    phases: phaseNames.length,
-                  })
-                : t("character:card.deleteDescription", { name })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("common:actions.cancel")}</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={() => {
-                setConfirmOpen(false);
-                onDelete();
-              }}
-            >
-              {t("common:actions.delete")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {!selectable && (
+        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {isDisclosable
+                  ? t("character:card.deleteDisclosableTitle", { name })
+                  : t("character:card.deleteTitle")}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {isDisclosable
+                  ? t("character:card.deleteDisclosableDescription", {
+                      name,
+                      events: disclosureCounts!.events,
+                      scenes: disclosureCounts!.scenes,
+                      phases: phases.length,
+                    })
+                  : t("character:card.deleteDescription", { name })}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t("common:actions.cancel")}</AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                onClick={() => {
+                  setConfirmOpen(false);
+                  onDelete?.();
+                }}
+              >
+                {t("common:actions.delete")}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </>
   );
 }

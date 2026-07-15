@@ -24,10 +24,13 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Calendar03Icon,
+  Cancel01Icon,
   Delete02Icon,
   MoreHorizontalIcon,
+  Tick02Icon,
 } from "@hugeicons/core-free-icons";
 import { formatRelativeTime } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import type { Event, WorldId } from "@/types";
 
 /** Compact, locale-neutral datetime for card metadata rows. */
@@ -39,10 +42,23 @@ interface EventCardProps {
   event: Event;
   worldId: WorldId;
   locationName: string | null;
-  onDelete: () => void;
+  onDelete?: () => void;
+  selectable?: boolean;
+  selected?: boolean;
+  onSelect?: () => void;
+  onRemove?: () => void;
 }
 
-function EventCard({ event, worldId, locationName, onDelete }: EventCardProps) {
+function EventCard({
+  event,
+  worldId,
+  locationName,
+  onDelete,
+  selectable,
+  selected,
+  onSelect,
+  onRemove,
+}: EventCardProps) {
   const { t } = useTranslation(["event", "common"]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const entityName = t("event:entityName.singular");
@@ -72,6 +88,113 @@ function EventCard({ event, worldId, locationName, onDelete }: EventCardProps) {
     timeText = t("event:card.noTime");
   }
 
+  const card = (
+    <Card
+      className={cn(
+        "h-full",
+        selectable && "relative cursor-pointer",
+        selected && "ring-2 ring-primary",
+      )}
+    >
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <HugeiconsIcon
+            icon={Calendar03Icon}
+            strokeWidth={2}
+            className="text-muted-foreground"
+          />
+          <span className="truncate">{event.name}</span>
+        </CardTitle>
+        {!selectable && (
+          <CardAction>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                render={<Button variant="ghost" size="icon-sm" />}
+              >
+                <HugeiconsIcon icon={MoreHorizontalIcon} strokeWidth={2} />
+                <span className="sr-only">{t("common:actions.moreActions")}</span>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setConfirmOpen(true);
+                  }}
+                >
+                  <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
+                  {t("event:card.deleteAction")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </CardAction>
+        )}
+      </CardHeader>
+      <CardContent className="flex flex-1 flex-col gap-2">
+        <p className="text-xs text-muted-foreground">
+          {participantsText} · {locationText} · {timeText}
+        </p>
+        <p className="line-clamp-2 min-h-8 flex-1 text-sm text-muted-foreground">
+          {event.description}
+        </p>
+        {event.tags.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {visibleTags.map((tag) => (
+              <span
+                key={tag}
+                className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+              >
+                {tag}
+              </span>
+            ))}
+            {extraCount > 0 && (
+              <span className="px-1.5 py-0.5 text-xs text-muted-foreground/70">
+                +{extraCount}
+              </span>
+            )}
+          </div>
+        )}
+        <p className="text-xs text-muted-foreground/70">
+          {formatRelativeTime(event.updatedAt)}
+        </p>
+      </CardContent>
+
+      {selectable && selected && !onRemove && (
+        <HugeiconsIcon
+          icon={Tick02Icon}
+          strokeWidth={2}
+          className="absolute top-2 right-2 size-4 text-primary"
+        />
+      )}
+      {selectable && onRemove && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
+          className="absolute top-2 right-2 flex size-6 items-center justify-center rounded-full bg-background/80 text-muted-foreground hover:bg-background hover:text-foreground"
+        >
+          <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} className="size-4" />
+        </button>
+      )}
+    </Card>
+  );
+
+  // Selectable mode: no navigation, no delete affordance — clicking selects.
+  if (selectable) {
+    return (
+      <div onClick={onSelect} className="block h-full">
+        {card}
+      </div>
+    );
+  }
+
   return (
     <>
       <Link
@@ -79,73 +202,7 @@ function EventCard({ event, worldId, locationName, onDelete }: EventCardProps) {
         params={{ worldId, eventId: event.id }}
         className="block h-full"
       >
-        <Card className="h-full">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <HugeiconsIcon
-                icon={Calendar03Icon}
-                strokeWidth={2}
-                className="text-muted-foreground"
-              />
-              <span className="truncate">{event.name}</span>
-            </CardTitle>
-            <CardAction>
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }}
-                  render={<Button variant="ghost" size="icon-sm" />}
-                >
-                  <HugeiconsIcon icon={MoreHorizontalIcon} strokeWidth={2} />
-                  <span className="sr-only">{t("common:actions.moreActions")}</span>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    variant="destructive"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setConfirmOpen(true);
-                    }}
-                  >
-                    <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
-                    {t("event:card.deleteAction")}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </CardAction>
-          </CardHeader>
-          <CardContent className="flex flex-1 flex-col gap-2">
-            <p className="text-xs text-muted-foreground">
-              {participantsText} · {locationText} · {timeText}
-            </p>
-            <p className="line-clamp-2 min-h-8 flex-1 text-sm text-muted-foreground">
-              {event.description}
-            </p>
-            {event.tags.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {visibleTags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
-                  >
-                    {tag}
-                  </span>
-                ))}
-                {extraCount > 0 && (
-                  <span className="px-1.5 py-0.5 text-xs text-muted-foreground/70">
-                    +{extraCount}
-                  </span>
-                )}
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground/70">
-              {formatRelativeTime(event.updatedAt)}
-            </p>
-          </CardContent>
-        </Card>
+        {card}
       </Link>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
@@ -164,7 +221,7 @@ function EventCard({ event, worldId, locationName, onDelete }: EventCardProps) {
               variant="destructive"
               onClick={() => {
                 setConfirmOpen(false);
-                onDelete();
+                onDelete?.();
               }}
             >
               {t("common:actions.delete")}
