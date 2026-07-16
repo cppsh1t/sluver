@@ -64,6 +64,10 @@ export function getChapter(worldId: WorldId, id: ChapterId): Promise<Chapter> {
   return call<Chapter>('get_chapter', { worldId, id });
 }
 
+export function listChapters(worldId: WorldId, novelId: NovelId): Promise<Chapter[]> {
+  return call<Chapter[]>('list_chapters', { worldId, novelId });
+}
+
 export function updateChapter(
   worldId: WorldId,
   id: ChapterId,
@@ -96,6 +100,10 @@ export function createScene(
 
 export function getScene(worldId: WorldId, id: SceneId): Promise<Scene> {
   return call<Scene>('get_scene', { worldId, id });
+}
+
+export function listScenes(worldId: WorldId, chapterId: ChapterId): Promise<Scene[]> {
+  return call<Scene[]>('list_scenes', { worldId, chapterId });
 }
 
 export function updateScene(
