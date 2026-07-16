@@ -49,3 +49,22 @@ export {
   useUpdateEvent,
   useDeleteEvent,
 } from "./use-events";
+
+export {
+  useNovels,
+  useNovel,
+  useCreateNovel,
+  useUpdateNovel,
+  useDeleteNovel,
+  useChapters,
+  useCreateChapter,
+  useUpdateChapter,
+  useDeleteChapter,
+  useReorderChapters,
+  useScenes,
+  useScene,
+  useCreateScene,
+  useUpdateScene,
+  useDeleteScene,
+  useReorderScenes,
+} from "./use-novels";
