@@ -97,12 +97,14 @@ pub fn run() {
             // Chapter
             commands::novel::create_chapter,
             commands::novel::get_chapter,
+            commands::novel::list_chapters,
             commands::novel::update_chapter,
             commands::novel::delete_chapter,
             commands::novel::reorder_chapters,
             // Scene
             commands::novel::create_scene,
             commands::novel::get_scene,
+            commands::novel::list_scenes,
             commands::novel::update_scene,
             commands::novel::delete_scene,
             commands::novel::reorder_scenes,
