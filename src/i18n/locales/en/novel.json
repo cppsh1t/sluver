@@ -1,0 +1,149 @@
+{
+  "entityName": { "singular": "Novel", "plural": "Novels" },
+  "list": {
+    "title": "Novels",
+    "subtitle": "Write and organize your stories",
+    "createButton": "New Novel",
+    "searchPlaceholder": "Search novels...",
+    "empty": {
+      "title": "No novels yet",
+      "description": "Create your first novel to start writing."
+    },
+    "noResults": "No matching novels found"
+  },
+  "form": {
+    "createTitle": "New {{entity}}",
+    "editTitle": "Edit {{entity}}",
+    "createDescription": "You can add chapters and scenes in the workspace.",
+    "editDescription": "Update this novel's basic information.",
+    "titleLabel": "Title",
+    "titlePlaceholder": "Novel title",
+    "titleDescription": "Must be unique within this world",
+    "descriptionLabel": "Description",
+    "descriptionPlaceholder": "A brief synopsis...",
+    "tagsLabel": "Tags",
+    "tagsPlaceholder": "Add tags..."
+  },
+  "card": {
+    "chaptersCount": "{{count}} chapters",
+    "oneChapter": "1 chapter",
+    "noChapters": "No chapters yet",
+    "deleteAction": "Delete",
+    "deleteTitle": "Delete {{entity}}",
+    "deleteDescription": "Are you sure you want to delete \"{{name}}\"? {{count}} chapters will be permanently deleted. This cannot be undone."
+  },
+  "workspace": {
+    "back": "Novels",
+    "editNovel": "Edit",
+    "mode": {
+      "edit": "Edit",
+      "read": "Read"
+    }
+  },
+  "chapter": {
+    "title": "Chapters",
+    "add": "Add Chapter",
+    "defaultTitle": "Chapter {{n}}",
+    "titlePlaceholder": "Chapter title",
+    "summaryLabel": "Summary",
+    "summaryPlaceholder": "What this chapter is about...",
+    "summaryShow": "Show summary",
+    "summaryHide": "Hide summary",
+    "scenesHeading": "Scenes",
+    "deleteAction": "Delete",
+    "deleteTitle": "Delete chapter",
+    "deleteDescription": "Are you sure you want to delete \"{{name}}\"? {{count}} scenes will be permanently deleted. This cannot be undone.",
+    "deleteDescriptionNoScenes": "Are you sure you want to delete \"{{name}}\"? This cannot be undone.",
+    "empty": {
+      "title": "No chapters yet",
+      "description": "Create your first chapter to start writing.",
+      "cta": "Add Chapter"
+    },
+    "wordCount": "{{count}} words",
+    "toast": {
+      "createSuccess": "Chapter created",
+      "createFailed": "Failed to create chapter",
+      "updateSuccess": "Chapter updated",
+      "updateFailed": "Failed to update chapter",
+      "deleteSuccess": "Chapter deleted",
+      "deleteFailed": "Failed to delete chapter",
+      "reorderSuccess": "Chapters reordered",
+      "reorderFailed": "Failed to reorder chapters"
+    }
+  },
+  "scene": {
+    "add": "Add Scene",
+    "defaultTitle": "Scene {{n}}",
+    "titlePlaceholder": "Scene title",
+    "summaryLabel": "Summary",
+    "summaryPlaceholder": "What happens in this scene...",
+    "summaryShow": "Show summary",
+    "summaryHide": "Hide summary",
+    "timeSet": "Set time",
+    "timeUnspecified": "No time set",
+    "deleteAction": "Delete",
+    "deleteTitle": "Delete scene",
+    "deleteDescription": "Are you sure you want to delete \"{{name}}\"? {{count}} words will be permanently lost. This cannot be undone.",
+    "deleteDescriptionEmpty": "Are you sure you want to delete \"{{name}}\"? This cannot be undone.",
+    "saveStatus": {
+      "saving": "Saving...",
+      "saved": "Saved",
+      "error": "Save failed"
+    },
+    "empty": {
+      "title": "No scenes yet",
+      "description": "Add a scene to start writing this chapter.",
+      "cta": "Add Scene"
+    },
+    "toast": {
+      "createSuccess": "Scene created",
+      "createFailed": "Failed to create scene",
+      "deleteSuccess": "Scene deleted",
+      "deleteFailed": "Failed to delete scene",
+      "reorderSuccess": "Scenes reordered",
+      "reorderFailed": "Failed to reorder scenes"
+    }
+  },
+  "refs": {
+    "chapterOverview": "Chapter Overview",
+    "characters": {
+      "title": "Characters",
+      "add": "Add character",
+      "empty": "No characters in this scene"
+    },
+    "location": {
+      "title": "Location",
+      "set": "Set location",
+      "change": "Change",
+      "none": "No location set"
+    },
+    "items": {
+      "title": "Items",
+      "add": "Add items",
+      "empty": "No items in this scene"
+    },
+    "events": {
+      "title": "Events",
+      "add": "Add events",
+      "empty": "No events in this scene"
+    },
+    "itemPicker": {
+      "title": "Select items",
+      "searchPlaceholder": "Search items...",
+      "done": "Done"
+    },
+    "eventPicker": {
+      "title": "Select events",
+      "searchPlaceholder": "Search events...",
+      "done": "Done"
+    }
+  },
+  "toast": {
+    "createSuccess": "Novel created",
+    "createFailed": "Failed to create novel",
+    "updateSuccess": "Novel updated",
+    "updateFailed": "Failed to update novel",
+    "deleteSuccess": "Novel deleted",
+    "deleteFailed": "Failed to delete novel"
+  }
+}

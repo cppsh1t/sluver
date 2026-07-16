@@ -1,0 +1,149 @@
+{
+  "entityName": { "singular": "小说", "plural": "小说" },
+  "list": {
+    "title": "小说",
+    "subtitle": "编写和组织你的故事",
+    "createButton": "新建小说",
+    "searchPlaceholder": "搜索小说...",
+    "empty": {
+      "title": "还没有小说",
+      "description": "创建你的第一部小说，开始写作。"
+    },
+    "noResults": "没有匹配的小说"
+  },
+  "form": {
+    "createTitle": "新建{{entity}}",
+    "editTitle": "编辑{{entity}}",
+    "createDescription": "你可以在工作区中添加章节和场景。",
+    "editDescription": "更新这部小说的基本信息。",
+    "titleLabel": "标题",
+    "titlePlaceholder": "小说标题",
+    "titleDescription": "在本世界中必须唯一",
+    "descriptionLabel": "简介",
+    "descriptionPlaceholder": "简短的梗概...",
+    "tagsLabel": "标签",
+    "tagsPlaceholder": "添加标签..."
+  },
+  "card": {
+    "chaptersCount": "{{count}} 章",
+    "oneChapter": "1 章",
+    "noChapters": "尚无章节",
+    "deleteAction": "删除",
+    "deleteTitle": "删除{{entity}}",
+    "deleteDescription": "确定要删除「{{name}}」吗？{{count}} 个章节将被永久删除。此操作无法撤销。"
+  },
+  "workspace": {
+    "back": "小说",
+    "editNovel": "编辑",
+    "mode": {
+      "edit": "编辑",
+      "read": "阅读"
+    }
+  },
+  "chapter": {
+    "title": "章节",
+    "add": "添加章节",
+    "defaultTitle": "第 {{n}} 章",
+    "titlePlaceholder": "章节标题",
+    "summaryLabel": "梗概",
+    "summaryPlaceholder": "本章讲了什么...",
+    "summaryShow": "显示梗概",
+    "summaryHide": "隐藏梗概",
+    "scenesHeading": "场景",
+    "deleteAction": "删除",
+    "deleteTitle": "删除章节",
+    "deleteDescription": "确定要删除「{{name}}」吗？{{count}} 个场景将被永久删除。此操作无法撤销。",
+    "deleteDescriptionNoScenes": "确定要删除「{{name}}」吗？此操作无法撤销。",
+    "empty": {
+      "title": "还没有章节",
+      "description": "创建你的第一章，开始写作。",
+      "cta": "添加章节"
+    },
+    "wordCount": "{{count}} 字",
+    "toast": {
+      "createSuccess": "章节已创建",
+      "createFailed": "创建章节失败",
+      "updateSuccess": "章节已更新",
+      "updateFailed": "更新章节失败",
+      "deleteSuccess": "章节已删除",
+      "deleteFailed": "删除章节失败",
+      "reorderSuccess": "章节顺序已更新",
+      "reorderFailed": "更新章节顺序失败"
+    }
+  },
+  "scene": {
+    "add": "添加场景",
+    "defaultTitle": "场景 {{n}}",
+    "titlePlaceholder": "场景标题",
+    "summaryLabel": "梗概",
+    "summaryPlaceholder": "这个场景发生了什么...",
+    "summaryShow": "显示梗概",
+    "summaryHide": "隐藏梗概",
+    "timeSet": "设置时间",
+    "timeUnspecified": "未设置时间",
+    "deleteAction": "删除",
+    "deleteTitle": "删除场景",
+    "deleteDescription": "确定要删除「{{name}}」吗？{{count}} 字将被永久丢失。此操作无法撤销。",
+    "deleteDescriptionEmpty": "确定要删除「{{name}}」吗？此操作无法撤销。",
+    "saveStatus": {
+      "saving": "保存中...",
+      "saved": "已保存",
+      "error": "保存失败"
+    },
+    "empty": {
+      "title": "还没有场景",
+      "description": "添加一个场景，开始编写本章。",
+      "cta": "添加场景"
+    },
+    "toast": {
+      "createSuccess": "场景已创建",
+      "createFailed": "创建场景失败",
+      "deleteSuccess": "场景已删除",
+      "deleteFailed": "删除场景失败",
+      "reorderSuccess": "场景顺序已更新",
+      "reorderFailed": "更新场景顺序失败"
+    }
+  },
+  "refs": {
+    "chapterOverview": "章节概览",
+    "characters": {
+      "title": "角色",
+      "add": "添加角色",
+      "empty": "本场景暂无角色"
+    },
+    "location": {
+      "title": "地点",
+      "set": "设置地点",
+      "change": "更换",
+      "none": "未设置地点"
+    },
+    "items": {
+      "title": "物品",
+      "add": "添加物品",
+      "empty": "本场景暂无物品"
+    },
+    "events": {
+      "title": "事件",
+      "add": "添加事件",
+      "empty": "本场景暂无事件"
+    },
+    "itemPicker": {
+      "title": "选择物品",
+      "searchPlaceholder": "搜索物品...",
+      "done": "完成"
+    },
+    "eventPicker": {
+      "title": "选择事件",
+      "searchPlaceholder": "搜索事件...",
+      "done": "完成"
+    }
+  },
+  "toast": {
+    "createSuccess": "小说已创建",
+    "createFailed": "创建小说失败",
+    "updateSuccess": "小说已更新",
+    "updateFailed": "更新小说失败",
+    "deleteSuccess": "小说已删除",
+    "deleteFailed": "删除小说失败"
+  }
+}
