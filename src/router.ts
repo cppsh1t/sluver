@@ -15,6 +15,9 @@ import { locationsRoute } from "./routes/world.$worldId/locations";
 import { itemsRoute } from "./routes/world.$worldId/items";
 import { loreRoute } from "./routes/world.$worldId/lore";
 import { novelsRoute } from "./routes/world.$worldId/novels";
+import { novelWorkspaceRoute } from "./routes/world.$worldId/novels.$novelId";
+import { novelIndexRoute } from "./routes/world.$worldId/novels.$novelId/index";
+import { chapterWorkspaceRoute } from "./routes/world.$worldId/novels.$novelId/chapters.$chapterId";
 
 const routeTree = rootRoute.addChildren([
   appLayoutRoute.addChildren([indexRoute, settingsRoute, libraryRoute]),
@@ -28,6 +31,7 @@ const routeTree = rootRoute.addChildren([
     itemsRoute,
     loreRoute,
     novelsRoute,
+    novelWorkspaceRoute.addChildren([novelIndexRoute, chapterWorkspaceRoute]),
   ]),
 ]);
 
