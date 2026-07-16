@@ -10,7 +10,7 @@ interface ParticipantCardProps {
   phaseName: string
   phaseAppearance: string
   phaseChanges: string
-  onRemove: () => void
+  onRemove?: () => void
 }
 
 function ParticipantCard({
@@ -46,14 +46,16 @@ function ParticipantCard({
         ) : null}
       </CardContent>
 
-      <button
-        type="button"
-        onClick={onRemove}
-        aria-label={t("event:detail.participants.removeAriaLabel")}
-        className="text-muted-foreground/60 hover:text-foreground absolute top-2 right-2 inline-flex size-5 items-center justify-center rounded-sm outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/30"
-      >
-        <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} className="size-3.5" />
-      </button>
+      {onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={t("event:detail.participants.removeAriaLabel")}
+          className="text-muted-foreground/60 hover:text-foreground absolute top-2 right-2 inline-flex size-5 items-center justify-center rounded-sm outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/30"
+        >
+          <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} className="size-3.5" />
+        </button>
+      )}
     </Card>
   )
 }
