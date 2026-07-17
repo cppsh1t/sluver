@@ -1,8 +1,10 @@
 {
   "tabs": {
+    "aria": "已打开的空间",
     "close": "关闭空间",
     "closeConfirmTitle": "关闭「{{name}}」？",
     "closeConfirmDescription": "关闭后该空间将被锁定，下次打开需要重新输入密码（如已设置）。",
+    "loading": "空间",
     "new": "新建",
     "newSpace": "新建空间"
   },
@@ -29,6 +31,8 @@
     "subtitle": "管理此空间下的世界，进入开始创作。",
     "createWorld": "新建世界",
     "manageSpace": "管理空间",
+    "managePassword": "密码保护",
+    "deleteSpace": "删除空间",
     "emptyWorlds": {
       "title": "此空间下还没有世界",
       "description": "在该空间中创建第一个世界，开始角色设定、事件编织和小说创作。",

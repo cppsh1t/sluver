@@ -9,6 +9,7 @@
     "delete": "Delete",
     "moreActions": "More actions"
   },
+  "loading": "Loading…",
   "nav": {
     "primaryNav": "Primary navigation",
     "worlds": "Worlds",

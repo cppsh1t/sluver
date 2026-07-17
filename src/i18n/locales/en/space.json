@@ -1,8 +1,10 @@
 {
   "tabs": {
+    "aria": "Open spaces",
     "close": "Close space",
     "closeConfirmTitle": "Close \"{{name}}\"?",
     "closeConfirmDescription": "Closing will lock this space. You'll need to re-enter its password when you open it again (if one is set).",
+    "loading": "Space",
     "new": "New",
     "newSpace": "New space"
   },
@@ -29,6 +31,8 @@
     "subtitle": "Manage the worlds in this space and start creating.",
     "createWorld": "New world",
     "manageSpace": "Manage space",
+    "managePassword": "Password protection",
+    "deleteSpace": "Delete space",
     "emptyWorlds": {
       "title": "No worlds in this space yet",
       "description": "Create the first world in this space to start building characters, weaving events, and writing novels.",
