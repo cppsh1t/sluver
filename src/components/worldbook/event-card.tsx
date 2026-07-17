@@ -40,6 +40,7 @@ function formatDateTime(iso: string): string {
 
 interface EventCardProps {
   event: Event;
+  spaceId: string;
   worldId: WorldId;
   locationName: string | null;
   onDelete?: () => void;
@@ -51,6 +52,7 @@ interface EventCardProps {
 
 function EventCard({
   event,
+  spaceId,
   worldId,
   locationName,
   onDelete,
@@ -198,8 +200,8 @@ function EventCard({
   return (
     <>
       <Link
-        to={"/world/$worldId/events/$eventId" as const}
-        params={{ worldId, eventId: event.id }}
+        to={"/space/$spaceId/world/$worldId/events/$eventId" as const}
+        params={{ spaceId, worldId, eventId: event.id }}
         className="block h-full"
       >
         {card}

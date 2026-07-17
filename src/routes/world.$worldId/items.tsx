@@ -32,15 +32,17 @@ import type { Item, WorldId } from "@/types";
 
 function ItemsPage() {
   const { t } = useTranslation(["worldbook", "common"]);
-  const { worldId } = useParams({ from: "/world/$worldId" });
+  const { spaceId, worldId } = useParams({
+    from: "/space/$spaceId/world/$worldId",
+  });
   const wid = worldId as WorldId;
   const entityType = "item" as const;
   const entityPlural = t("worldbook:entityName.item.plural");
 
-  const { data: entities = [], isLoading } = useItems(wid);
-  const createMut = useCreateItem(wid);
-  const updateMut = useUpdateItem(wid);
-  const deleteMut = useDeleteItem(wid);
+  const { data: entities = [], isLoading } = useItems(spaceId, wid);
+  const createMut = useCreateItem(spaceId, wid);
+  const updateMut = useUpdateItem(spaceId, wid);
+  const deleteMut = useDeleteItem(spaceId, wid);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Item | null>(null);

@@ -45,6 +45,7 @@ import type { Chapter, ChapterId, Novel, NovelId, WorldId } from "@/types";
 export type WorkspaceMode = "edit" | "read";
 
 interface ChapterSidebarProps {
+  spaceId: string;
   worldId: WorldId;
   novelId: NovelId;
   novel: Novel | undefined;
@@ -61,6 +62,7 @@ interface ChapterSidebarProps {
 // ─── Sortable chapter row ────────────────────────────────────────────────────
 
 interface SortableChapterRowProps {
+  spaceId: string;
   worldId: WorldId;
   novelId: NovelId;
   chapter: Chapter;
@@ -69,6 +71,7 @@ interface SortableChapterRowProps {
 }
 
 function SortableChapterRow({
+  spaceId,
   worldId,
   novelId,
   chapter,
@@ -116,8 +119,8 @@ function SortableChapterRow({
       </button>
 
       <Link
-        to="/world/$worldId/novels/$novelId/chapters/$chapterId"
-        params={{ worldId, novelId, chapterId: chapter.id as ChapterId }}
+        to="/space/$spaceId/world/$worldId/novels/$novelId/chapters/$chapterId"
+        params={{ spaceId, worldId, novelId, chapterId: chapter.id as ChapterId }}
         aria-current={isActive ? "page" : undefined}
         className={cn(
           "min-w-0 flex-1 truncate outline-none",
@@ -157,6 +160,7 @@ function SortableChapterRow({
 // ─── ChapterSidebar ──────────────────────────────────────────────────────────
 
 function ChapterSidebar({
+  spaceId,
   worldId,
   novelId,
   novel,
@@ -214,8 +218,8 @@ function ChapterSidebar({
           className="-ml-1 justify-start px-1 text-muted-foreground"
           onClick={() =>
             navigate({
-              to: "/world/$worldId/novels",
-              params: { worldId },
+              to: "/space/$spaceId/world/$worldId/novels",
+              params: { spaceId, worldId },
             })
           }
         >
@@ -253,6 +257,7 @@ function ChapterSidebar({
               {displayChapters.map((chapter) => (
                 <SortableChapterRow
                   key={chapter.id}
+                  spaceId={spaceId}
                   worldId={worldId}
                   novelId={novelId}
                   chapter={chapter}

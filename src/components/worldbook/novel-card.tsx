@@ -31,11 +31,12 @@ import type { Novel, WorldId } from "@/types";
 
 interface NovelCardProps {
   novel: Novel;
+  spaceId: string;
   worldId: WorldId;
   onDelete?: () => void;
 }
 
-function NovelCard({ novel, worldId, onDelete }: NovelCardProps) {
+function NovelCard({ novel, spaceId, worldId, onDelete }: NovelCardProps) {
   const { t } = useTranslation(["novel", "common"]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const entityName = t("novel:entityName.singular");
@@ -54,8 +55,8 @@ function NovelCard({ novel, worldId, onDelete }: NovelCardProps) {
   return (
     <>
       <Link
-        to={"/world/$worldId/novels/$novelId" as const}
-        params={{ worldId, novelId: novel.id }}
+        to={"/space/$spaceId/world/$worldId/novels/$novelId" as const}
+        params={{ spaceId, worldId, novelId: novel.id }}
         className="block h-full"
       >
         <Card className="h-full">

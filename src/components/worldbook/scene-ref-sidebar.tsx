@@ -24,6 +24,7 @@ export type WorkspaceMode = "edit" | "read";
 
 interface SceneRefSidebarProps {
   mode: WorkspaceMode;
+  spaceId: string;
   worldId: WorldId;
   activeScene: Scene | null;
   allScenes: Scene[];
@@ -41,6 +42,7 @@ interface SceneRefSidebarProps {
 
 function SceneRefSidebar({
   mode,
+  spaceId,
   worldId,
   activeScene,
   allScenes,
@@ -178,6 +180,7 @@ function SceneRefSidebar({
           </h3>
           {!isReadonly && sceneRefs && (
             <CharacterRefPicker
+              spaceId={spaceId}
               worldId={worldId}
               selectedRefs={sceneRefs.characterRefs}
               characters={characters}
@@ -381,6 +384,7 @@ function SceneRefSidebar({
             onCommit={onItemIdsChange}
           />
           <EventMultiPicker
+            spaceId={spaceId}
             open={eventPickerOpen}
             onOpenChange={setEventPickerOpen}
             events={events}

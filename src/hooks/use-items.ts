@@ -9,41 +9,44 @@ import {
 import type { CreateElementInput, UpdateElementInput } from "@/api";
 import type { ItemId, WorldId } from "@/types";
 
-export const useItems = (worldId: WorldId) =>
+export const useItems = (spaceId: string, worldId: WorldId) =>
   useQuery({
-    queryKey: ["items", worldId],
-    queryFn: () => listItems(worldId),
-    enabled: !!worldId,
+    queryKey: ["items", spaceId, worldId],
+    queryFn: () => listItems(spaceId, worldId),
+    enabled: !!spaceId && !!worldId,
   });
 
-export const useItem = (worldId: WorldId, id: ItemId) =>
+export const useItem = (spaceId: string, worldId: WorldId, id: ItemId) =>
   useQuery({
-    queryKey: ["items", worldId, id],
-    queryFn: () => getItem(worldId, id),
-    enabled: !!worldId && !!id,
+    queryKey: ["items", spaceId, worldId, id],
+    queryFn: () => getItem(spaceId, worldId, id),
+    enabled: !!spaceId && !!worldId && !!id,
   });
 
-export const useCreateItem = (worldId: WorldId) => {
+export const useCreateItem = (spaceId: string, worldId: WorldId) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateElementInput) => createItem(worldId, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["items", worldId] }),
+    mutationFn: (input: CreateElementInput) => createItem(spaceId, worldId, input),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["items", spaceId, worldId] }),
   });
 };
 
-export const useUpdateItem = (worldId: WorldId) => {
+export const useUpdateItem = (spaceId: string, worldId: WorldId) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, input }: { id: ItemId; input: UpdateElementInput }) =>
-      updateItem(worldId, id, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["items", worldId] }),
+      updateItem(spaceId, worldId, id, input),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["items", spaceId, worldId] }),
   });
 };
 
-export const useDeleteItem = (worldId: WorldId) => {
+export const useDeleteItem = (spaceId: string, worldId: WorldId) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: ItemId) => deleteItem(worldId, id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["items", worldId] }),
+    mutationFn: (id: ItemId) => deleteItem(spaceId, worldId, id),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["items", spaceId, worldId] }),
   });
 };

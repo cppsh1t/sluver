@@ -62,17 +62,17 @@ function toFullInput(ev: EventType): UpdateEventInput {
 
 function EventDetailPage() {
   const { t } = useTranslation(["event", "common"]);
-  const { worldId, eventId } = useParams({
-    from: "/world/$worldId/events/$eventId",
+  const { spaceId, worldId, eventId } = useParams({
+    from: "/space/$spaceId/world/$worldId/events/$eventId",
   });
   const wid = worldId as WorldId;
   const eid = eventId as EventId;
   const navigate = useNavigate();
 
-  const { data: event, isLoading, isError } = useEvent(wid, eid);
-  const { data: characters } = useCharacters(wid);
-  const { data: locations } = useLocations(wid);
-  const updateMut = useUpdateEvent(wid);
+  const { data: event, isLoading, isError } = useEvent(spaceId, wid, eid);
+  const { data: characters } = useCharacters(spaceId, wid);
+  const { data: locations } = useLocations(spaceId, wid);
+  const updateMut = useUpdateEvent(spaceId, wid);
 
   const [editOpen, setEditOpen] = useState(false);
 
@@ -191,7 +191,10 @@ function EventDetailPage() {
           <Button
             variant="outline"
             onClick={() =>
-              navigate({ to: "/world/$worldId/events", params: { worldId } })
+              navigate({
+                to: "/space/$spaceId/world/$worldId/events",
+                params: { spaceId, worldId },
+              })
             }
           >
             <HugeiconsIcon
@@ -229,7 +232,10 @@ function EventDetailPage() {
           variant="ghost"
           className="-ml-2 mb-6"
           onClick={() =>
-            navigate({ to: "/world/$worldId/events", params: { worldId } })
+            navigate({
+              to: "/space/$spaceId/world/$worldId/events",
+              params: { spaceId, worldId },
+            })
           }
         >
           <HugeiconsIcon
@@ -293,6 +299,7 @@ function EventDetailPage() {
               {t("event:detail.participants.title")}
             </h2>
             <CharacterRefPicker
+              spaceId={spaceId}
               worldId={wid}
               selectedRefs={event.characterRefs}
               characters={characters ?? []}

@@ -20,82 +20,90 @@ import type { CharacterId, PhaseId, WorldId } from "@/types";
 
 // ─── Character queries ──────────────────────────────────────────────────────
 
-export const useCharacters = (worldId: WorldId) =>
+export const useCharacters = (spaceId: string, worldId: WorldId) =>
   useQuery({
-    queryKey: ["characters", worldId],
-    queryFn: () => listCharacters(worldId),
-    enabled: !!worldId,
+    queryKey: ["characters", spaceId, worldId],
+    queryFn: () => listCharacters(spaceId, worldId),
+    enabled: !!spaceId && !!worldId,
   });
 
-export const useCharacter = (worldId: WorldId, id: CharacterId) =>
+export const useCharacter = (spaceId: string, worldId: WorldId, id: CharacterId) =>
   useQuery({
-    queryKey: ["characters", worldId, id],
-    queryFn: () => getCharacter(worldId, id),
-    enabled: !!worldId && !!id,
+    queryKey: ["characters", spaceId, worldId, id],
+    queryFn: () => getCharacter(spaceId, worldId, id),
+    enabled: !!spaceId && !!worldId && !!id,
   });
 
 // ─── Character mutations ───────────────────────────────────────────────────
 
-export const useCreateCharacter = (worldId: WorldId) => {
+export const useCreateCharacter = (spaceId: string, worldId: WorldId) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateCharacterInput) => createCharacter(worldId, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["characters", worldId] }),
+    mutationFn: (input: CreateCharacterInput) =>
+      createCharacter(spaceId, worldId, input),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["characters", spaceId, worldId] }),
   });
 };
 
-export const useUpdateCharacter = (worldId: WorldId) => {
+export const useUpdateCharacter = (spaceId: string, worldId: WorldId) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, input }: { id: CharacterId; input: UpdateCharacterInput }) =>
-      updateCharacter(worldId, id, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["characters", worldId] }),
+      updateCharacter(spaceId, worldId, id, input),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["characters", spaceId, worldId] }),
   });
 };
 
-export const useDeleteCharacter = (worldId: WorldId) => {
+export const useDeleteCharacter = (spaceId: string, worldId: WorldId) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: CharacterId) => deleteCharacter(worldId, id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["characters", worldId] }),
+    mutationFn: (id: CharacterId) => deleteCharacter(spaceId, worldId, id),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["characters", spaceId, worldId] }),
   });
 };
 
 // ─── Phase mutations ──────────────────────────────────────────────────────
 
-export const useAddPhase = (worldId: WorldId) => {
+export const useAddPhase = (spaceId: string, worldId: WorldId) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ characterId, input }: { characterId: CharacterId; input: CreatePhaseInput }) =>
-      addPhase(worldId, characterId, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["characters", worldId] }),
+      addPhase(spaceId, worldId, characterId, input),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["characters", spaceId, worldId] }),
   });
 };
 
-export const useUpdatePhase = (worldId: WorldId) => {
+export const useUpdatePhase = (spaceId: string, worldId: WorldId) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ phaseId, input }: { phaseId: PhaseId; input: UpdatePhaseInput }) =>
-      updatePhase(worldId, phaseId, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["characters", worldId] }),
+      updatePhase(spaceId, worldId, phaseId, input),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["characters", spaceId, worldId] }),
   });
 };
 
-export const useDeletePhase = (worldId: WorldId) => {
+export const useDeletePhase = (spaceId: string, worldId: WorldId) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (phaseId: PhaseId) => deletePhase(worldId, phaseId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["characters", worldId] }),
+    mutationFn: (phaseId: PhaseId) => deletePhase(spaceId, worldId, phaseId),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["characters", spaceId, worldId] }),
   });
 };
 
-export const useReorderPhases = (worldId: WorldId) => {
+export const useReorderPhases = (spaceId: string, worldId: WorldId) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ characterId, phaseIds }: { characterId: CharacterId; phaseIds: PhaseId[] }) =>
-      reorderPhases(worldId, characterId, phaseIds),
+      reorderPhases(spaceId, worldId, characterId, phaseIds),
     // onSettled (not onSuccess) so failed reorders also refetch → rollback the
     // optimistic local override in the detail page.
-    onSettled: () => qc.invalidateQueries({ queryKey: ["characters", worldId] }),
+    onSettled: () =>
+      qc.invalidateQueries({ queryKey: ["characters", spaceId, worldId] }),
   });
 };

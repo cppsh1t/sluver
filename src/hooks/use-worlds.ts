@@ -3,37 +3,44 @@ import { createWorld, deleteWorld, getWorld, listWorlds, updateWorld } from "@/a
 import type { CreateWorldInput, UpdateWorldInput } from "@/api";
 import type { WorldId } from "@/types";
 
-export const useWorlds = () =>
-  useQuery({ queryKey: ["worlds"], queryFn: listWorlds });
+// `spaceId` leads every query key so switching Space refetches (no stale
+// cross-Space data) and so mutations only invalidate the active Space's cache.
 
-export const useWorld = (id: WorldId) =>
+export const useWorlds = (spaceId: string) =>
   useQuery({
-    queryKey: ["worlds", id],
-    queryFn: () => getWorld(id),
-    enabled: !!id,
+    queryKey: ["worlds", spaceId],
+    queryFn: () => listWorlds(spaceId),
+    enabled: !!spaceId,
   });
 
-export const useCreateWorld = () => {
+export const useWorld = (spaceId: string, id: WorldId) =>
+  useQuery({
+    queryKey: ["worlds", spaceId, id],
+    queryFn: () => getWorld(spaceId, id),
+    enabled: !!spaceId && !!id,
+  });
+
+export const useCreateWorld = (spaceId: string) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateWorldInput) => createWorld(input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["worlds"] }),
+    mutationFn: (input: CreateWorldInput) => createWorld(spaceId, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["worlds", spaceId] }),
   });
 };
 
-export const useUpdateWorld = () => {
+export const useUpdateWorld = (spaceId: string) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, input }: { id: WorldId; input: UpdateWorldInput }) =>
-      updateWorld(id, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["worlds"] }),
+      updateWorld(spaceId, id, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["worlds", spaceId] }),
   });
 };
 
-export const useDeleteWorld = () => {
+export const useDeleteWorld = (spaceId: string) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: WorldId) => deleteWorld(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["worlds"] }),
+    mutationFn: (id: WorldId) => deleteWorld(spaceId, id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["worlds", spaceId] }),
   });
 };

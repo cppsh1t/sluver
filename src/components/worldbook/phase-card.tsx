@@ -47,6 +47,7 @@ import type { CreatePhaseInput } from "@/api";
 import type { CharacterPhase, Event, EventId, Location, WorldId } from "@/types";
 
 interface PhaseCardProps {
+  spaceId: string;
   worldId: WorldId;
   events: Event[];
   locations: Location[];
@@ -59,6 +60,7 @@ interface PhaseCardProps {
 }
 
 function PhaseCard({
+  spaceId,
   worldId,
   events,
   locations,
@@ -139,7 +141,7 @@ function PhaseCard({
     if (loadingCounts) return;
     setLoadingCounts(true);
     try {
-      const counts = await countPhaseRefs(worldId, phase!.id);
+      const counts = await countPhaseRefs(spaceId, worldId, phase!.id);
       setDisclosureCounts(counts);
     } catch {
       // Count failed — fall back to the simple (non-disclosure) confirm.
@@ -211,6 +213,7 @@ function PhaseCard({
             <Field>
               <FieldLabel>{t("event:picker.event.title")}</FieldLabel>
               <EventRefPicker
+                spaceId={spaceId}
                 worldId={worldId}
                 events={events}
                 locations={locations}
@@ -294,6 +297,7 @@ function PhaseCard({
           {triggerEvent && (
             <EventCard
               event={triggerEvent}
+              spaceId={spaceId}
               worldId={worldId}
               locationName={
                 triggerEvent.locationId
@@ -304,8 +308,8 @@ function PhaseCard({
               selected
               onSelect={() =>
                 navigate({
-                  to: "/world/$worldId/events/$eventId",
-                  params: { worldId, eventId: triggerEvent.id },
+                  to: "/space/$spaceId/world/$worldId/events/$eventId",
+                  params: { spaceId, worldId, eventId: triggerEvent.id },
                 })
               }
             />

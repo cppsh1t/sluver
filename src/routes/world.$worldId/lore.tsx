@@ -32,15 +32,17 @@ import type { Lore, WorldId } from "@/types";
 
 function LorePage() {
   const { t } = useTranslation(["worldbook", "common"]);
-  const { worldId } = useParams({ from: "/world/$worldId" });
+  const { spaceId, worldId } = useParams({
+    from: "/space/$spaceId/world/$worldId",
+  });
   const wid = worldId as WorldId;
   const entityType = "lore" as const;
   const entityPlural = t("worldbook:entityName.lore.plural");
 
-  const { data: entities = [], isLoading } = useLores(wid);
-  const createMut = useCreateLore(wid);
-  const updateMut = useUpdateLore(wid);
-  const deleteMut = useDeleteLore(wid);
+  const { data: entities = [], isLoading } = useLores(spaceId, wid);
+  const createMut = useCreateLore(spaceId, wid);
+  const updateMut = useUpdateLore(spaceId, wid);
+  const deleteMut = useDeleteLore(spaceId, wid);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Lore | null>(null);

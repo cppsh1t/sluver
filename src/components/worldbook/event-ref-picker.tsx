@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import type { Event, EventId, Location, WorldId } from "@/types";
 
 interface EventRefPickerProps {
+  spaceId: string;
   worldId: WorldId;
   events: Event[];
   locations: Location[];
@@ -25,6 +26,7 @@ interface EventRefPickerProps {
  * transition into a phase (see CONTEXT.md → CharacterPhase).
  */
 function EventRefPicker({
+  spaceId,
   worldId,
   events,
   locations,
@@ -102,6 +104,7 @@ function EventRefPicker({
             <EventCard
               key={event.id}
               event={event}
+              spaceId={spaceId}
               worldId={worldId}
               locationName={
                 event.locationId

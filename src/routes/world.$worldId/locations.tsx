@@ -32,15 +32,17 @@ import type { Location, WorldId } from "@/types";
 
 function LocationsPage() {
   const { t } = useTranslation(["worldbook", "common"]);
-  const { worldId } = useParams({ from: "/world/$worldId" });
+  const { spaceId, worldId } = useParams({
+    from: "/space/$spaceId/world/$worldId",
+  });
   const wid = worldId as WorldId;
   const entityType = "location" as const;
   const entityPlural = t("worldbook:entityName.location.plural");
 
-  const { data: entities = [], isLoading } = useLocations(wid);
-  const createMut = useCreateLocation(wid);
-  const updateMut = useUpdateLocation(wid);
-  const deleteMut = useDeleteLocation(wid);
+  const { data: entities = [], isLoading } = useLocations(spaceId, wid);
+  const createMut = useCreateLocation(spaceId, wid);
+  const updateMut = useUpdateLocation(spaceId, wid);
+  const deleteMut = useDeleteLocation(spaceId, wid);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Location | null>(null);

@@ -34,150 +34,177 @@ import type {
 
 // ─── Novel queries ───────────────────────────────────────────────────────────
 
-export const useNovels = (worldId: WorldId) =>
+export const useNovels = (spaceId: string, worldId: WorldId) =>
   useQuery({
-    queryKey: ["novels", worldId],
-    queryFn: () => listNovels(worldId),
-    enabled: !!worldId,
+    queryKey: ["novels", spaceId, worldId],
+    queryFn: () => listNovels(spaceId, worldId),
+    enabled: !!spaceId && !!worldId,
   });
 
-export const useNovel = (worldId: WorldId, id: NovelId) =>
+export const useNovel = (spaceId: string, worldId: WorldId, id: NovelId) =>
   useQuery({
-    queryKey: ["novels", worldId, id],
-    queryFn: () => getNovel(worldId, id),
-    enabled: !!worldId && !!id,
+    queryKey: ["novels", spaceId, worldId, id],
+    queryFn: () => getNovel(spaceId, worldId, id),
+    enabled: !!spaceId && !!worldId && !!id,
   });
 
 // ─── Novel mutations ─────────────────────────────────────────────────────────
 
-export const useCreateNovel = (worldId: WorldId) => {
+export const useCreateNovel = (spaceId: string, worldId: WorldId) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateNovelInput) => createNovel(worldId, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["novels", worldId] }),
+    mutationFn: (input: CreateNovelInput) => createNovel(spaceId, worldId, input),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["novels", spaceId, worldId] }),
   });
 };
 
-export const useUpdateNovel = (worldId: WorldId) => {
+export const useUpdateNovel = (spaceId: string, worldId: WorldId) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, input }: { id: NovelId; input: UpdateNovelInput }) =>
-      updateNovel(worldId, id, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["novels", worldId] }),
+      updateNovel(spaceId, worldId, id, input),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["novels", spaceId, worldId] }),
   });
 };
 
-export const useDeleteNovel = (worldId: WorldId) => {
+export const useDeleteNovel = (spaceId: string, worldId: WorldId) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: NovelId) => deleteNovel(worldId, id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["novels", worldId] }),
+    mutationFn: (id: NovelId) => deleteNovel(spaceId, worldId, id),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["novels", spaceId, worldId] }),
   });
 };
 
 // ─── Chapter queries ─────────────────────────────────────────────────────────
 
-export const useChapters = (worldId: WorldId, novelId: NovelId) =>
+export const useChapters = (spaceId: string, worldId: WorldId, novelId: NovelId) =>
   useQuery({
-    queryKey: ["chapters", worldId, novelId],
-    queryFn: () => listChapters(worldId, novelId),
-    enabled: !!worldId && !!novelId,
+    queryKey: ["chapters", spaceId, worldId, novelId],
+    queryFn: () => listChapters(spaceId, worldId, novelId),
+    enabled: !!spaceId && !!worldId && !!novelId,
   });
 
 // ─── Chapter mutations ───────────────────────────────────────────────────────
 
-export const useCreateChapter = (worldId: WorldId) => {
+export const useCreateChapter = (spaceId: string, worldId: WorldId) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ novelId, input }: { novelId: NovelId; input: CreateChapterInput }) =>
-      createChapter(worldId, novelId, input),
+      createChapter(spaceId, worldId, novelId, input),
     onSuccess: (_data, { novelId }) =>
-      qc.invalidateQueries({ queryKey: ["chapters", worldId, novelId] }),
+      qc.invalidateQueries({ queryKey: ["chapters", spaceId, worldId, novelId] }),
   });
 };
 
-export const useUpdateChapter = (worldId: WorldId, novelId: NovelId) => {
+export const useUpdateChapter = (
+  spaceId: string,
+  worldId: WorldId,
+  novelId: NovelId,
+) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, input }: { id: ChapterId; input: UpdateChapterInput }) =>
-      updateChapter(worldId, id, input),
+      updateChapter(spaceId, worldId, id, input),
     onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["chapters", worldId, novelId] }),
+      qc.invalidateQueries({ queryKey: ["chapters", spaceId, worldId, novelId] }),
   });
 };
 
-export const useDeleteChapter = (worldId: WorldId, novelId: NovelId) => {
+export const useDeleteChapter = (
+  spaceId: string,
+  worldId: WorldId,
+  novelId: NovelId,
+) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: ChapterId) => deleteChapter(worldId, id),
+    mutationFn: (id: ChapterId) => deleteChapter(spaceId, worldId, id),
     onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["chapters", worldId, novelId] }),
+      qc.invalidateQueries({ queryKey: ["chapters", spaceId, worldId, novelId] }),
   });
 };
 
-export const useReorderChapters = (worldId: WorldId, novelId: NovelId) => {
+export const useReorderChapters = (
+  spaceId: string,
+  worldId: WorldId,
+  novelId: NovelId,
+) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (chapterIds: ChapterId[]) =>
-      reorderChapters(worldId, novelId, chapterIds),
+      reorderChapters(spaceId, worldId, novelId, chapterIds),
     onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["chapters", worldId, novelId] }),
+      qc.invalidateQueries({ queryKey: ["chapters", spaceId, worldId, novelId] }),
   });
 };
 
 // ─── Scene queries ───────────────────────────────────────────────────────────
 
-export const useScenes = (worldId: WorldId, chapterId: ChapterId) =>
+export const useScenes = (spaceId: string, worldId: WorldId, chapterId: ChapterId) =>
   useQuery({
-    queryKey: ["scenes", worldId, chapterId],
-    queryFn: () => listScenes(worldId, chapterId),
-    enabled: !!worldId && !!chapterId,
+    queryKey: ["scenes", spaceId, worldId, chapterId],
+    queryFn: () => listScenes(spaceId, worldId, chapterId),
+    enabled: !!spaceId && !!worldId && !!chapterId,
   });
 
-export const useScene = (worldId: WorldId, id: SceneId) =>
+export const useScene = (spaceId: string, worldId: WorldId, id: SceneId) =>
   useQuery({
-    queryKey: ["scenes", worldId, id],
-    queryFn: () => getScene(worldId, id),
-    enabled: !!worldId && !!id,
+    queryKey: ["scenes", spaceId, worldId, id],
+    queryFn: () => getScene(spaceId, worldId, id),
+    enabled: !!spaceId && !!worldId && !!id,
   });
 
 // ─── Scene mutations ─────────────────────────────────────────────────────────
 
-export const useCreateScene = (worldId: WorldId) => {
+export const useCreateScene = (spaceId: string, worldId: WorldId) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ chapterId, input }: { chapterId: ChapterId; input: CreateSceneInput }) =>
-      createScene(worldId, chapterId, input),
+      createScene(spaceId, worldId, chapterId, input),
     onSuccess: (_data, { chapterId }) =>
-      qc.invalidateQueries({ queryKey: ["scenes", worldId, chapterId] }),
+      qc.invalidateQueries({ queryKey: ["scenes", spaceId, worldId, chapterId] }),
   });
 };
 
-export const useUpdateScene = (worldId: WorldId, chapterId: ChapterId) => {
+export const useUpdateScene = (
+  spaceId: string,
+  worldId: WorldId,
+  chapterId: ChapterId,
+) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, input }: { id: SceneId; input: UpdateSceneInput }) =>
-      updateScene(worldId, id, input),
+      updateScene(spaceId, worldId, id, input),
     onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["scenes", worldId, chapterId] }),
+      qc.invalidateQueries({ queryKey: ["scenes", spaceId, worldId, chapterId] }),
   });
 };
 
-export const useDeleteScene = (worldId: WorldId, chapterId: ChapterId) => {
+export const useDeleteScene = (
+  spaceId: string,
+  worldId: WorldId,
+  chapterId: ChapterId,
+) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: SceneId) => deleteScene(worldId, id),
+    mutationFn: (id: SceneId) => deleteScene(spaceId, worldId, id),
     onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["scenes", worldId, chapterId] }),
+      qc.invalidateQueries({ queryKey: ["scenes", spaceId, worldId, chapterId] }),
   });
 };
 
-export const useReorderScenes = (worldId: WorldId, chapterId: ChapterId) => {
+export const useReorderScenes = (
+  spaceId: string,
+  worldId: WorldId,
+  chapterId: ChapterId,
+) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (sceneIds: SceneId[]) =>
-      reorderScenes(worldId, chapterId, sceneIds),
+      reorderScenes(spaceId, worldId, chapterId, sceneIds),
     onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["scenes", worldId, chapterId] }),
+      qc.invalidateQueries({ queryKey: ["scenes", spaceId, worldId, chapterId] }),
   });
 };

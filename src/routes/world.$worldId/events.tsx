@@ -32,14 +32,16 @@ import type { EventId, WorldId } from "@/types";
 
 function EventsPage() {
   const { t } = useTranslation(["event", "common"]);
-  const { worldId } = useParams({ from: "/world/$worldId" });
+  const { spaceId, worldId } = useParams({
+    from: "/space/$spaceId/world/$worldId",
+  });
   const wid = worldId as WorldId;
   const navigate = useNavigate();
 
-  const { data: events = [], isLoading } = useEvents(wid);
-  const { data: locations = [] } = useLocations(wid);
-  const createMut = useCreateEvent(wid);
-  const deleteMut = useDeleteEvent(wid);
+  const { data: events = [], isLoading } = useEvents(spaceId, wid);
+  const { data: locations = [] } = useLocations(spaceId, wid);
+  const createMut = useCreateEvent(spaceId, wid);
+  const deleteMut = useDeleteEvent(spaceId, wid);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -67,8 +69,8 @@ function EventsPage() {
       const created = await createMut.mutateAsync(input);
       toast.success(t("event:toast.createSuccess"));
       navigate({
-        to: "/world/$worldId/events/$eventId",
-        params: { worldId: wid, eventId: created.id },
+        to: "/space/$spaceId/world/$worldId/events/$eventId",
+        params: { spaceId, worldId: wid, eventId: created.id },
       });
     } catch (e) {
       toast.error(t("event:toast.createFailed"), {
@@ -174,6 +176,7 @@ function EventsPage() {
               <EventCard
                 key={evt.id}
                 event={evt}
+                spaceId={spaceId}
                 worldId={wid}
                 locationName={
                   evt.locationId ? (locationMap.get(evt.locationId) ?? null) : null

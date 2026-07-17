@@ -11,43 +11,46 @@ import type { EventId, WorldId } from "@/types";
 
 // ─── Event queries ───────────────────────────────────────────────────────────
 
-export const useEvents = (worldId: WorldId) =>
+export const useEvents = (spaceId: string, worldId: WorldId) =>
   useQuery({
-    queryKey: ["events", worldId],
-    queryFn: () => listEvents(worldId),
-    enabled: !!worldId,
+    queryKey: ["events", spaceId, worldId],
+    queryFn: () => listEvents(spaceId, worldId),
+    enabled: !!spaceId && !!worldId,
   });
 
-export const useEvent = (worldId: WorldId, id: EventId) =>
+export const useEvent = (spaceId: string, worldId: WorldId, id: EventId) =>
   useQuery({
-    queryKey: ["events", worldId, id],
-    queryFn: () => getEvent(worldId, id),
-    enabled: !!worldId && !!id,
+    queryKey: ["events", spaceId, worldId, id],
+    queryFn: () => getEvent(spaceId, worldId, id),
+    enabled: !!spaceId && !!worldId && !!id,
   });
 
 // ─── Event mutations ─────────────────────────────────────────────────────────
 
-export const useCreateEvent = (worldId: WorldId) => {
+export const useCreateEvent = (spaceId: string, worldId: WorldId) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateEventInput) => createEvent(worldId, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["events", worldId] }),
+    mutationFn: (input: CreateEventInput) => createEvent(spaceId, worldId, input),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["events", spaceId, worldId] }),
   });
 };
 
-export const useUpdateEvent = (worldId: WorldId) => {
+export const useUpdateEvent = (spaceId: string, worldId: WorldId) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, input }: { id: EventId; input: UpdateEventInput }) =>
-      updateEvent(worldId, id, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["events", worldId] }),
+      updateEvent(spaceId, worldId, id, input),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["events", spaceId, worldId] }),
   });
 };
 
-export const useDeleteEvent = (worldId: WorldId) => {
+export const useDeleteEvent = (spaceId: string, worldId: WorldId) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: EventId) => deleteEvent(worldId, id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["events", worldId] }),
+    mutationFn: (id: EventId) => deleteEvent(spaceId, worldId, id),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["events", spaceId, worldId] }),
   });
 };

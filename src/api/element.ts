@@ -2,7 +2,7 @@
  * Location / Item / Lore IPC API.
  *
  * The three element types are structurally identical at v0.1.0.
- * Each provides full CRUD scoped to a world DB via `worldId`.
+ * Each provides full CRUD scoped to a Space + World via `spaceId` + `worldId`.
  */
 
 import type {
@@ -20,80 +20,84 @@ import type { CreateElementInput, UpdateElementInput } from './types';
 // ─── Location ───────────────────────────────────────────────────────────────
 
 export function createLocation(
+  spaceId: string,
   worldId: WorldId,
   input: CreateElementInput,
 ): Promise<Location> {
-  return call<Location>('create_location', { worldId, input });
+  return call<Location>('create_location', { spaceId, worldId, input });
 }
 
-export function getLocation(worldId: WorldId, id: LocationId): Promise<Location> {
-  return call<Location>('get_location', { worldId, id });
+export function getLocation(spaceId: string, worldId: WorldId, id: LocationId): Promise<Location> {
+  return call<Location>('get_location', { spaceId, worldId, id });
 }
 
-export function listLocations(worldId: WorldId): Promise<Location[]> {
-  return call<Location[]>('list_locations', { worldId });
+export function listLocations(spaceId: string, worldId: WorldId): Promise<Location[]> {
+  return call<Location[]>('list_locations', { spaceId, worldId });
 }
 
 export function updateLocation(
+  spaceId: string,
   worldId: WorldId,
   id: LocationId,
   input: UpdateElementInput,
 ): Promise<Location> {
-  return call<Location>('update_location', { worldId, id, input });
+  return call<Location>('update_location', { spaceId, worldId, id, input });
 }
 
-export function deleteLocation(worldId: WorldId, id: LocationId): Promise<void> {
-  return call<void>('delete_location', { worldId, id });
+export function deleteLocation(spaceId: string, worldId: WorldId, id: LocationId): Promise<void> {
+  return call<void>('delete_location', { spaceId, worldId, id });
 }
 
 // ─── Item ───────────────────────────────────────────────────────────────────
 
-export function createItem(worldId: WorldId, input: CreateElementInput): Promise<Item> {
-  return call<Item>('create_item', { worldId, input });
+export function createItem(spaceId: string, worldId: WorldId, input: CreateElementInput): Promise<Item> {
+  return call<Item>('create_item', { spaceId, worldId, input });
 }
 
-export function getItem(worldId: WorldId, id: ItemId): Promise<Item> {
-  return call<Item>('get_item', { worldId, id });
+export function getItem(spaceId: string, worldId: WorldId, id: ItemId): Promise<Item> {
+  return call<Item>('get_item', { spaceId, worldId, id });
 }
 
-export function listItems(worldId: WorldId): Promise<Item[]> {
-  return call<Item[]>('list_items', { worldId });
+export function listItems(spaceId: string, worldId: WorldId): Promise<Item[]> {
+  return call<Item[]>('list_items', { spaceId, worldId });
 }
 
 export function updateItem(
+  spaceId: string,
   worldId: WorldId,
   id: ItemId,
   input: UpdateElementInput,
 ): Promise<Item> {
-  return call<Item>('update_item', { worldId, id, input });
+  return call<Item>('update_item', { spaceId, worldId, id, input });
 }
 
-export function deleteItem(worldId: WorldId, id: ItemId): Promise<void> {
-  return call<void>('delete_item', { worldId, id });
+export function deleteItem(spaceId: string, worldId: WorldId, id: ItemId): Promise<void> {
+  return call<void>('delete_item', { spaceId, worldId, id });
 }
 
 // ─── Lore ───────────────────────────────────────────────────────────────────
 
-export function createLore(worldId: WorldId, input: CreateElementInput): Promise<Lore> {
-  return call<Lore>('create_lore', { worldId, input });
+export function createLore(spaceId: string, worldId: WorldId, input: CreateElementInput): Promise<Lore> {
+  return call<Lore>('create_lore', { spaceId, worldId, input });
 }
 
-export function getLore(worldId: WorldId, id: LoreId): Promise<Lore> {
-  return call<Lore>('get_lore', { worldId, id });
+export function getLore(spaceId: string, worldId: WorldId, id: LoreId): Promise<Lore> {
+  return call<Lore>('get_lore', { spaceId, worldId, id });
 }
 
-export function listLores(worldId: WorldId): Promise<Lore[]> {
-  return call<Lore[]>('list_lores', { worldId });
+export function listLores(spaceId: string, worldId: WorldId): Promise<Lore[]> {
+  return call<Lore[]>('list_lores', { spaceId, worldId });
 }
 
 export function updateLore(
+  spaceId: string,
   worldId: WorldId,
   id: LoreId,
   input: UpdateElementInput,
 ): Promise<Lore> {
-  return call<Lore>('update_lore', { worldId, id, input });
+  return call<Lore>('update_lore', { spaceId, worldId, id, input });
 }
 
-export function deleteLore(worldId: WorldId, id: LoreId): Promise<void> {
-  return call<void>('delete_lore', { worldId, id });
+export function deleteLore(spaceId: string, worldId: WorldId, id: LoreId): Promise<void> {
+  return call<void>('delete_lore', { spaceId, worldId, id });
 }

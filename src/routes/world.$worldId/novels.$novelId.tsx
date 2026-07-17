@@ -37,20 +37,20 @@ const WorkspaceContext = createContext<WorkspaceCtx>({ mode: "edit" });
 
 function NovelWorkspaceLayout() {
   const { t } = useTranslation(["novel", "common"]);
-  const { worldId, novelId } = useParams({
-    from: "/world/$worldId/novels/$novelId",
+  const { spaceId, worldId, novelId } = useParams({
+    from: "/space/$spaceId/world/$worldId/novels/$novelId",
   });
   const wid = worldId as WorldId;
   const nid = novelId as NovelId;
   const location = useLocation();
   const navigate = useNavigate();
 
-  const { data: novel } = useNovel(wid, nid);
-  const { data: chapters = [] } = useChapters(wid, nid);
-  const createChapterMut = useCreateChapter(wid);
-  const deleteChapterMut = useDeleteChapter(wid, nid);
-  const reorderMut = useReorderChapters(wid, nid);
-  const updateNovelMut = useUpdateNovel(wid);
+  const { data: novel } = useNovel(spaceId, wid, nid);
+  const { data: chapters = [] } = useChapters(spaceId, wid, nid);
+  const createChapterMut = useCreateChapter(spaceId, wid);
+  const deleteChapterMut = useDeleteChapter(spaceId, wid, nid);
+  const reorderMut = useReorderChapters(spaceId, wid, nid);
+  const updateNovelMut = useUpdateNovel(spaceId, wid);
 
   const [mode, setMode] = useState<WorkspaceMode>("edit");
   const [editNovelOpen, setEditNovelOpen] = useState(false);
@@ -67,8 +67,8 @@ function NovelWorkspaceLayout() {
         input: { title: i18n.t("novel:chapter.defaultTitle", { n }) },
       });
       navigate({
-        to: "/world/$worldId/novels/$novelId/chapters/$chapterId",
-        params: { worldId: wid, novelId: nid, chapterId: created.id as ChapterId },
+        to: "/space/$spaceId/world/$worldId/novels/$novelId/chapters/$chapterId",
+        params: { spaceId, worldId: wid, novelId: nid, chapterId: created.id as ChapterId },
       });
       toast.success(i18n.t("novel:chapter.toast.createSuccess"));
     } catch (e) {
@@ -87,13 +87,13 @@ function NovelWorkspaceLayout() {
       const remaining = chapters.filter((c) => c.id !== chapter.id);
       if (remaining.length > 0) {
         navigate({
-          to: "/world/$worldId/novels/$novelId/chapters/$chapterId",
-          params: { worldId: wid, novelId: nid, chapterId: remaining[0].id as ChapterId },
+          to: "/space/$spaceId/world/$worldId/novels/$novelId/chapters/$chapterId",
+          params: { spaceId, worldId: wid, novelId: nid, chapterId: remaining[0].id as ChapterId },
         });
       } else {
         navigate({
-          to: "/world/$worldId/novels/$novelId",
-          params: { worldId: wid, novelId: nid },
+          to: "/space/$spaceId/world/$worldId/novels/$novelId",
+          params: { spaceId, worldId: wid, novelId: nid },
         });
       }
     } catch (e) {
@@ -130,6 +130,7 @@ function NovelWorkspaceLayout() {
     <WorkspaceContext.Provider value={{ mode }}>
       <div className="flex flex-1 overflow-hidden">
         <ChapterSidebar
+          spaceId={spaceId}
           worldId={wid}
           novelId={nid}
           novel={novel}

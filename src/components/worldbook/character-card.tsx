@@ -141,6 +141,7 @@ function PhaseStepper({ phases }: PhaseStepperProps) {
 // ─── Character card ──────────────────────────────────────────────────────────
 
 interface CharacterCardProps {
+  spaceId: string;
   worldId: WorldId;
   characterId: CharacterId;
   name: string;
@@ -160,6 +161,7 @@ interface CharacterCardProps {
 }
 
 function CharacterCard({
+  spaceId,
   worldId,
   characterId,
   name,
@@ -192,7 +194,7 @@ function CharacterCard({
     if (loadingCounts) return;
     setLoadingCounts(true);
     try {
-      const counts = await countCharacterRefs(worldId, characterId);
+      const counts = await countCharacterRefs(spaceId, worldId, characterId);
       setDisclosureCounts(counts);
     } catch {
       // Count failed — fall back to the simple (non-disclosure) confirm.

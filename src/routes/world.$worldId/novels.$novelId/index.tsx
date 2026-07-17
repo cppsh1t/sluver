@@ -6,21 +6,22 @@ import { useChapters } from "@/hooks";
 import type { ChapterId, NovelId, WorldId } from "@/types";
 
 function NovelIndexPage() {
-  const { worldId, novelId } = useParams({
-    from: "/world/$worldId/novels/$novelId",
+  const { spaceId, worldId, novelId } = useParams({
+    from: "/space/$spaceId/world/$worldId/novels/$novelId",
   });
   const wid = worldId as WorldId;
   const nid = novelId as NovelId;
   const navigate = useNavigate();
 
-  const { data: chapters, isLoading } = useChapters(wid, nid);
+  const { data: chapters, isLoading } = useChapters(spaceId, wid, nid);
 
   useEffect(() => {
     if (isLoading || !chapters) return;
     if (chapters.length > 0) {
       navigate({
-        to: "/world/$worldId/novels/$novelId/chapters/$chapterId",
+        to: "/space/$spaceId/world/$worldId/novels/$novelId/chapters/$chapterId",
         params: {
+          spaceId,
           worldId: wid,
           novelId: nid,
           chapterId: chapters[0].id as ChapterId,
@@ -28,7 +29,7 @@ function NovelIndexPage() {
         replace: true,
       });
     }
-  }, [chapters, isLoading, navigate, wid, nid]);
+  }, [chapters, isLoading, navigate, spaceId, wid, nid]);
 
   // Zero-chapter or loading: render nothing (the sidebar shows the CTA).
   return null;

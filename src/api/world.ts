@@ -1,7 +1,9 @@
 /**
  * World IPC API.
  *
- * Worlds live in `meta.db` — no `worldId` scoping needed.
+ * Worlds live in a Space-scoped registry (`spaces/{spaceId}/space.db`), so
+ * every command takes `spaceId` first (ADR-0008 / ADR-0009). They are NOT
+ * scoped to a per-World DB — no `worldId` parameter here.
  */
 
 import type { World } from '@/types';
@@ -10,24 +12,24 @@ import type { CreateWorldInput, UpdateWorldInput } from './types';
 
 // ─── World ──────────────────────────────────────────────────────────────────
 
-export function createWorld(input: CreateWorldInput): Promise<World> {
-  return call<World>('create_world', { input });
+export function createWorld(spaceId: string, input: CreateWorldInput): Promise<World> {
+  return call<World>('create_world', { spaceId, input });
 }
 
-export function listWorlds(): Promise<World[]> {
-  return call<World[]>('list_worlds');
+export function listWorlds(spaceId: string): Promise<World[]> {
+  return call<World[]>('list_worlds', { spaceId });
 }
 
-export function getWorld(id: string): Promise<World> {
-  return call<World>('get_world', { id });
+export function getWorld(spaceId: string, id: string): Promise<World> {
+  return call<World>('get_world', { spaceId, id });
 }
 
-export function updateWorld(id: string, input: UpdateWorldInput): Promise<World> {
-  return call<World>('update_world', { id, input });
+export function updateWorld(spaceId: string, id: string, input: UpdateWorldInput): Promise<World> {
+  return call<World>('update_world', { spaceId, id, input });
 }
 
-export function deleteWorld(id: string): Promise<void> {
-  return call<void>('delete_world', { id });
+export function deleteWorld(spaceId: string, id: string): Promise<void> {
+  return call<void>('delete_world', { spaceId, id });
 }
 
 // ─── Tray ───────────────────────────────────────────────────────────────────
@@ -40,4 +42,3 @@ export function deleteWorld(id: string): Promise<void> {
 export function setTrayLocale(locale: string): Promise<void> {
   return call<void>('set_tray_locale', { locale });
 }
-

@@ -31,13 +31,15 @@ import type { NovelId, WorldId } from "@/types";
 
 function NovelsPage() {
   const { t } = useTranslation(["novel", "common"]);
-  const { worldId } = useParams({ from: "/world/$worldId" });
+  const { spaceId, worldId } = useParams({
+    from: "/space/$spaceId/world/$worldId",
+  });
   const wid = worldId as WorldId;
   const navigate = useNavigate();
 
-  const { data: novels = [], isLoading } = useNovels(wid);
-  const createMut = useCreateNovel(wid);
-  const deleteMut = useDeleteNovel(wid);
+  const { data: novels = [], isLoading } = useNovels(spaceId, wid);
+  const createMut = useCreateNovel(spaceId, wid);
+  const deleteMut = useDeleteNovel(spaceId, wid);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -57,8 +59,8 @@ function NovelsPage() {
       const created = await createMut.mutateAsync(input);
       toast.success(t("novel:toast.createSuccess"));
       navigate({
-        to: "/world/$worldId/novels/$novelId",
-        params: { worldId: wid, novelId: created.id as NovelId },
+        to: "/space/$spaceId/world/$worldId/novels/$novelId",
+        params: { spaceId, worldId: wid, novelId: created.id as NovelId },
       });
     } catch (e) {
       toast.error(t("novel:toast.createFailed"), {
@@ -160,6 +162,7 @@ function NovelsPage() {
               <NovelCard
                 key={novel.id}
                 novel={novel}
+                spaceId={spaceId}
                 worldId={wid}
                 onDelete={() => handleDelete(novel.id as NovelId)}
               />

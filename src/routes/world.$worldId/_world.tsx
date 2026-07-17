@@ -1,6 +1,6 @@
 import { Outlet, createRoute, useLocation } from "@tanstack/react-router";
 
-import { rootRoute } from "../__root";
+import { spaceLayoutRoute } from "../space.$spaceId/_space";
 import { WorldSidebar } from "@/components/world-sidebar";
 
 function WorldLayout() {
@@ -8,7 +8,7 @@ function WorldLayout() {
   // Hide the global WorldSidebar inside the Novel workspace to give the
   // three-column writing surface maximum width (ADR-0007). The workspace
   // has its own chapter sidebar with a back button for world navigation.
-  const isNovelWorkspace = /\/world\/[^/]+\/novels\/[^/]+/.test(
+  const isNovelWorkspace = /\/space\/[^/]+\/world\/[^/]+\/novels\/[^/]+/.test(
     location.pathname,
   );
 
@@ -27,7 +27,7 @@ function WorldLayout() {
 }
 
 export const worldLayoutRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => spaceLayoutRoute,
   path: "world/$worldId",
   component: WorldLayout,
 });

@@ -7,6 +7,7 @@ import { EventCard } from "@/components/worldbook/event-card";
 import type { Event as EventType } from "@/types";
 
 interface EventMultiPickerProps {
+  spaceId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   events: EventType[];
@@ -23,12 +24,14 @@ interface EventMultiPickerProps {
  * until the user clicks "Done", which commits the full id list via `onCommit`
  * and closes. Clicking a card toggles its membership in the local selection.
  *
- * The `EventCard` requires a `worldId` (used only for navigation links in
- * non-selectable mode, so it's inert here) — it's derived from each event's
- * own `worldId` field. `locationName` is `null` since this picker has no
- * location lookup context; the card falls back to its "no location" label.
+ * `spaceId`/`worldId` are required by `EventCard`'s interface (used only for
+ * navigation links in non-selectable mode, so they're inert here). `worldId`
+ * is derived from each event's own `worldId` field; `locationName` is `null`
+ * since this picker has no location lookup context; the card falls back to
+ * its "no location" label.
  */
 function EventMultiPicker({
+  spaceId,
   open,
   onOpenChange,
   events,
@@ -103,6 +106,7 @@ function EventMultiPicker({
           <EventCard
             key={ev.id}
             event={ev}
+            spaceId={spaceId}
             worldId={ev.worldId}
             locationName={null}
             selectable

@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import type { CharacterRef, Character, WorldId } from "@/types";
 
 interface CharacterRefPickerProps {
+  spaceId: string;
   worldId: WorldId;
   selectedRefs: CharacterRef[];
   characters: Character[];
@@ -41,6 +42,7 @@ function pairKey(characterId: string, phaseId: string): string {
  * See ADR-0007 for the two-panel picker layout rationale.
  */
 function CharacterRefPicker({
+  spaceId,
   worldId,
   selectedRefs,
   characters,
@@ -208,6 +210,7 @@ function CharacterRefPicker({
             {filtered.map((c) => (
               <CharacterCard
                 key={c.id}
+                spaceId={spaceId}
                 worldId={worldId}
                 characterId={c.id}
                 name={c.name}

@@ -9,41 +9,45 @@ import {
 import type { CreateElementInput, UpdateElementInput } from "@/api";
 import type { LocationId, WorldId } from "@/types";
 
-export const useLocations = (worldId: WorldId) =>
+export const useLocations = (spaceId: string, worldId: WorldId) =>
   useQuery({
-    queryKey: ["locations", worldId],
-    queryFn: () => listLocations(worldId),
-    enabled: !!worldId,
+    queryKey: ["locations", spaceId, worldId],
+    queryFn: () => listLocations(spaceId, worldId),
+    enabled: !!spaceId && !!worldId,
   });
 
-export const useLocation = (worldId: WorldId, id: LocationId) =>
+export const useLocation = (spaceId: string, worldId: WorldId, id: LocationId) =>
   useQuery({
-    queryKey: ["locations", worldId, id],
-    queryFn: () => getLocation(worldId, id),
-    enabled: !!worldId && !!id,
+    queryKey: ["locations", spaceId, worldId, id],
+    queryFn: () => getLocation(spaceId, worldId, id),
+    enabled: !!spaceId && !!worldId && !!id,
   });
 
-export const useCreateLocation = (worldId: WorldId) => {
+export const useCreateLocation = (spaceId: string, worldId: WorldId) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateElementInput) => createLocation(worldId, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["locations", worldId] }),
+    mutationFn: (input: CreateElementInput) =>
+      createLocation(spaceId, worldId, input),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["locations", spaceId, worldId] }),
   });
 };
 
-export const useUpdateLocation = (worldId: WorldId) => {
+export const useUpdateLocation = (spaceId: string, worldId: WorldId) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, input }: { id: LocationId; input: UpdateElementInput }) =>
-      updateLocation(worldId, id, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["locations", worldId] }),
+      updateLocation(spaceId, worldId, id, input),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["locations", spaceId, worldId] }),
   });
 };
 
-export const useDeleteLocation = (worldId: WorldId) => {
+export const useDeleteLocation = (spaceId: string, worldId: WorldId) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: LocationId) => deleteLocation(worldId, id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["locations", worldId] }),
+    mutationFn: (id: LocationId) => deleteLocation(spaceId, worldId, id),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["locations", spaceId, worldId] }),
   });
 };

@@ -19,8 +19,10 @@ function WorldSidebar() {
   const { t } = useTranslation("common");
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { worldId } = useParams({ from: "/world/$worldId" });
-  const { data: world } = useWorld(worldId as WorldId);
+  const { spaceId, worldId } = useParams({
+    from: "/space/$spaceId/world/$worldId",
+  });
+  const { data: world } = useWorld(spaceId, worldId as WorldId);
 
   const sections = [
     {
@@ -28,33 +30,33 @@ function WorldSidebar() {
       items: [
         {
           label: t("nav.worldbook.characters"),
-          to: "/world/$worldId/characters" as const,
+          to: "/space/$spaceId/world/$worldId/characters" as const,
           icon: UserMultiple02Icon,
-          match: "/world/$worldId/characters",
+          match: "/space/$spaceId/world/$worldId/characters",
         },
         {
           label: t("nav.worldbook.events"),
-          to: "/world/$worldId/events" as const,
+          to: "/space/$spaceId/world/$worldId/events" as const,
           icon: Calendar03Icon,
-          match: "/world/$worldId/events",
+          match: "/space/$spaceId/world/$worldId/events",
         },
         {
           label: t("nav.worldbook.locations"),
-          to: "/world/$worldId/locations" as const,
+          to: "/space/$spaceId/world/$worldId/locations" as const,
           icon: MapPinIcon,
-          match: "/world/$worldId/locations",
+          match: "/space/$spaceId/world/$worldId/locations",
         },
         {
           label: t("nav.worldbook.items"),
-          to: "/world/$worldId/items" as const,
+          to: "/space/$spaceId/world/$worldId/items" as const,
           icon: Package02Icon,
-          match: "/world/$worldId/items",
+          match: "/space/$spaceId/world/$worldId/items",
         },
         {
           label: t("nav.worldbook.lore"),
-          to: "/world/$worldId/lore" as const,
+          to: "/space/$spaceId/world/$worldId/lore" as const,
           icon: BookOpen02Icon,
-          match: "/world/$worldId/lore",
+          match: "/space/$spaceId/world/$worldId/lore",
         },
       ],
     },
@@ -63,9 +65,9 @@ function WorldSidebar() {
       items: [
         {
           label: t("nav.writing.novels"),
-          to: "/world/$worldId/novels" as const,
+          to: "/space/$spaceId/world/$worldId/novels" as const,
           icon: Book02Icon,
-          match: "/world/$worldId/novels",
+          match: "/space/$spaceId/world/$worldId/novels",
         },
       ],
     },
@@ -76,7 +78,12 @@ function WorldSidebar() {
       <div className="flex items-center gap-2.5 px-3 py-3">
         <button
           type="button"
-          onClick={() => navigate({ to: "/" })}
+          onClick={() =>
+            navigate({
+              to: "/space/$spaceId",
+              params: { spaceId },
+            })
+          }
           className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none transition-colors hover:bg-sidebar-accent/60 focus-visible:ring-2 focus-visible:ring-sidebar-ring"
         >
           <HugeiconsIcon
@@ -101,13 +108,15 @@ function WorldSidebar() {
           </p>
           <nav className="flex flex-col gap-1" aria-label={section.label}>
             {section.items.map((item) => {
-              const segmentPath = item.to.replace("$worldId", worldId);
+              const segmentPath = item.to
+                .replace("$spaceId", spaceId)
+                .replace("$worldId", worldId);
               const active = pathname === segmentPath || pathname.startsWith(segmentPath + "/");
               return (
                 <Link
                   key={item.to}
                   to={item.to}
-                  params={{ worldId }}
+                  params={{ spaceId, worldId }}
                   aria-current={active ? "page" : undefined}
                   className={cn(
                     "group relative flex items-center gap-2.5 rounded-md px-3 py-2 text-sm outline-none transition-colors",

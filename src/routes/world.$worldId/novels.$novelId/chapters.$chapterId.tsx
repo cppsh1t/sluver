@@ -108,8 +108,8 @@ function SortableScene({
 
 function ChapterWorkspacePage() {
   const { t } = useTranslation(["novel", "common"]);
-  const { worldId, novelId, chapterId } = useParams({
-    from: "/world/$worldId/novels/$novelId/chapters/$chapterId",
+  const { spaceId, worldId, novelId, chapterId } = useParams({
+    from: "/space/$spaceId/world/$worldId/novels/$novelId/chapters/$chapterId",
   });
   const wid = worldId as WorldId;
   const nid = novelId as NovelId;
@@ -117,23 +117,23 @@ function ChapterWorkspacePage() {
   const mode = useWorkspaceMode();
 
   // ─── Data ────────────────────────────────────────────────────────────────
-  const { data: chapters = [] } = useChapters(wid, nid);
+  const { data: chapters = [] } = useChapters(spaceId, wid, nid);
   const chapter = useMemo(
     () => chapters.find((c) => c.id === cid) ?? null,
     [chapters, cid],
   );
-  const { data: serverScenes = [] } = useScenes(wid, cid);
-  const { data: characters = [] } = useCharacters(wid);
-  const { data: locations = [] } = useLocations(wid);
-  const { data: items = [] } = useItems(wid);
-  const { data: events = [] } = useEvents(wid);
+  const { data: serverScenes = [] } = useScenes(spaceId, wid, cid);
+  const { data: characters = [] } = useCharacters(spaceId, wid);
+  const { data: locations = [] } = useLocations(spaceId, wid);
+  const { data: items = [] } = useItems(spaceId, wid);
+  const { data: events = [] } = useEvents(spaceId, wid);
 
   // ─── Mutations ───────────────────────────────────────────────────────────
-  const updateSceneMut = useUpdateScene(wid, cid);
-  const createSceneMut = useCreateScene(wid);
-  const deleteSceneMut = useDeleteScene(wid, cid);
-  const reorderMut = useReorderScenes(wid, cid);
-  const updateChapterMut = useUpdateChapter(wid, nid);
+  const updateSceneMut = useUpdateScene(spaceId, wid, cid);
+  const createSceneMut = useCreateScene(spaceId, wid);
+  const deleteSceneMut = useDeleteScene(spaceId, wid, cid);
+  const reorderMut = useReorderScenes(spaceId, wid, cid);
+  const updateChapterMut = useUpdateChapter(spaceId, wid, nid);
 
   // ─── Local scene state (optimistic, auto-saved) ──────────────────────────
   const [localScenes, setLocalScenes] = useState<SceneType[]>([]);
@@ -463,6 +463,7 @@ function ChapterWorkspacePage() {
       {/* ─── Right sidebar ──────────────────────────────────────────────── */}
       <SceneRefSidebar
         mode={mode}
+        spaceId={spaceId}
         worldId={wid}
         activeScene={activeScene}
         allScenes={displayScenes}

@@ -9,41 +9,44 @@ import {
 import type { CreateElementInput, UpdateElementInput } from "@/api";
 import type { LoreId, WorldId } from "@/types";
 
-export const useLores = (worldId: WorldId) =>
+export const useLores = (spaceId: string, worldId: WorldId) =>
   useQuery({
-    queryKey: ["lores", worldId],
-    queryFn: () => listLores(worldId),
-    enabled: !!worldId,
+    queryKey: ["lores", spaceId, worldId],
+    queryFn: () => listLores(spaceId, worldId),
+    enabled: !!spaceId && !!worldId,
   });
 
-export const useLore = (worldId: WorldId, id: LoreId) =>
+export const useLore = (spaceId: string, worldId: WorldId, id: LoreId) =>
   useQuery({
-    queryKey: ["lores", worldId, id],
-    queryFn: () => getLore(worldId, id),
-    enabled: !!worldId && !!id,
+    queryKey: ["lores", spaceId, worldId, id],
+    queryFn: () => getLore(spaceId, worldId, id),
+    enabled: !!spaceId && !!worldId && !!id,
   });
 
-export const useCreateLore = (worldId: WorldId) => {
+export const useCreateLore = (spaceId: string, worldId: WorldId) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateElementInput) => createLore(worldId, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["lores", worldId] }),
+    mutationFn: (input: CreateElementInput) => createLore(spaceId, worldId, input),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["lores", spaceId, worldId] }),
   });
 };
 
-export const useUpdateLore = (worldId: WorldId) => {
+export const useUpdateLore = (spaceId: string, worldId: WorldId) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, input }: { id: LoreId; input: UpdateElementInput }) =>
-      updateLore(worldId, id, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["lores", worldId] }),
+      updateLore(spaceId, worldId, id, input),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["lores", spaceId, worldId] }),
   });
 };
 
-export const useDeleteLore = (worldId: WorldId) => {
+export const useDeleteLore = (spaceId: string, worldId: WorldId) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: LoreId) => deleteLore(worldId, id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["lores", worldId] }),
+    mutationFn: (id: LoreId) => deleteLore(spaceId, worldId, id),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["lores", spaceId, worldId] }),
   });
 };

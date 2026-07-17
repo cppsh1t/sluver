@@ -31,13 +31,15 @@ import type { CharacterId, WorldId } from "@/types";
 
 function CharactersPage() {
   const { t } = useTranslation(["character", "common"]);
-  const { worldId } = useParams({ from: "/world/$worldId" });
+  const { spaceId, worldId } = useParams({
+    from: "/space/$spaceId/world/$worldId",
+  });
   const wid = worldId as WorldId;
   const navigate = useNavigate();
 
-  const { data: characters = [], isLoading } = useCharacters(wid);
-  const createMut = useCreateCharacter(wid);
-  const deleteMut = useDeleteCharacter(wid);
+  const { data: characters = [], isLoading } = useCharacters(spaceId, wid);
+  const createMut = useCreateCharacter(spaceId, wid);
+  const deleteMut = useDeleteCharacter(spaceId, wid);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -58,8 +60,8 @@ function CharactersPage() {
       const newChar = await createMut.mutateAsync(input);
       toast.success(t("character:toast.createSuccess"));
       navigate({
-        to: "/world/$worldId/characters/$characterId",
-        params: { worldId, characterId: newChar.id },
+        to: "/space/$spaceId/world/$worldId/characters/$characterId",
+        params: { spaceId, worldId, characterId: newChar.id },
       });
     } catch (e) {
       toast.error(t("character:toast.createFailed"), {
@@ -167,6 +169,7 @@ function CharactersPage() {
             {filtered.map((entity) => (
               <CharacterCard
                 key={entity.id}
+                spaceId={spaceId}
                 worldId={wid}
                 characterId={entity.id}
                 name={entity.name}
@@ -177,8 +180,8 @@ function CharactersPage() {
                 updatedAt={entity.updatedAt}
                 onClick={() =>
                   navigate({
-                    to: "/world/$worldId/characters/$characterId",
-                    params: { worldId, characterId: entity.id },
+                    to: "/space/$spaceId/world/$worldId/characters/$characterId",
+                    params: { spaceId, worldId, characterId: entity.id },
                   })
                 }
                 onDelete={() => handleDelete(entity.id)}

@@ -51,6 +51,7 @@ import type { CharacterId, CharacterPhase, Event, Location, WorldId } from "@/ty
 // ─── Sortable wrapper ────────────────────────────────────────────────────────
 
 interface SortablePhaseCardProps {
+  spaceId: string;
   worldId: WorldId;
   events: Event[];
   locations: Location[];
@@ -60,6 +61,7 @@ interface SortablePhaseCardProps {
 }
 
 function SortablePhaseCard({
+  spaceId,
   worldId,
   events,
   locations,
@@ -86,6 +88,7 @@ function SortablePhaseCard({
   return (
     <div ref={setNodeRef} style={style}>
       <PhaseCard
+        spaceId={spaceId}
         worldId={worldId}
         events={events}
         locations={locations}
@@ -103,21 +106,21 @@ function SortablePhaseCard({
 
 function CharacterDetailPage() {
   const { t } = useTranslation(["character", "common"]);
-  const { worldId, characterId } = useParams({
-    from: "/world/$worldId/characters/$characterId",
+  const { spaceId, worldId, characterId } = useParams({
+    from: "/space/$spaceId/world/$worldId/characters/$characterId",
   });
   const wid = worldId as WorldId;
   const cid = characterId as CharacterId;
   const navigate = useNavigate();
 
-  const { data: character, isLoading, isError } = useCharacter(wid, cid);
-  const { data: events } = useEvents(wid);
-  const { data: locations } = useLocations(wid);
-  const updateCharacterMut = useUpdateCharacter(wid);
-  const addPhaseMut = useAddPhase(wid);
-  const updatePhaseMut = useUpdatePhase(wid);
-  const deletePhaseMut = useDeletePhase(wid);
-  const reorderMut = useReorderPhases(wid);
+  const { data: character, isLoading, isError } = useCharacter(spaceId, wid, cid);
+  const { data: events } = useEvents(spaceId, wid);
+  const { data: locations } = useLocations(spaceId, wid);
+  const updateCharacterMut = useUpdateCharacter(spaceId, wid);
+  const addPhaseMut = useAddPhase(spaceId, wid);
+  const updatePhaseMut = useUpdatePhase(spaceId, wid);
+  const deletePhaseMut = useDeletePhase(spaceId, wid);
+  const reorderMut = useReorderPhases(spaceId, wid);
 
   const [editBaseOpen, setEditBaseOpen] = useState(false);
   const [draftActive, setDraftActive] = useState(false);
@@ -245,8 +248,8 @@ function CharacterDetailPage() {
             variant="outline"
             onClick={() =>
               navigate({
-                to: "/world/$worldId/characters",
-                params: { worldId },
+                to: "/space/$spaceId/world/$worldId/characters",
+                params: { spaceId, worldId },
               })
             }
           >
@@ -270,8 +273,8 @@ function CharacterDetailPage() {
           className="-ml-2 mb-6"
           onClick={() =>
             navigate({
-              to: "/world/$worldId/characters",
-              params: { worldId },
+              to: "/space/$spaceId/world/$worldId/characters",
+              params: { spaceId, worldId },
             })
           }
         >
@@ -376,6 +379,7 @@ function CharacterDetailPage() {
                     {phases.map((phase) => (
                       <SortablePhaseCard
                         key={phase.id}
+                        spaceId={spaceId}
                         worldId={wid}
                         events={events ?? []}
                         locations={locations ?? []}
@@ -391,6 +395,7 @@ function CharacterDetailPage() {
               {/* Draft card (outside SortableContext, not draggable) */}
               {draftActive && (
                 <PhaseCard
+                  spaceId={spaceId}
                   worldId={wid}
                   events={events ?? []}
                   locations={locations ?? []}
