@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-/// App-level configuration. Stored as key-value in `meta.db` settings table.
+/// App-level settings. Stored as key-value in `meta.db` settings table.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AppConfig {
+pub struct AppSetting {
     pub appearance: Appearance,
     /// `"auto"` follows the OS locale detected via `tauri-plugin-os`;
     /// otherwise a BCP-47 tag like `"zh-CN"` or `"en"`.
@@ -19,7 +19,7 @@ pub struct Appearance {
     pub color_theme: String,
 }
 
-impl Default for AppConfig {
+impl Default for AppSetting {
     fn default() -> Self {
         Self {
             appearance: Appearance {

@@ -61,11 +61,7 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let menu = build_menu(app, STARTUP_LOCALE)?;
 
     TrayIconBuilder::with_id(TRAY_ID)
-        .icon(
-            app.default_window_icon()
-                .expect("missing app icon")
-                .clone(),
-        )
+        .icon(app.default_window_icon().expect("missing app icon").clone())
         .tooltip("sluver")
         .menu(&menu)
         // Left-click restores the window directly; the context menu is still

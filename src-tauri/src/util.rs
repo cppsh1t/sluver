@@ -1,3 +1,6 @@
+/// Password hashing utilities (argon2id). See `password` module.
+pub mod password;
+
 /// Generate a UUID v7 string (time-sortable).
 pub fn new_id() -> String {
     uuid::Uuid::now_v7().to_string()

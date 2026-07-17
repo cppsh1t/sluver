@@ -32,8 +32,7 @@ fn row_to_element_raw(row: &rusqlite::Row) -> rusqlite::Result<ElementRaw> {
     })
 }
 
-const SELECT_COLS: &str =
-    "id, name, description, notes, tags, created_at, updated_at";
+const SELECT_COLS: &str = "id, name, description, notes, tags, created_at, updated_at";
 
 macro_rules! load_element {
     ($conn:expr, $id:expr, $world_id:expr, $table:literal, $Entity:ident, $label:literal) => {{
@@ -44,9 +43,7 @@ macro_rules! load_element {
                 row_to_element_raw,
             )
             .map_err(|e| match e {
-                rusqlite::Error::QueryReturnedNoRows => {
-                    DbError::NotFound($label, $id.to_string())
-                }
+                rusqlite::Error::QueryReturnedNoRows => DbError::NotFound($label, $id.to_string()),
                 other => DbError::Sqlite(other),
             })?;
 
@@ -65,8 +62,10 @@ macro_rules! load_element {
 
 macro_rules! list_element {
     ($conn:expr, $world_id:expr, $table:literal, $Entity:ident) => {{
-        let mut stmt = $conn
-            .prepare(&format!("SELECT {SELECT_COLS} FROM {} ORDER BY created_at", $table))?;
+        let mut stmt = $conn.prepare(&format!(
+            "SELECT {SELECT_COLS} FROM {} ORDER BY created_at",
+            $table
+        ))?;
         let entities = stmt
             .query_map([], |row| {
                 let raw = row_to_element_raw(row)?;
@@ -90,6 +89,7 @@ macro_rules! list_element {
 
 #[tauri::command]
 pub fn create_location(
+    space_id: String,
     world_id: String,
     input: CreateLocationInput,
     state: State<'_, DbManager>,
@@ -98,11 +98,19 @@ pub fn create_location(
     let now = now_iso();
     let tags_json = serde_json::to_string(&input.tags)?;
 
-    state.with_world(&world_id, |conn| {
+    state.with_world(&space_id, &world_id, |conn| {
         conn.execute(
             "INSERT INTO locations (id, name, description, notes, tags, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![id, input.name, input.description, input.notes, tags_json, now, now],
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                id,
+                input.name,
+                input.description,
+                input.notes,
+                tags_json,
+                now,
+                now
+            ],
         )?;
         load_element!(conn, &id, &world_id, "locations", Location, "Location")
     })
@@ -110,27 +118,30 @@ pub fn create_location(
 
 #[tauri::command]
 pub fn get_location(
+    space_id: String,
     world_id: String,
     id: String,
     state: State<'_, DbManager>,
 ) -> Result<Location, DbError> {
-    state.with_world(&world_id, |conn| {
+    state.with_world(&space_id, &world_id, |conn| {
         load_element!(conn, &id, &world_id, "locations", Location, "Location")
     })
 }
 
 #[tauri::command]
 pub fn list_locations(
+    space_id: String,
     world_id: String,
     state: State<'_, DbManager>,
 ) -> Result<Vec<Location>, DbError> {
-    state.with_world(&world_id, |conn| {
+    state.with_world(&space_id, &world_id, |conn| {
         list_element!(conn, world_id, "locations", Location)
     })
 }
 
 #[tauri::command]
 pub fn update_location(
+    space_id: String,
     world_id: String,
     id: String,
     input: UpdateLocationInput,
@@ -139,12 +150,19 @@ pub fn update_location(
     let now = now_iso();
     let tags_json = serde_json::to_string(&input.tags)?;
 
-    state.with_world(&world_id, |conn| {
+    state.with_world(&space_id, &world_id, |conn| {
         let updated = conn.execute(
             "UPDATE locations
-             SET name = ?1, description = ?2, notes = ?3, tags = ?4, updated_at = ?5
-             WHERE id = ?6",
-            params![input.name, input.description, input.notes, tags_json, now, id],
+         SET name = ?1, description = ?2, notes = ?3, tags = ?4, updated_at = ?5
+         WHERE id = ?6",
+            params![
+                input.name,
+                input.description,
+                input.notes,
+                tags_json,
+                now,
+                id
+            ],
         )?;
         if updated == 0 {
             return Err(DbError::NotFound("Location", id));
@@ -155,11 +173,12 @@ pub fn update_location(
 
 #[tauri::command]
 pub fn delete_location(
+    space_id: String,
     world_id: String,
     id: String,
     state: State<'_, DbManager>,
 ) -> Result<(), DbError> {
-    state.with_world(&world_id, |conn| {
+    state.with_world(&space_id, &world_id, |conn| {
         let deleted = conn.execute("DELETE FROM locations WHERE id = ?1", params![id])?;
         if deleted == 0 {
             return Err(DbError::NotFound("Location", id));
@@ -172,6 +191,7 @@ pub fn delete_location(
 
 #[tauri::command]
 pub fn create_item(
+    space_id: String,
     world_id: String,
     input: CreateItemInput,
     state: State<'_, DbManager>,
@@ -180,11 +200,19 @@ pub fn create_item(
     let now = now_iso();
     let tags_json = serde_json::to_string(&input.tags)?;
 
-    state.with_world(&world_id, |conn| {
+    state.with_world(&space_id, &world_id, |conn| {
         conn.execute(
             "INSERT INTO items (id, name, description, notes, tags, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![id, input.name, input.description, input.notes, tags_json, now, now],
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                id,
+                input.name,
+                input.description,
+                input.notes,
+                tags_json,
+                now,
+                now
+            ],
         )?;
         load_element!(conn, &id, &world_id, "items", Item, "Item")
     })
@@ -192,27 +220,30 @@ pub fn create_item(
 
 #[tauri::command]
 pub fn get_item(
+    space_id: String,
     world_id: String,
     id: String,
     state: State<'_, DbManager>,
 ) -> Result<Item, DbError> {
-    state.with_world(&world_id, |conn| {
+    state.with_world(&space_id, &world_id, |conn| {
         load_element!(conn, &id, &world_id, "items", Item, "Item")
     })
 }
 
 #[tauri::command]
 pub fn list_items(
+    space_id: String,
     world_id: String,
     state: State<'_, DbManager>,
 ) -> Result<Vec<Item>, DbError> {
-    state.with_world(&world_id, |conn| {
+    state.with_world(&space_id, &world_id, |conn| {
         list_element!(conn, world_id, "items", Item)
     })
 }
 
 #[tauri::command]
 pub fn update_item(
+    space_id: String,
     world_id: String,
     id: String,
     input: UpdateItemInput,
@@ -221,12 +252,19 @@ pub fn update_item(
     let now = now_iso();
     let tags_json = serde_json::to_string(&input.tags)?;
 
-    state.with_world(&world_id, |conn| {
+    state.with_world(&space_id, &world_id, |conn| {
         let updated = conn.execute(
             "UPDATE items
-             SET name = ?1, description = ?2, notes = ?3, tags = ?4, updated_at = ?5
-             WHERE id = ?6",
-            params![input.name, input.description, input.notes, tags_json, now, id],
+         SET name = ?1, description = ?2, notes = ?3, tags = ?4, updated_at = ?5
+         WHERE id = ?6",
+            params![
+                input.name,
+                input.description,
+                input.notes,
+                tags_json,
+                now,
+                id
+            ],
         )?;
         if updated == 0 {
             return Err(DbError::NotFound("Item", id));
@@ -237,11 +275,12 @@ pub fn update_item(
 
 #[tauri::command]
 pub fn delete_item(
+    space_id: String,
     world_id: String,
     id: String,
     state: State<'_, DbManager>,
 ) -> Result<(), DbError> {
-    state.with_world(&world_id, |conn| {
+    state.with_world(&space_id, &world_id, |conn| {
         let deleted = conn.execute("DELETE FROM items WHERE id = ?1", params![id])?;
         if deleted == 0 {
             return Err(DbError::NotFound("Item", id));
@@ -254,6 +293,7 @@ pub fn delete_item(
 
 #[tauri::command]
 pub fn create_lore(
+    space_id: String,
     world_id: String,
     input: CreateLoreInput,
     state: State<'_, DbManager>,
@@ -262,11 +302,19 @@ pub fn create_lore(
     let now = now_iso();
     let tags_json = serde_json::to_string(&input.tags)?;
 
-    state.with_world(&world_id, |conn| {
+    state.with_world(&space_id, &world_id, |conn| {
         conn.execute(
             "INSERT INTO lores (id, name, description, notes, tags, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![id, input.name, input.description, input.notes, tags_json, now, now],
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                id,
+                input.name,
+                input.description,
+                input.notes,
+                tags_json,
+                now,
+                now
+            ],
         )?;
         load_element!(conn, &id, &world_id, "lores", Lore, "Lore")
     })
@@ -274,27 +322,30 @@ pub fn create_lore(
 
 #[tauri::command]
 pub fn get_lore(
+    space_id: String,
     world_id: String,
     id: String,
     state: State<'_, DbManager>,
 ) -> Result<Lore, DbError> {
-    state.with_world(&world_id, |conn| {
+    state.with_world(&space_id, &world_id, |conn| {
         load_element!(conn, &id, &world_id, "lores", Lore, "Lore")
     })
 }
 
 #[tauri::command]
 pub fn list_lores(
+    space_id: String,
     world_id: String,
     state: State<'_, DbManager>,
 ) -> Result<Vec<Lore>, DbError> {
-    state.with_world(&world_id, |conn| {
+    state.with_world(&space_id, &world_id, |conn| {
         list_element!(conn, world_id, "lores", Lore)
     })
 }
 
 #[tauri::command]
 pub fn update_lore(
+    space_id: String,
     world_id: String,
     id: String,
     input: UpdateLoreInput,
@@ -303,12 +354,19 @@ pub fn update_lore(
     let now = now_iso();
     let tags_json = serde_json::to_string(&input.tags)?;
 
-    state.with_world(&world_id, |conn| {
+    state.with_world(&space_id, &world_id, |conn| {
         let updated = conn.execute(
             "UPDATE lores
-             SET name = ?1, description = ?2, notes = ?3, tags = ?4, updated_at = ?5
-             WHERE id = ?6",
-            params![input.name, input.description, input.notes, tags_json, now, id],
+         SET name = ?1, description = ?2, notes = ?3, tags = ?4, updated_at = ?5
+         WHERE id = ?6",
+            params![
+                input.name,
+                input.description,
+                input.notes,
+                tags_json,
+                now,
+                id
+            ],
         )?;
         if updated == 0 {
             return Err(DbError::NotFound("Lore", id));
@@ -319,11 +377,12 @@ pub fn update_lore(
 
 #[tauri::command]
 pub fn delete_lore(
+    space_id: String,
     world_id: String,
     id: String,
     state: State<'_, DbManager>,
 ) -> Result<(), DbError> {
-    state.with_world(&world_id, |conn| {
+    state.with_world(&space_id, &world_id, |conn| {
         let deleted = conn.execute("DELETE FROM lores WHERE id = ?1", params![id])?;
         if deleted == 0 {
             return Err(DbError::NotFound("Lore", id));

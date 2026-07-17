@@ -38,7 +38,10 @@ fn row_to_character_raw(row: &rusqlite::Row) -> rusqlite::Result<CharacterRaw> {
     })
 }
 
-fn load_phases(conn: &rusqlite::Connection, character_id: &str) -> rusqlite::Result<Vec<CharacterPhase>> {
+fn load_phases(
+    conn: &rusqlite::Connection,
+    character_id: &str,
+) -> rusqlite::Result<Vec<CharacterPhase>> {
     let mut stmt = conn.prepare(
         "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.changes, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name
          FROM character_phases cp
@@ -100,6 +103,7 @@ fn load_character(
 
 #[tauri::command]
 pub fn create_character(
+    space_id: String,
     world_id: String,
     input: CreateCharacterInput,
     state: State<'_, DbManager>,
@@ -109,98 +113,106 @@ pub fn create_character(
     let aliases_json = serde_json::to_string(&input.aliases)?;
     let tags_json = serde_json::to_string(&input.tags)?;
 
-    state.with_world(&world_id, |conn| {
-        let tx = conn.transaction()?;
-        tx.execute(
-            "INSERT INTO characters (id, name, aliases, description, notes, tags, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![char_id, input.name, aliases_json, input.description, input.notes, tags_json, now, now],
-        )?;
-        tx.commit()?;
-        load_character(conn, &char_id, &world_id)
-    })
+    state.with_world(&space_id, &world_id, |conn| {
+    let tx = conn.transaction()?;
+    tx.execute(
+        "INSERT INTO characters (id, name, aliases, description, notes, tags, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![char_id, input.name, aliases_json, input.description, input.notes, tags_json, now, now],
+    )?;
+    tx.commit()?;
+    load_character(conn, &char_id, &world_id)
+})
 }
 
 #[tauri::command]
 pub fn get_character(
+    space_id: String,
     world_id: String,
     id: String,
     state: State<'_, DbManager>,
 ) -> Result<Character, DbError> {
-    state.with_world(&world_id, |conn| load_character(conn, &id, &world_id))
-}
-
-#[tauri::command]
-pub fn list_characters(world_id: String, state: State<'_, DbManager>) -> Result<Vec<Character>, DbError> {
-    state.with_world(&world_id, |conn| {
-        // (a) Batch-load all characters
-        let mut stmt = conn.prepare(
-            "SELECT id, name, aliases, description, notes, tags, created_at, updated_at
-             FROM characters ORDER BY created_at",
-        )?;
-        let raws: Vec<CharacterRaw> = stmt
-            .query_map([], row_to_character_raw)?
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // (b) Batch-load ALL phases
-        let mut phase_stmt = conn.prepare(
-            "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.changes, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name
-             FROM character_phases cp
-             LEFT JOIN events e ON cp.trigger_event_id = e.id
-             ORDER BY cp.character_id, cp.position",
-        )?;
-        let all_phases: Vec<(String, CharacterPhase)> = phase_stmt
-            .query_map([], |row| {
-                let cid: String = row.get("character_id")?;
-                Ok((
-                    cid.clone(),
-                    CharacterPhase {
-                        id: row.get("id")?,
-                        character_id: cid,
-                        name: row.get("name")?,
-                        appearance: row.get("appearance")?,
-                        changes: row.get("changes")?,
-                        trigger_event_id: row.get("trigger_event_id")?,
-                        trigger_event_name: row.get("trigger_event_name")?,
-                        created_at: row.get("created_at")?,
-                        updated_at: row.get("updated_at")?,
-                    },
-                ))
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // (c) Group phases by character_id
-        let mut phase_map: HashMap<String, Vec<CharacterPhase>> = HashMap::new();
-        for (cid, phase) in all_phases {
-            phase_map.entry(cid).or_default().push(phase);
-        }
-
-        // (d) Assemble results
-        let result: Vec<Character> = raws
-            .into_iter()
-            .map(|raw| {
-                let phases = phase_map.remove(&raw.id).unwrap_or_default();
-                Character {
-                    id: raw.id,
-                    world_id: world_id.to_string(),
-                    name: raw.name,
-                    aliases: raw.aliases,
-                    description: raw.description,
-                    phases,
-                    notes: raw.notes,
-                    tags: raw.tags,
-                    created_at: raw.created_at,
-                    updated_at: raw.updated_at,
-                }
-            })
-            .collect();
-
-        Ok(result)
+    state.with_world(&space_id, &world_id, |conn| {
+        load_character(conn, &id, &world_id)
     })
 }
 
 #[tauri::command]
+pub fn list_characters(
+    space_id: String,
+    world_id: String,
+    state: State<'_, DbManager>,
+) -> Result<Vec<Character>, DbError> {
+    state.with_world(&space_id, &world_id, |conn| {
+    // (a) Batch-load all characters
+    let mut stmt = conn.prepare(
+        "SELECT id, name, aliases, description, notes, tags, created_at, updated_at
+         FROM characters ORDER BY created_at",
+    )?;
+    let raws: Vec<CharacterRaw> = stmt
+        .query_map([], row_to_character_raw)?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // (b) Batch-load ALL phases
+    let mut phase_stmt = conn.prepare(
+        "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.changes, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name
+         FROM character_phases cp
+         LEFT JOIN events e ON cp.trigger_event_id = e.id
+         ORDER BY cp.character_id, cp.position",
+    )?;
+    let all_phases: Vec<(String, CharacterPhase)> = phase_stmt
+        .query_map([], |row| {
+            let cid: String = row.get("character_id")?;
+            Ok((
+                cid.clone(),
+                CharacterPhase {
+                    id: row.get("id")?,
+                    character_id: cid,
+                    name: row.get("name")?,
+                    appearance: row.get("appearance")?,
+                    changes: row.get("changes")?,
+                    trigger_event_id: row.get("trigger_event_id")?,
+                    trigger_event_name: row.get("trigger_event_name")?,
+                    created_at: row.get("created_at")?,
+                    updated_at: row.get("updated_at")?,
+                },
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // (c) Group phases by character_id
+    let mut phase_map: HashMap<String, Vec<CharacterPhase>> = HashMap::new();
+    for (cid, phase) in all_phases {
+        phase_map.entry(cid).or_default().push(phase);
+    }
+
+    // (d) Assemble results
+    let result: Vec<Character> = raws
+        .into_iter()
+        .map(|raw| {
+            let phases = phase_map.remove(&raw.id).unwrap_or_default();
+            Character {
+                id: raw.id,
+                world_id: world_id.to_string(),
+                name: raw.name,
+                aliases: raw.aliases,
+                description: raw.description,
+                phases,
+                notes: raw.notes,
+                tags: raw.tags,
+                created_at: raw.created_at,
+                updated_at: raw.updated_at,
+            }
+        })
+        .collect();
+
+    Ok(result)
+})
+}
+
+#[tauri::command]
 pub fn update_character(
+    space_id: String,
     world_id: String,
     id: String,
     input: UpdateCharacterInput,
@@ -210,12 +222,20 @@ pub fn update_character(
     let aliases_json = serde_json::to_string(&input.aliases)?;
     let tags_json = serde_json::to_string(&input.tags)?;
 
-    state.with_world(&world_id, |conn| {
+    state.with_world(&space_id, &world_id, |conn| {
         let updated = conn.execute(
             "UPDATE characters
-             SET name = ?1, aliases = ?2, description = ?3, notes = ?4, tags = ?5, updated_at = ?6
-             WHERE id = ?7",
-            params![input.name, aliases_json, input.description, input.notes, tags_json, now, id],
+         SET name = ?1, aliases = ?2, description = ?3, notes = ?4, tags = ?5, updated_at = ?6
+         WHERE id = ?7",
+            params![
+                input.name,
+                aliases_json,
+                input.description,
+                input.notes,
+                tags_json,
+                now,
+                id
+            ],
         )?;
         if updated == 0 {
             return Err(DbError::NotFound("Character", id));
@@ -225,8 +245,13 @@ pub fn update_character(
 }
 
 #[tauri::command]
-pub fn delete_character(world_id: String, id: String, state: State<'_, DbManager>) -> Result<(), DbError> {
-    state.with_world(&world_id, |conn| {
+pub fn delete_character(
+    space_id: String,
+    world_id: String,
+    id: String,
+    state: State<'_, DbManager>,
+) -> Result<(), DbError> {
+    state.with_world(&space_id, &world_id, |conn| {
         let deleted = conn.execute("DELETE FROM characters WHERE id = ?1", params![id])?;
         if deleted == 0 {
             return Err(DbError::NotFound("Character", id));
@@ -239,6 +264,7 @@ pub fn delete_character(world_id: String, id: String, state: State<'_, DbManager
 
 #[tauri::command]
 pub fn add_phase(
+    space_id: String,
     world_id: String,
     character_id: String,
     input: CreatePhaseInput,
@@ -247,61 +273,62 @@ pub fn add_phase(
     let phase_id = new_id();
     let now = now_iso();
 
-    state.with_world(&world_id, |conn| {
-        let tx = conn.transaction()?;
+    state.with_world(&space_id, &world_id, |conn| {
+    let tx = conn.transaction()?;
 
-        // position = max(existing position) + 1, or 0 if first
-        let next_pos: i64 = tx
-            .query_row(
-                "SELECT COALESCE(MAX(position), -1) + 1 FROM character_phases WHERE character_id = ?1",
-                params![&character_id],
-                |row| row.get(0),
-            )?;
-
-        tx.execute(
-            "INSERT INTO character_phases (id, character_id, name, appearance, changes, trigger_event_id, position, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![
-                phase_id,
-                character_id,
-                input.name,
-                input.appearance,
-                input.changes,
-                input.trigger_event_id,
-                next_pos,
-                now,
-                now,
-            ],
+    // position = max(existing position) + 1, or 0 if first
+    let next_pos: i64 = tx
+        .query_row(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM character_phases WHERE character_id = ?1",
+            params![&character_id],
+            |row| row.get(0),
         )?;
-        tx.commit()?;
 
-        // Read back
-        conn.query_row(
-            "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.changes, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name
-             FROM character_phases cp
-             LEFT JOIN events e ON cp.trigger_event_id = e.id
-             WHERE cp.id = ?1",
-            params![phase_id],
-            |row| {
-                Ok(CharacterPhase {
-                    id: row.get("id")?,
-                    character_id: row.get("character_id")?,
-                    name: row.get("name")?,
-                    appearance: row.get("appearance")?,
-                    changes: row.get("changes")?,
-                    trigger_event_id: row.get("trigger_event_id")?,
-                    trigger_event_name: row.get("trigger_event_name")?,
-                    created_at: row.get("created_at")?,
-                    updated_at: row.get("updated_at")?,
-                })
-            },
-        )
-        .map_err(DbError::Sqlite)
-    })
+    tx.execute(
+        "INSERT INTO character_phases (id, character_id, name, appearance, changes, trigger_event_id, position, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            phase_id,
+            character_id,
+            input.name,
+            input.appearance,
+            input.changes,
+            input.trigger_event_id,
+            next_pos,
+            now,
+            now,
+        ],
+    )?;
+    tx.commit()?;
+
+    // Read back
+    conn.query_row(
+        "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.changes, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name
+         FROM character_phases cp
+         LEFT JOIN events e ON cp.trigger_event_id = e.id
+         WHERE cp.id = ?1",
+        params![phase_id],
+        |row| {
+            Ok(CharacterPhase {
+                id: row.get("id")?,
+                character_id: row.get("character_id")?,
+                name: row.get("name")?,
+                appearance: row.get("appearance")?,
+                changes: row.get("changes")?,
+                trigger_event_id: row.get("trigger_event_id")?,
+                trigger_event_name: row.get("trigger_event_name")?,
+                created_at: row.get("created_at")?,
+                updated_at: row.get("updated_at")?,
+            })
+        },
+    )
+    .map_err(DbError::Sqlite)
+})
 }
 
 #[tauri::command]
 pub fn update_phase(
+    space_id: String,
     world_id: String,
     phase_id: String,
     input: UpdatePhaseInput,
@@ -309,45 +336,53 @@ pub fn update_phase(
 ) -> Result<CharacterPhase, DbError> {
     let now = now_iso();
 
-    state.with_world(&world_id, |conn| {
-        let updated = conn.execute(
-            "UPDATE character_phases
-             SET name = ?1, appearance = ?2, changes = ?3, trigger_event_id = ?4, updated_at = ?5
-             WHERE id = ?6",
-            params![input.name, input.appearance, input.changes, input.trigger_event_id, now, phase_id],
-        )?;
-        if updated == 0 {
-            return Err(DbError::NotFound("Phase", phase_id));
-        }
+    state.with_world(&space_id, &world_id, |conn| {
+    let updated = conn.execute(
+        "UPDATE character_phases
+         SET name = ?1, appearance = ?2, changes = ?3, trigger_event_id = ?4, updated_at = ?5
+         WHERE id = ?6",
+        params![input.name, input.appearance, input.changes, input.trigger_event_id, now, phase_id],
+    )?;
+    if updated == 0 {
+        return Err(DbError::NotFound("Phase", phase_id));
+    }
 
-        conn.query_row(
-            "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.changes, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name
-             FROM character_phases cp
-             LEFT JOIN events e ON cp.trigger_event_id = e.id
-             WHERE cp.id = ?1",
-            params![phase_id],
-            |row| {
-                Ok(CharacterPhase {
-                    id: row.get("id")?,
-                    character_id: row.get("character_id")?,
-                    name: row.get("name")?,
-                    appearance: row.get("appearance")?,
-                    changes: row.get("changes")?,
-                    trigger_event_id: row.get("trigger_event_id")?,
-                    trigger_event_name: row.get("trigger_event_name")?,
-                    created_at: row.get("created_at")?,
-                    updated_at: row.get("updated_at")?,
-                })
-            },
-        )
-        .map_err(DbError::Sqlite)
-    })
+    conn.query_row(
+        "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.changes, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name
+         FROM character_phases cp
+         LEFT JOIN events e ON cp.trigger_event_id = e.id
+         WHERE cp.id = ?1",
+        params![phase_id],
+        |row| {
+            Ok(CharacterPhase {
+                id: row.get("id")?,
+                character_id: row.get("character_id")?,
+                name: row.get("name")?,
+                appearance: row.get("appearance")?,
+                changes: row.get("changes")?,
+                trigger_event_id: row.get("trigger_event_id")?,
+                trigger_event_name: row.get("trigger_event_name")?,
+                created_at: row.get("created_at")?,
+                updated_at: row.get("updated_at")?,
+            })
+        },
+    )
+    .map_err(DbError::Sqlite)
+})
 }
 
 #[tauri::command]
-pub fn delete_phase(world_id: String, phase_id: String, state: State<'_, DbManager>) -> Result<(), DbError> {
-    state.with_world(&world_id, |conn| {
-        let deleted = conn.execute("DELETE FROM character_phases WHERE id = ?1", params![phase_id])?;
+pub fn delete_phase(
+    space_id: String,
+    world_id: String,
+    phase_id: String,
+    state: State<'_, DbManager>,
+) -> Result<(), DbError> {
+    state.with_world(&space_id, &world_id, |conn| {
+        let deleted = conn.execute(
+            "DELETE FROM character_phases WHERE id = ?1",
+            params![phase_id],
+        )?;
         if deleted == 0 {
             return Err(DbError::NotFound("Phase", phase_id));
         }
@@ -363,12 +398,13 @@ fn _ensure_character_ref_used(_: CharacterRef) {}
 
 #[tauri::command]
 pub fn reorder_phases(
+    space_id: String,
     world_id: String,
     character_id: String,
     phase_ids: Vec<String>,
     state: State<'_, DbManager>,
 ) -> Result<(), DbError> {
-    state.with_world(&world_id, |conn| {
+    state.with_world(&space_id, &world_id, |conn| {
         let tx = conn.transaction()?;
 
         // Shift to a temporary range to avoid UNIQUE(character_id, position) violations

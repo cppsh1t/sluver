@@ -1,11 +1,44 @@
-use rusqlite_migration::{M, Migrations};
+use rusqlite_migration::{Migrations, M};
 
 // ─── meta.db schema ─────────────────────────────────────────────────────────
+// Tier 1 of the three-database design (ADR-0007). Always open. Holds the
+// `spaces` registry (id, name, optional argon2id password_hash) + global
+// app `settings` KV. Per ADR-0008 the password is an auth-gate, not
+// encryption: NULL = unprotected, PHC string = protected.
 
 const META_SQL: &str = r#"
-    -- World registry: tracks all worlds and their DB file paths.
-    -- The `worlds` row here IS the World entity's source of truth
-    -- (name, description). Each world DB does NOT have its own `worlds` table.
+    -- Space registry: each row is one Space. The Space owns a directory
+    -- `spaces/{id}/` (path is computed, NOT stored) containing its
+    -- `space.db` and its `worlds/{worldId}.db` content files.
+    CREATE TABLE spaces (
+        id            TEXT PRIMARY KEY,
+        name          TEXT NOT NULL,
+        password_hash TEXT,
+        created_at    TEXT NOT NULL,
+        updated_at    TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX idx_spaces_name ON spaces(name);
+
+    -- Application-level key-value settings (AppSetting).
+    -- The table name stays "settings"; only the Rust struct renames.
+    CREATE TABLE settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+"#;
+
+// ─── space.db schema ────────────────────────────────────────────────────────
+// Tier 2 of the three-database design (ADR-0007). One file per Space at
+// `spaces/{spaceId}/space.db`, opened once the Space is unlocked. Holds
+// that Space's `worlds` registry + the reserved `space_config` KV. No
+// `space_id` column — identity is implicit in which file is connected,
+// exactly as ADR-0001 did for worlds.
+
+const SPACE_SQL: &str = r#"
+    -- World registry for THIS Space. The `worlds` row here is the World
+    -- entity's source of truth (name, description). `db_path` is relative
+    -- to `spaces/{spaceId}/`, e.g. "worlds/{id}.db". World name uniqueness
+    -- is per-Space (ADR-0007) — enforced via the unique index below.
     CREATE TABLE worlds (
         id          TEXT PRIMARY KEY,
         name        TEXT NOT NULL,
@@ -14,15 +47,20 @@ const META_SQL: &str = r#"
         created_at  TEXT NOT NULL,
         updated_at  TEXT NOT NULL
     );
+    CREATE UNIQUE INDEX idx_worlds_name ON worlds(name);
 
-    -- Application-level key-value settings (AppConfig).
-    CREATE TABLE settings (
+    -- Reserved per-Space key-value config module (CONTEXT.md).
+    -- Intentionally empty for now; future Space-level settings land here.
+    CREATE TABLE space_config (
         key   TEXT PRIMARY KEY,
         value TEXT NOT NULL
     );
 "#;
 
 // ─── world DB schema ────────────────────────────────────────────────────────
+// Tier 3 of the three-database design (ADR-0007). One file per World at
+// `spaces/{spaceId}/worlds/{worldId}.db`. Schema is byte-for-byte identical
+// to the former two-tier WORLD_SQL — only the file location changed.
 
 const WORLD_SQL: &str = r#"
     -- Characters (no world_id column — implicit to this DB file)
@@ -165,13 +203,16 @@ const WORLD_SQL: &str = r#"
     );
 "#;
 
-/// Migrations for `meta.db` (world registry + app settings).
-const META_MIGRATION_002: &str = r#"
-    CREATE UNIQUE INDEX idx_worlds_name ON worlds(name);
-"#;
-
-const META_SLICE: &[M] = &[M::up(META_SQL), M::up(META_MIGRATION_002)];
+/// Migrations for `meta.db` (spaces registry + app settings).
+/// The old `META_MIGRATION_002` (`idx_worlds_name` on meta's `worlds`
+/// table) is gone — that table moved out of meta in ADR-0007, and the
+/// new `idx_spaces_name` is built inline in `META_SQL`.
+const META_SLICE: &[M] = &[M::up(META_SQL)];
 pub const META_MIGRATIONS: Migrations = Migrations::from_slice(META_SLICE);
+
+/// Migrations for each `space.db` (that Space's world registry + config).
+const SPACE_SLICE: &[M] = &[M::up(SPACE_SQL)];
+pub const SPACE_MIGRATIONS: Migrations = Migrations::from_slice(SPACE_SLICE);
 
 /// Migrations for each world DB file (all world-scoped tables).
 const WORLD_MIGRATION_002: &str = r#"
@@ -202,5 +243,9 @@ const WORLD_MIGRATION_003: &str = r#"
     ALTER TABLE character_phases ADD COLUMN name TEXT NOT NULL DEFAULT '';
 "#;
 
-const WORLD_SLICE: &[M] = &[M::up(WORLD_SQL), M::up(WORLD_MIGRATION_002), M::up(WORLD_MIGRATION_003)];
+const WORLD_SLICE: &[M] = &[
+    M::up(WORLD_SQL),
+    M::up(WORLD_MIGRATION_002),
+    M::up(WORLD_MIGRATION_003),
+];
 pub const WORLD_MIGRATIONS: Migrations = Migrations::from_slice(WORLD_SLICE);

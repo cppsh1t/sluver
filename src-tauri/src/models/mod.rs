@@ -1,9 +1,10 @@
 pub mod character;
-pub mod config;
+pub mod setting;
 pub mod event;
 pub mod item;
 pub mod location;
 pub mod lore;
 pub mod novel;
 pub mod ref_counts;
+pub mod space;
 pub mod world;

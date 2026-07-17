@@ -4,7 +4,7 @@ mod models;
 mod tray;
 mod util;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tauri_plugin_decorum::WebviewWindowExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -16,7 +16,7 @@ pub fn run() {
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
-            std::fs::create_dir_all(data_dir.join("worlds"))?;
+            std::fs::create_dir_all(data_dir.join("spaces"))?;
             let db_manager = db::DbManager::new(data_dir)?;
             app.manage(db_manager);
 
@@ -49,9 +49,23 @@ pub fn run() {
             commands::world::get_world,
             commands::world::update_world,
             commands::world::delete_world,
-            // App config
-            commands::world::get_app_config,
-            commands::world::update_app_config,
+            // App settings
+            commands::setting::get_app_setting,
+            commands::setting::update_app_setting,
+            // Space (meta.db)
+            commands::space::create_space,
+            commands::space::list_spaces,
+            commands::space::get_space,
+            commands::space::update_space,
+            commands::space::delete_space,
+            commands::space::set_space_password,
+            // Session (open/close/lock Space tabs)
+            commands::session::get_session,
+            commands::session::open_space,
+            commands::session::close_space,
+            commands::session::lock_space,
+            commands::session::lock_all_protected_spaces,
+            commands::session::set_active_space,
             // Character + Phase
             commands::character::create_character,
             commands::character::get_character,
@@ -117,6 +131,22 @@ pub fn run() {
             // auxiliary windows (dialogs, pickers, ...) can close normally.
             if window.label() == "main" {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    // Hide-to-tray re-lock (ADR-0008): every protected Space
+                    // drops its cached `space.db`/`world.db` connections and
+                    // is marked locked in the persisted session, so restoring
+                    // the window requires per-Space re-auth. Best-effort — a
+                    // failure here must NEVER block the hide (the user still
+                    // expects the window to vanish on close). The frontend
+                    // listens for the `"spaces-locked"` event (T27) and
+                    // invalidates its session cache to show the overlays.
+                    //
+                    // Order matters: lock → emit → hide. Emitting AFTER hide
+                    // would race the webview teardown (T27).
+                    let app = window.app_handle();
+                    if let Some(state) = app.try_state::<crate::db::DbManager>() {
+                        let _ = commands::session::lock_all_protected_spaces_impl(&state);
+                    }
+                    let _ = app.emit("spaces-locked", ());
                     let _ = window.hide();
                     api.prevent_close();
                 }

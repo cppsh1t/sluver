@@ -33,6 +33,21 @@ pub enum DbError {
     #[error("{0} not found: {1}")]
     NotFound(&'static str, String),
 
+    #[error("Space not found: {0}")]
+    SpaceNotFound(String),
+
+    #[error("Space name already taken: {0}")]
+    SpaceNameTaken(String),
+
+    #[error("Space password required: {0}")]
+    SpacePasswordRequired(String),
+
+    #[error("Wrong password for space: {0}")]
+    SpaceWrongPassword(String),
+
+    #[error("Space is locked: {0}")]
+    SpaceLocked(String),
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
@@ -65,6 +80,26 @@ impl DbError {
                     ("id".to_string(), id.clone()),
                 ]),
             ),
+            DbError::SpaceNotFound(id) => (
+                "SPACE_NOT_FOUND",
+                HashMap::from([("id".to_string(), id.clone())]),
+            ),
+            DbError::SpaceNameTaken(name) => (
+                "SPACE_NAME_TAKEN",
+                HashMap::from([("name".to_string(), name.clone())]),
+            ),
+            DbError::SpacePasswordRequired(id) => (
+                "SPACE_PASSWORD_REQUIRED",
+                HashMap::from([("id".to_string(), id.clone())]),
+            ),
+            DbError::SpaceWrongPassword(id) => (
+                "SPACE_WRONG_PASSWORD",
+                HashMap::from([("id".to_string(), id.clone())]),
+            ),
+            DbError::SpaceLocked(id) => (
+                "SPACE_LOCKED",
+                HashMap::from([("id".to_string(), id.clone())]),
+            ),
             // Infrastructure errors: opaque code, no structured args.
             DbError::Sqlite(_)
             | DbError::Io(_)
@@ -86,5 +121,62 @@ impl Serialize for DbError {
         S: serde::Serializer,
     {
         self.to_payload().serialize(serializer)
+    }
+}
+
+#[cfg(test)]
+mod space_error_tests {
+    use super::*;
+
+    #[test]
+    fn space_not_found_payload() {
+        let p = DbError::SpaceNotFound("abc".into()).to_payload();
+        assert_eq!(p.code, "SPACE_NOT_FOUND");
+        assert_eq!(p.args.get("id"), Some(&"abc".to_string()));
+    }
+
+    #[test]
+    fn space_name_taken_payload() {
+        let p = DbError::SpaceNameTaken("My Space".into()).to_payload();
+        assert_eq!(p.code, "SPACE_NAME_TAKEN");
+        assert_eq!(p.args.get("name"), Some(&"My Space".to_string()));
+    }
+
+    #[test]
+    fn space_password_required_payload() {
+        let p = DbError::SpacePasswordRequired("abc".into()).to_payload();
+        assert_eq!(p.code, "SPACE_PASSWORD_REQUIRED");
+        assert_eq!(p.args.get("id"), Some(&"abc".to_string()));
+    }
+
+    #[test]
+    fn space_wrong_password_payload() {
+        let p = DbError::SpaceWrongPassword("abc".into()).to_payload();
+        assert_eq!(p.code, "SPACE_WRONG_PASSWORD");
+        assert_eq!(p.args.get("id"), Some(&"abc".to_string()));
+    }
+
+    #[test]
+    fn space_locked_payload() {
+        let p = DbError::SpaceLocked("abc".into()).to_payload();
+        assert_eq!(p.code, "SPACE_LOCKED");
+        assert_eq!(p.args.get("id"), Some(&"abc".to_string()));
+    }
+
+    /// Regression guard: existing variants must keep their stable codes.
+    #[test]
+    fn existing_codes_unchanged() {
+        assert_eq!(
+            DbError::WorldNotFound("w1".into()).to_payload().code,
+            "WORLD_NOT_FOUND"
+        );
+        let p = DbError::NotFound("Character", "c1".into()).to_payload();
+        assert_eq!(p.code, "NOT_FOUND");
+        assert_eq!(p.args.get("entity"), Some(&"Character".to_string()));
+        assert_eq!(p.args.get("id"), Some(&"c1".to_string()));
+        assert_eq!(
+            DbError::Internal("boom".into()).to_payload().code,
+            "INTERNAL_ERROR"
+        );
     }
 }

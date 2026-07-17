@@ -9,6 +9,5 @@ use crate::db::DbError;
 /// this. See `crate::tray::update_locale`.
 #[tauri::command]
 pub fn set_tray_locale(locale: String, app: AppHandle) -> Result<(), DbError> {
-    crate::tray::update_locale(&app, &locale)
-        .map_err(|e| DbError::Internal(e.to_string()))
+    crate::tray::update_locale(&app, &locale).map_err(|e| DbError::Internal(e.to_string()))
 }

@@ -1,0 +1,624 @@
+//! Session commands — the open/close/lock lifecycle for Space tabs.
+//!
+//! Session state (which Spaces are open, which is active, which are locked)
+//! is persisted as a SINGLE JSON value under the `"session"` key in the
+//! `meta.db` `settings` KV table, so a read-modify-write cycle is atomic at
+//! the row level. The connection cache (which `space.db` / `world.db` files
+//! are currently held in memory) is owned by [`DbManager`]; this module only
+//! flips the session flags and calls the cache lifecycle helpers
+//! (`open_space_conn` / `close_space` / `lock_space`).
+//!
+//! # Lock ordering & argon2
+//!
+//! Every command acquires only the `meta` lock (for the settings KV) and/or
+//! the `spaces` lock (via the cache helpers). The two are NEVER held
+//! simultaneously — argon2 verification in [`open_space`] runs with NO lock
+//! held (the hash is read under `meta`, the lock is released, verification
+//! runs lock-free, then `meta` is re-acquired to persist the new session).
+//! This keeps the multi-hundred-ms argon2 compute off the hot locks.
+
+use rusqlite::{params, Connection};
+use tauri::State;
+
+use crate::db::{DbError, DbManager};
+use crate::models::space::SessionState;
+
+/// The single `settings` KV row holding the serialized [`SessionState`].
+/// Persisting the whole struct as one JSON value makes read-modify-write
+/// atomic at the row level (no partial session ever observable).
+const SESSION_KEY: &str = "session";
+
+// ─── KV helpers (private) ───────────────────────────────────────────────────
+
+/// An all-empty [`SessionState`] — the value returned when no `session` row
+/// exists yet (first boot, or after closing the last Space).
+fn empty_session() -> SessionState {
+    SessionState {
+        open_space_ids: Vec::new(),
+        active_space_id: None,
+        locked_space_ids: Vec::new(),
+    }
+}
+
+/// Read the persisted session. Absent row → empty default. Corrupt JSON →
+/// `DbError::Serde` (surfaces as `INTERNAL_ERROR` on the frontend).
+fn read_session(conn: &Connection) -> Result<SessionState, DbError> {
+    let json: Option<String> = match conn.query_row(
+        "SELECT value FROM settings WHERE key = ?1",
+        params![SESSION_KEY],
+        |row| row.get::<_, String>(0),
+    ) {
+        Ok(s) => Some(s),
+        Err(rusqlite::Error::QueryReturnedNoRows) => None,
+        Err(e) => return Err(DbError::Sqlite(e)),
+    };
+    match json {
+        Some(s) => Ok(serde_json::from_str(&s)?),
+        None => Ok(empty_session()),
+    }
+}
+
+/// Persist the session, replacing any prior value (atomic upsert).
+fn write_session(conn: &Connection, session: &SessionState) -> Result<(), DbError> {
+    let json = serde_json::to_string(session)?;
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![SESSION_KEY, json],
+    )?;
+    Ok(())
+}
+
+/// Look up a Space's stored `password_hash`. Missing Space row →
+/// [`DbError::SpaceNotFound`]; present row → `Ok(None)` (unprotected) or
+/// `Ok(Some(phc))` (protected).
+fn fetch_space_password_hash(conn: &Connection, id: &str) -> Result<Option<String>, DbError> {
+    match conn.query_row(
+        "SELECT password_hash FROM spaces WHERE id = ?1",
+        params![id],
+        |row| row.get::<_, Option<String>>(0),
+    ) {
+        Ok(h) => Ok(h),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Err(DbError::SpaceNotFound(id.to_string())),
+        Err(e) => Err(DbError::Sqlite(e)),
+    }
+}
+
+/// Among `open_ids`, return those whose Space row has a non-NULL
+/// `password_hash`. Missing rows are silently skipped (their session entry
+/// is stale — `delete_space` is responsible for evicting them).
+fn protected_open_ids(conn: &Connection, open_ids: &[String]) -> Result<Vec<String>, DbError> {
+    let mut stmt = conn.prepare("SELECT id FROM spaces WHERE password_hash IS NOT NULL")?;
+    let protected: std::collections::HashSet<String> = stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(open_ids
+        .iter()
+        .filter(|sid| protected.contains(*sid))
+        .cloned()
+        .collect())
+}
+
+/// `true` if `id` appears in `session.open_space_ids`.
+fn is_open(session: &SessionState, id: &str) -> bool {
+    session.open_space_ids.iter().any(|s| s.as_str() == id)
+}
+
+/// `true` if `id` appears in `session.locked_space_ids`.
+fn is_locked(session: &SessionState, id: &str) -> bool {
+    session.locked_space_ids.iter().any(|s| s.as_str() == id)
+}
+
+// ─── impl fns (private; take &DbManager so tests bypass `State<'_, _>`) ─────
+
+fn get_session_impl(manager: &DbManager) -> Result<SessionState, DbError> {
+    manager.with_meta(|c| read_session(c))
+}
+
+fn open_space_impl(
+    id: &str,
+    password: Option<&str>,
+    manager: &DbManager,
+) -> Result<SessionState, DbError> {
+    // 1. Read password_hash + current open/locked flags under the meta lock,
+    //    then RELEASE so argon2 verification runs lock-free.
+    let (hash, was_open, was_locked) = manager.with_meta(|conn| {
+        let hash = fetch_space_password_hash(conn, id)?;
+        let session = read_session(conn)?;
+        Ok((hash, is_open(&session, id), is_locked(&session, id)))
+    })?;
+
+    // 2. Password gate — ONLY when (not yet open) OR (open but currently
+    //    locked). An already-open unlocked Space re-activates without
+    //    re-auth (idempotent). Unprotected Spaces skip the gate entirely.
+    if let Some(phc) = hash.as_deref() {
+        let needs_verify = !was_open || was_locked;
+        if needs_verify {
+            let plain = password.ok_or_else(|| DbError::SpacePasswordRequired(id.to_string()))?;
+            let ok = crate::util::password::verify_password(plain, phc)?;
+            if !ok {
+                return Err(DbError::SpaceWrongPassword(id.to_string()));
+            }
+        }
+    }
+
+    // 3. Warm the space.db cache (acquires the spaces lock; meta is NOT held).
+    manager.open_space_conn(id)?;
+
+    // 4. Re-acquire meta to update + persist session state.
+    let new_session = manager.with_meta(|conn| {
+        let mut session = read_session(conn)?;
+        if !is_open(&session, id) {
+            session.open_space_ids.push(id.to_string());
+        }
+        session.locked_space_ids.retain(|s| s.as_str() != id);
+        session.active_space_id = Some(id.to_string());
+        write_session(conn, &session)?;
+        Ok(session)
+    })?;
+    Ok(new_session)
+}
+
+fn close_space_impl(id: &str, manager: &DbManager) -> Result<SessionState, DbError> {
+    // Drop cached connections first (spaces lock; meta NOT held).
+    manager.close_space(id);
+
+    let new_session = manager.with_meta(|conn| {
+        let mut session = read_session(conn)?;
+        let was_active = session.active_space_id.as_deref() == Some(id);
+        session.open_space_ids.retain(|s| s.as_str() != id);
+        session.locked_space_ids.retain(|s| s.as_str() != id);
+        if was_active {
+            // Successor rule: next remaining open Space, else clear active.
+            session.active_space_id = session.open_space_ids.first().cloned();
+        }
+        write_session(conn, &session)?;
+        Ok(session)
+    })?;
+    Ok(new_session)
+}
+
+fn lock_space_impl(id: &str, manager: &DbManager) -> Result<SessionState, DbError> {
+    // Read protection flag + update session under the meta lock.
+    let protected = manager.with_meta(|conn| {
+        let hash = fetch_space_password_hash(conn, id)?;
+        if hash.is_none() {
+            // Unprotected — locking is a no-op (return current session).
+            return Ok(false);
+        }
+        let mut session = read_session(conn)?;
+        if !is_locked(&session, id) {
+            session.locked_space_ids.push(id.to_string());
+        }
+        write_session(conn, &session)?;
+        Ok(true)
+    })?;
+
+    if protected {
+        // Drop cached connections so re-open requires re-auth (spaces lock).
+        manager.lock_space(id);
+    }
+    // Re-read so we return the freshly-persisted locked state.
+    get_session_impl(manager)
+}
+
+pub(crate) fn lock_all_protected_spaces_impl(manager: &DbManager) -> Result<SessionState, DbError> {
+    // 1. Identify protected open Spaces (meta lock).
+    let to_lock: Vec<String> = manager.with_meta(|conn| {
+        let session = read_session(conn)?;
+        protected_open_ids(conn, &session.open_space_ids)
+    })?;
+
+    // 2. Drop their cached connections (spaces lock, meta released).
+    for sid in &to_lock {
+        manager.lock_space(sid);
+    }
+
+    // 3. Mark them locked in the persisted session (meta lock).
+    let new_session = manager.with_meta(|conn| {
+        let mut session = read_session(conn)?;
+        for sid in &to_lock {
+            if !is_locked(&session, sid) {
+                session.locked_space_ids.push(sid.clone());
+            }
+        }
+        write_session(conn, &session)?;
+        Ok(session)
+    })?;
+    Ok(new_session)
+}
+
+fn set_active_space_impl(id: &str, manager: &DbManager) -> Result<SessionState, DbError> {
+    manager.with_meta(|conn| {
+        let mut session = read_session(conn)?;
+        if is_open(&session, id) {
+            session.active_space_id = Some(id.to_string());
+            write_session(conn, &session)?;
+        }
+        // No-op if id is not in open_space_ids (caller asked for an
+        // unopened Space — leave session exactly as-is).
+        Ok(session)
+    })
+}
+
+// ─── #[tauri::command] wrappers ─────────────────────────────────────────────
+//
+// Each command is a one-line delegate to its `_impl` twin. `State<'_, DbManager>`
+// derefs to `&DbManager`, so `&state` coerces to the impl signature. Splitting
+// the impl out keeps the Tauri-flavoured wrapper free of testable logic.
+
+#[tauri::command]
+pub fn get_session(state: State<'_, DbManager>) -> Result<SessionState, DbError> {
+    get_session_impl(&state)
+}
+
+#[tauri::command]
+pub fn open_space(
+    id: String,
+    password: Option<String>,
+    state: State<'_, DbManager>,
+) -> Result<SessionState, DbError> {
+    open_space_impl(&id, password.as_deref(), &state)
+}
+
+#[tauri::command]
+pub fn close_space(id: String, state: State<'_, DbManager>) -> Result<SessionState, DbError> {
+    close_space_impl(&id, &state)
+}
+
+#[tauri::command]
+pub fn lock_space(id: String, state: State<'_, DbManager>) -> Result<SessionState, DbError> {
+    lock_space_impl(&id, &state)
+}
+
+#[tauri::command]
+pub fn lock_all_protected_spaces(state: State<'_, DbManager>) -> Result<SessionState, DbError> {
+    lock_all_protected_spaces_impl(&state)
+}
+
+#[tauri::command]
+pub fn set_active_space(id: String, state: State<'_, DbManager>) -> Result<SessionState, DbError> {
+    set_active_space_impl(&id, &state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::params;
+    use tempfile::TempDir;
+
+    /// Test harness: owns the `TempDir` (so cleanup is automatic) and exposes
+    /// a fresh `DbManager`. Spaces are inserted directly into `meta.db`
+    /// because the Space CRUD commands (T11) live in a sibling module and
+    /// aren't wired into the test.
+    struct Fixture {
+        _tmp: TempDir,
+        manager: DbManager,
+    }
+
+    impl Fixture {
+        fn new() -> Self {
+            let tmp = TempDir::new().expect("tempdir");
+            let manager = DbManager::new(tmp.path().to_path_buf()).expect("DbManager::new");
+            Self {
+                _tmp: tmp,
+                manager,
+            }
+        }
+
+        /// Insert a Space row. `password_hash = None` for unprotected;
+        /// pass a PHC string for protected.
+        fn insert_space(&self, id: &str, name: &str, password_hash: Option<&str>) {
+            self.manager
+                .with_meta(|conn| {
+                    conn.execute(
+                        "INSERT INTO spaces (id, name, password_hash, created_at, updated_at)
+                         VALUES (?1, ?2, ?3, ?4, ?4)",
+                        params![id, name, password_hash, "2026-01-01T00:00:00.000Z"],
+                    )?;
+                    Ok(())
+                })
+                .expect("insert space row");
+        }
+
+        fn session(&self) -> SessionState {
+            get_session_impl(&self.manager).expect("get_session")
+        }
+
+        fn space_db_exists(&self, id: &str) -> bool {
+            self.manager
+                .data_dir()
+                .join("spaces")
+                .join(id)
+                .join("space.db")
+                .exists()
+        }
+    }
+
+    // ─── get_session ────────────────────────────────────────────────────────
+
+    #[test]
+    fn get_session_defaults_to_empty_when_no_row() {
+        let f = Fixture::new();
+        let s = f.session();
+        assert!(s.open_space_ids.is_empty());
+        assert!(s.active_space_id.is_none());
+        assert!(s.locked_space_ids.is_empty());
+    }
+
+    // ─── open_space (unprotected) ───────────────────────────────────────────
+
+    #[test]
+    fn open_unprotected_space_succeeds_and_warms_cache() {
+        let f = Fixture::new();
+        f.insert_space("s1", "Open", None);
+
+        let s = open_space_impl("s1", None, &f.manager).expect("open unprotected");
+
+        assert_eq!(s.open_space_ids, vec!["s1".to_string()]);
+        assert_eq!(s.active_space_id.as_deref(), Some("s1"));
+        assert!(s.locked_space_ids.is_empty());
+        // `open_space_conn` creates `spaces/{id}/space.db` on first warm.
+        assert!(f.space_db_exists("s1"), "space.db file should exist after open");
+    }
+
+    #[test]
+    fn open_space_idempotent_when_already_open_and_unlocked() {
+        let f = Fixture::new();
+        f.insert_space("s1", "Open", None);
+        let _ = open_space_impl("s1", None, &f.manager).expect("first open");
+
+        // Second open — no password required, no error, stays activated.
+        let s = open_space_impl("s1", None, &f.manager).expect("second open");
+        assert_eq!(s.open_space_ids.len(), 1);
+        assert_eq!(s.active_space_id.as_deref(), Some("s1"));
+        assert!(s.locked_space_ids.is_empty());
+    }
+
+    // ─── open_space (protected) ─────────────────────────────────────────────
+
+    #[test]
+    fn open_protected_space_requires_password_and_does_not_add_to_open_list() {
+        let f = Fixture::new();
+        let phc = crate::util::password::hash_password("hunter2").expect("hash");
+        f.insert_space("sp", "Protected", Some(&phc));
+
+        // No password supplied → SpacePasswordRequired.
+        let err = open_space_impl("sp", None, &f.manager).expect_err("require pw");
+        match err {
+            DbError::SpacePasswordRequired(id) => assert_eq!(id, "sp"),
+            other => panic!("expected SpacePasswordRequired, got {other:?}"),
+        }
+        // Session MUST be unchanged — space was NOT added to the open list.
+        let s = f.session();
+        assert!(s.open_space_ids.is_empty());
+        assert!(s.active_space_id.is_none());
+        assert!(f.manager.data_dir().join("spaces").join("sp").join("space.db").exists() == false);
+    }
+
+    #[test]
+    fn open_protected_space_wrong_password_returns_wrong_password() {
+        let f = Fixture::new();
+        let phc = crate::util::password::hash_password("hunter2").expect("hash");
+        f.insert_space("sp", "Protected", Some(&phc));
+
+        let err = open_space_impl("sp", Some("wrong-password"), &f.manager)
+            .expect_err("wrong password");
+        match err {
+            DbError::SpaceWrongPassword(id) => assert_eq!(id, "sp"),
+            other => panic!("expected SpaceWrongPassword, got {other:?}"),
+        }
+        let s = f.session();
+        assert!(s.open_space_ids.is_empty(), "wrong pw must not add to open list");
+    }
+
+    #[test]
+    fn open_protected_space_correct_password_succeeds() {
+        let f = Fixture::new();
+        let phc = crate::util::password::hash_password("hunter2").expect("hash");
+        f.insert_space("sp", "Protected", Some(&phc));
+
+        let s = open_space_impl("sp", Some("hunter2"), &f.manager).expect("correct pw");
+        assert_eq!(s.open_space_ids, vec!["sp".to_string()]);
+        assert_eq!(s.active_space_id.as_deref(), Some("sp"));
+        assert!(s.locked_space_ids.is_empty());
+        assert!(f.space_db_exists("sp"));
+    }
+
+    #[test]
+    fn open_unknown_space_returns_not_found() {
+        let f = Fixture::new();
+        let err = open_space_impl("ghost", None, &f.manager).expect_err("unknown space");
+        assert!(matches!(err, DbError::SpaceNotFound(_)));
+    }
+
+    // ─── lock_space ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn lock_unprotected_space_is_no_op() {
+        let f = Fixture::new();
+        f.insert_space("su", "Unprot", None);
+        let _ = open_space_impl("su", None, &f.manager).expect("open");
+
+        let s = lock_space_impl("su", &f.manager).expect("lock");
+        assert!(
+            s.locked_space_ids.is_empty(),
+            "unprotected Space must never enter the locked list"
+        );
+        assert_eq!(s.open_space_ids, vec!["su".to_string()]);
+    }
+
+    #[test]
+    fn lock_protected_space_marks_locked_and_keeps_tab_open() {
+        let f = Fixture::new();
+        let phc = crate::util::password::hash_password("pw").expect("hash");
+        f.insert_space("sp", "Prot", Some(&phc));
+        let _ = open_space_impl("sp", Some("pw"), &f.manager).expect("open");
+
+        let s = lock_space_impl("sp", &f.manager).expect("lock");
+        assert_eq!(s.locked_space_ids, vec!["sp".to_string()]);
+        assert!(s.open_space_ids.contains(&"sp".to_string()));
+    }
+
+    #[test]
+    fn open_locked_protected_space_requires_reauth() {
+        let f = Fixture::new();
+        let phc = crate::util::password::hash_password("pw").expect("hash");
+        f.insert_space("sp", "Prot", Some(&phc));
+        let _ = open_space_impl("sp", Some("pw"), &f.manager).expect("open");
+        let _ = lock_space_impl("sp", &f.manager).expect("lock");
+
+        // Locked → re-opening with no password fails.
+        let err = open_space_impl("sp", None, &f.manager).expect_err("locked needs re-auth");
+        assert!(matches!(err, DbError::SpacePasswordRequired(_)));
+
+        // Re-auth with the right password clears the locked flag.
+        let s = open_space_impl("sp", Some("pw"), &f.manager).expect("re-auth open");
+        assert!(s.locked_space_ids.is_empty());
+        assert_eq!(s.active_space_id.as_deref(), Some("sp"));
+    }
+
+    // ─── lock_all_protected_spaces ──────────────────────────────────────────
+
+    #[test]
+    fn lock_all_locks_only_protected_open_spaces() {
+        let f = Fixture::new();
+        f.insert_space("su", "Unprot", None);
+        let phc = crate::util::password::hash_password("pw").expect("hash");
+        f.insert_space("sp1", "Prot1", Some(&phc));
+        f.insert_space("sp2", "Prot2", Some(&phc));
+        // A protected Space that is NOT open — must not be touched.
+        f.insert_space("sp3", "Prot3Closed", Some(&phc));
+
+        let _ = open_space_impl("su", None, &f.manager).expect("open su");
+        let _ = open_space_impl("sp1", Some("pw"), &f.manager).expect("open sp1");
+        let _ = open_space_impl("sp2", Some("pw"), &f.manager).expect("open sp2");
+
+        let s = lock_all_protected_spaces_impl(&f.manager).expect("lock all");
+
+        assert_eq!(s.locked_space_ids.len(), 2, "only sp1 + sp2 locked");
+        assert!(s.locked_space_ids.contains(&"sp1".to_string()));
+        assert!(s.locked_space_ids.contains(&"sp2".to_string()));
+        assert!(!s.locked_space_ids.contains(&"su".to_string()));
+        assert!(!s.locked_space_ids.contains(&"sp3".to_string()));
+        assert_eq!(s.open_space_ids.len(), 3, "all three open tabs stay open");
+    }
+
+    #[test]
+    fn lock_all_with_no_protected_open_is_no_op() {
+        let f = Fixture::new();
+        f.insert_space("su", "Unprot", None);
+        let _ = open_space_impl("su", None, &f.manager).expect("open");
+
+        let s = lock_all_protected_spaces_impl(&f.manager).expect("lock all");
+        assert!(s.locked_space_ids.is_empty());
+        assert_eq!(s.open_space_ids.len(), 1);
+    }
+
+    // ─── close_space ────────────────────────────────────────────────────────
+
+    #[test]
+    fn close_active_space_picks_first_remaining_as_active() {
+        let f = Fixture::new();
+        f.insert_space("a", "A", None);
+        f.insert_space("b", "B", None);
+        f.insert_space("c", "C", None);
+        let _ = open_space_impl("a", None, &f.manager).expect("open a");
+        let _ = open_space_impl("b", None, &f.manager).expect("open b");
+        let _ = open_space_impl("c", None, &f.manager).expect("open c"); // active = c
+
+        let s = close_space_impl("c", &f.manager).expect("close c");
+        assert_eq!(s.open_space_ids, vec!["a".to_string(), "b".to_string()]);
+        assert_eq!(
+            s.active_space_id.as_deref(),
+            Some("a"),
+            "successor rule: pick first remaining open"
+        );
+    }
+
+    #[test]
+    fn close_only_open_space_clears_active() {
+        let f = Fixture::new();
+        f.insert_space("a", "A", None);
+        let _ = open_space_impl("a", None, &f.manager).expect("open a");
+
+        let s = close_space_impl("a", &f.manager).expect("close a");
+        assert!(s.open_space_ids.is_empty());
+        assert!(s.active_space_id.is_none());
+        assert!(s.locked_space_ids.is_empty());
+    }
+
+    #[test]
+    fn close_non_active_space_preserves_active() {
+        let f = Fixture::new();
+        f.insert_space("a", "A", None);
+        f.insert_space("b", "B", None);
+        let _ = open_space_impl("a", None, &f.manager).expect("open a");
+        let _ = open_space_impl("b", None, &f.manager).expect("open b"); // active = b
+
+        let s = close_space_impl("a", &f.manager).expect("close a");
+        assert_eq!(s.open_space_ids, vec!["b".to_string()]);
+        assert_eq!(s.active_space_id.as_deref(), Some("b"));
+    }
+
+    // ─── set_active_space ───────────────────────────────────────────────────
+
+    #[test]
+    fn set_active_space_updates_when_open() {
+        let f = Fixture::new();
+        f.insert_space("a", "A", None);
+        f.insert_space("b", "B", None);
+        let _ = open_space_impl("a", None, &f.manager).expect("open a");
+        let _ = open_space_impl("b", None, &f.manager).expect("open b"); // active = b
+
+        let s = set_active_space_impl("a", &f.manager).expect("set active a");
+        assert_eq!(s.active_space_id.as_deref(), Some("a"));
+    }
+
+    #[test]
+    fn set_active_space_no_op_for_unopened() {
+        let f = Fixture::new();
+        f.insert_space("a", "A", None);
+        f.insert_space("b", "B", None);
+        let _ = open_space_impl("a", None, &f.manager).expect("open a"); // active = a
+        // b exists but is NOT open — no-op.
+
+        let s = set_active_space_impl("b", &f.manager).expect("set active b");
+        assert_eq!(
+            s.active_space_id.as_deref(),
+            Some("a"),
+            "active must remain unchanged for an unopened Space"
+        );
+    }
+
+    // ─── persistence ────────────────────────────────────────────────────────
+
+    #[test]
+    fn session_persists_across_manager_reopen() {
+        let tmp = TempDir::new().expect("tempdir");
+        let data_dir = tmp.path().to_path_buf();
+
+        {
+            let mgr = DbManager::new(data_dir.clone()).expect("mgr");
+            mgr.with_meta(|conn| {
+                conn.execute(
+                    "INSERT INTO spaces (id, name, password_hash, created_at, updated_at)
+                     VALUES (?1, ?2, NULL, ?3, ?3)",
+                    params!["persist", "P", "2026-01-01T00:00:00.000Z"],
+                )?;
+                Ok(())
+            })
+            .expect("insert space");
+            let s = open_space_impl("persist", None, &mgr).expect("open");
+            assert_eq!(s.active_space_id.as_deref(), Some("persist"));
+        } // mgr dropped → connections closed, meta.db flushed.
+
+        // A fresh DbManager over the same data_dir must observe the persisted row.
+        let mgr = DbManager::new(data_dir).expect("mgr reopen");
+        let s = get_session_impl(&mgr).expect("get after reopen");
+        assert_eq!(s.open_space_ids, vec!["persist".to_string()]);
+        assert_eq!(s.active_space_id.as_deref(), Some("persist"));
+        assert!(s.locked_space_ids.is_empty());
+    }
+}

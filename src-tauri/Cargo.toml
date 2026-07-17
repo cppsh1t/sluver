@@ -18,7 +18,19 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+# Pinned to ^2.11 to unlock `data-tauri-drag-region="deep"` (propagates window
+# drag to non-interactive descendants) used by the TitleBar Space tabs (ADR-0009).
+# `tray-icon` is a NON-DEFAULT feature and must stay explicit (ADR-0008 tray re-lock).
+tauri = { version = "2.11", features = ["tray-icon"] }
+# argon2id password hashing (ADR-0008: auth-gate only, NOT at-rest encryption).
+# Default features include `password-hash`, `alloc`, and `rand` — no flags needed.
+# NOTE: argon2 0.5 pulls `password-hash` WITHOUT its `getrandom` feature, so
+# `argon2::password_hash::rand_core::OsRng` (needed by `SaltString::generate`)
+# is unreachable out of the box. Adding `password-hash` here with `getrandom`
+# turns that feature on via cargo feature unification — no extra crate is
+# introduced (`password-hash` is already a transitive dep of argon2).
+argon2 = "0.5"
+password-hash = { version = "0.5", features = ["getrandom"] }
 tauri-plugin-opener = "2"
 tauri-plugin-os = "2"
 serde = { version = "1", features = ["derive"] }
@@ -29,4 +41,8 @@ rusqlite_migration = "2.5.0"
 uuid = { version = "1.23.4", features = ["v7"] }
 chrono = "0.4.45"
 thiserror = "2.0.18"
+
+[dev-dependencies]
+# Filesystem isolation for DbManager / command integration tests (T10 stress test).
+tempfile = "3"
 
