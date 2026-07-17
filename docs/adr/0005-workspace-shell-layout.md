@@ -1,5 +1,7 @@
 # Workspace shell: separate layout routes, not a persistent global sidebar
 
+**Status**: superseded by ADR-0009 (three-tier layout + Space tabs in the TitleBar).
+
 When a user opens a World, the app switches from app-level navigation (Worlds / Library / Settings) to world-level navigation (Characters / Events / Locations / Items / Lore / Novels). We implement this as two sibling layout routes under the root, not as a single persistent sidebar that adapts by route.
 
 ## Context

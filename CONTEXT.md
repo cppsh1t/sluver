@@ -1,13 +1,17 @@
 # Sluver
 
-A desktop worldbuilding & novel-writing application. Each World is a fully isolated fiction project — its Characters, Locations, Items, Lore, Events, and Novels never reference or appear in other Worlds. Within a World, Novels contain Chapters and Scenes that reference back into the worldbuilding material.
+A desktop worldbuilding & novel-writing application. A **Space** is the outer isolation boundary and may contain multiple **Worlds**; each World is a fully isolated fiction project whose Characters, Locations, Items, Lore, Events, and Novels never reference or appear in other Worlds, even within the same Space, and no data crosses between Spaces. Within a World, Novels contain Chapters and Scenes that reference back into the worldbuilding material.
 
 ## Language
 
 ### Container
 
+**Space**:
+The top-level container and outer isolation boundary. Owns its own World registry, an optional password, and a reserved `config` module for future Space-scoped settings (deliberately empty for now — distinct in nature from global `Settings`). Optionally password-protected: a protected Space's content is obscured behind an in-page authentication overlay until its password is verified — the tab stays open in a *locked* state (not a separate pre-entry gate). Re-authentication is required when the app returns from the system tray (see ADR-0008). Identity is by `id` (UUID v7); `name` is a display label unique across the Space registry. Multiple Spaces may be open simultaneously, each presented as a tab.
+_Avoid_: Workspace, Vault, Account, Profile, Collection, Project
+
 **World**:
-The top-level container and isolation boundary for a single fiction project. Holds all Characters, Locations, Items, Lore, Events, and Novels as a closed universe — nothing crosses between Worlds. Identity is by `id` (UUID v7); `name` is a display label unique across the registry.
+A single fiction project contained within a Space — no longer the top-level boundary (that role belongs to Space). Holds all Characters, Locations, Items, Lore, Events, and Novels as a closed universe — nothing crosses between Worlds, even within the same Space. Identity is by `id` (UUID v7); `name` is a display label unique within its Space.
 _Avoid_: Project, Universe, Campaign, Setting
 
 ### The Worldbook
@@ -58,10 +62,20 @@ _Avoid_: Section, Part
 The leaf unit of prose in a Novel — the only entity that carries narrative text (`content`, plain text). Optionally anchored to a time range and a Location. References the Characters (at specific Phases), Items, and Events that appear in it.
 _Avoid_: Sequence, Beat, Moment, Setup, Fragment
 
+### Application layer
+
+**Setting** (plural: **Settings**):
+Global application preferences that apply regardless of which Space is open: UI language (`locale`), color scheme (`theme`), and accent color (`color`). Live above the Space layer — they also govern the Space-select screen, the password gate, and the tray menu. Distinct from per-Space `config`.
+_Avoid_: Config, Preferences, Options
+
+**Space config**:
+A reserved module on each Space, intentionally empty for now, intended for future Space-scoped settings of a different nature than global `Settings`. The term `config` is reserved for this Space-level use; do not use it for global `Settings`.
+_Avoid_: Space settings, Space preferences
+
 ## Conventions
 
-**Name uniqueness**: Within each scope, the `name` or `title` field is unique — `World.name` globally; `Character.name`, `Location.name`, `Item.name`, `Lore.name`, `Event.name`, `Novel.title` within their World; `CharacterPhase.name` within their Character; `Chapter.title` within their Novel; `Scene.title` within their Chapter. Identity is always by `id` (UUID v7); the display label is scoped-unique.
+**Name uniqueness**: Within each scope, the `name` or `title` field is unique — `Space.name` across the Space registry; `World.name` within its Space; `Character.name`, `Location.name`, `Item.name`, `Lore.name`, `Event.name`, `Novel.title` within their World; `CharacterPhase.name` within their Character; `Chapter.title` within their Novel; `Scene.title` within their Chapter. Identity is always by `id` (UUID v7); the display label is scoped-unique.
 
-**World isolation**: Worlds share no data. There is no cross-World reference at any layer (schema, query, or UI). Worlds that need to share content must duplicate it.
+**Isolation (two-tier)**: The app enforces isolation at two nested boundaries. (1) **Space isolation** — Spaces share no data at any layer (schema, query, UI); each Space's World registry, password, and config are invisible to other Spaces. (2) **World isolation** — within a Space, Worlds share no data; there is no cross-World reference at any layer. Worlds that need to share content must duplicate it; Spaces that need to share content must duplicate it.
 
 **Position uniqueness**: Within each ordered collection, the `position` field is unique to its parent — `CharacterPhase.position` within their Character, `Chapter.position` within their Novel, `Scene.position` within their Chapter. Ordering is mutable via `reorder_*` commands.
