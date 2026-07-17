@@ -6,7 +6,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { locale as detectOsLocale } from "@tauri-apps/plugin-os";
 
 import { router } from "./router";
-import { getAppConfig, setTrayLocale } from "@/api";
+import { getAppSetting, setTrayLocale } from "@/api";
 import {
   AUTO_LOCALE,
   DEFAULT_LOCALE,
@@ -31,7 +31,7 @@ const queryClient = new QueryClient({
  * Resolve the active UI locale at startup.
  *
  * Priority chain (first wins):
- *   1. User's saved preference in `AppConfig.locale`
+ *   1. User's saved preference in `AppSetting.locale`
  *        - `"auto"` → defer to OS locale (step 2)
  *        - any BCP-47 tag → use as-is (normalized by `resolveLocale`)
  *   2. OS locale via `@tauri-apps/plugin-os`
@@ -45,9 +45,9 @@ async function resolveInitialLocale(): Promise<string> {
   // 1. Saved preference
   let saved: string | undefined;
   try {
-    saved = (await getAppConfig()).locale;
+    saved = (await getAppSetting()).locale;
   } catch {
-    // AppConfig unreachable (e.g. migration issue) — fall through.
+    // AppSetting unreachable (e.g. migration issue) — fall through.
   }
 
   if (saved && saved !== AUTO_LOCALE) {

@@ -1,0 +1,114 @@
+{
+  "tabs": {
+    "close": "Close space",
+    "closeConfirmTitle": "Close \"{{name}}\"?",
+    "closeConfirmDescription": "Closing will lock this space. You'll need to re-enter its password when you open it again (if one is set).",
+    "new": "New",
+    "newSpace": "New space"
+  },
+  "picker": {
+    "label": "Spaces",
+    "empty": "No spaces yet",
+    "emptyHint": "Create a space to start organizing your worlds.",
+    "createNew": "New space…",
+    "manage": "Manage spaces"
+  },
+  "gate": {
+    "title": "Space locked",
+    "subtitle": "Enter the password to unlock \"{{name}}\".",
+    "passwordLabel": "Password",
+    "passwordPlaceholder": "Enter space password",
+    "unlock": "Unlock",
+    "unlocking": "Unlocking…",
+    "wrongPassword": "Wrong password, please try again.",
+    "hint": "This space is password-protected. Only authorized users can access it.",
+    "locked": "Locked"
+  },
+  "home": {
+    "title": "Space",
+    "subtitle": "Manage the worlds in this space and start creating.",
+    "createWorld": "New world",
+    "manageSpace": "Manage space",
+    "emptyWorlds": {
+      "title": "No worlds in this space yet",
+      "description": "Create the first world in this space to start building characters, weaving events, and writing novels.",
+      "cta": "Create your first world"
+    }
+  },
+  "landing": {
+    "title": "Spaces",
+    "subtitle": "Pick a space to continue, or organize your worlds into spaces.",
+    "createSpace": "New space"
+  },
+  "management": {
+    "create": {
+      "title": "New space",
+      "description": "Create a new space to group and organize your worlds.",
+      "nameLabel": "Name",
+      "namePlaceholder": "Enter space name",
+      "passwordLabel": "Password",
+      "passwordPlaceholder": "Set a space password",
+      "passwordHint": "Optional. When set, opening this space requires the password.",
+      "setPassword": "Protect this space with a password",
+      "submit": "Create space",
+      "submitting": "Creating…"
+    },
+    "edit": {
+      "title": "Edit space",
+      "description": "Update the name of this space.",
+      "nameLabel": "Name",
+      "namePlaceholder": "Enter space name",
+      "submit": "Save",
+      "submitting": "Saving…"
+    },
+    "delete": {
+      "title": "Delete \"{{name}}\"?",
+      "description": "This cannot be undone. All worlds in this space, along with their characters, locations, items, lore, events, and novel data, will be permanently deleted.",
+      "worldsCount": "This space contains {{count}} world(s), which will also be deleted.",
+      "confirm": "I confirm I want to delete this space and all of its contents",
+      "passwordRequired": "This space is password-protected. Enter the password to confirm deletion.",
+      "passwordLabel": "Password",
+      "passwordPlaceholder": "Enter space password",
+      "submit": "Delete permanently",
+      "submitting": "Deleting…"
+    },
+    "password": {
+      "titleAdd": "Set space password",
+      "titleChange": "Change space password",
+      "titleRemove": "Remove space password",
+      "currentLabel": "Current password",
+      "currentPlaceholder": "Enter current password",
+      "newLabel": "New password",
+      "newPlaceholder": "Enter new password",
+      "newConfirmLabel": "Confirm new password",
+      "newConfirmPlaceholder": "Re-enter new password",
+      "mismatch": "The passwords do not match",
+      "removeConfirm": "Removing the password will leave this space unprotected.",
+      "submit": "Save",
+      "submitting": "Saving…"
+    }
+  },
+  "toast": {
+    "createSuccess": "Space created",
+    "createFailed": "Failed to create space",
+    "updateSuccess": "Space updated",
+    "updateFailed": "Failed to update space",
+    "deleteSuccess": "Space deleted",
+    "deleteFailed": "Failed to delete space",
+    "passwordSetSuccess": "Space password set",
+    "passwordSetFailed": "Failed to set password",
+    "passwordRemoveSuccess": "Space password removed",
+    "passwordRemoveFailed": "Failed to remove password",
+    "openFailed": "Failed to open space",
+    "wrongPassword": "Wrong password, unable to unlock",
+    "lockAll": "All spaces locked",
+    "lockAllFailed": "Failed to lock spaces"
+  },
+  "errors": {
+    "nameTaken": "This name is already taken",
+    "notFound": "Space not found",
+    "locked": "Space is locked",
+    "passwordRequired": "This action requires the space password",
+    "wrongPassword": "Wrong password"
+  }
+}

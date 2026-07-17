@@ -1,10 +1,10 @@
 /**
- * World + AppConfig IPC API.
+ * World IPC API.
  *
  * Worlds live in `meta.db` — no `worldId` scoping needed.
  */
 
-import type { AppConfig, World } from '@/types';
+import type { World } from '@/types';
 import { call } from './client';
 import type { CreateWorldInput, UpdateWorldInput } from './types';
 
@@ -30,16 +30,6 @@ export function deleteWorld(id: string): Promise<void> {
   return call<void>('delete_world', { id });
 }
 
-// ─── App Config ─────────────────────────────────────────────────────────────
-
-export function getAppConfig(): Promise<AppConfig> {
-  return call<AppConfig>('get_app_config');
-}
-
-export function updateAppConfig(config: AppConfig): Promise<AppConfig> {
-  return call<AppConfig>('update_app_config', { config });
-}
-
 // ─── Tray ───────────────────────────────────────────────────────────────────
 
 /**
@@ -50,3 +40,4 @@ export function updateAppConfig(config: AppConfig): Promise<AppConfig> {
 export function setTrayLocale(locale: string): Promise<void> {
   return call<void>('set_tray_locale', { locale });
 }
+

@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { appLayoutRoute } from "./_app";
-import { getAppConfig, setTrayLocale, updateAppConfig } from "@/api";
+import { getAppSetting, setTrayLocale, updateAppSetting } from "@/api";
 import { toErrorPayload } from "@/api/client";
 import { resolveLocale, AUTO_LOCALE } from "@/i18n";
 import i18n from "@/i18n";
@@ -17,13 +17,13 @@ import {
   type ThemeMode,
 } from "@/lib/theme";
 import { cn } from "@/lib/utils";
-import type { AppConfig } from "@/types";
+import type { AppSetting } from "@/types";
 
 function SettingsPage() {
   const { t } = useTranslation(["settings", "common"]);
   const [theme, setTheme] = useState<ThemeMode>("system");
   const [colorTheme, setColorTheme] = useState<ColorTheme>("neutral");
-  const [locale, setLocale] = useState<AppConfig["locale"]>("auto");
+  const [locale, setLocale] = useState<AppSetting["locale"]>("auto");
   const [loading, setLoading] = useState(true);
 
   const themeOptions: { value: ThemeMode; label: string }[] = [
@@ -48,7 +48,7 @@ function SettingsPage() {
   ];
 
   useEffect(() => {
-    getAppConfig()
+    getAppSetting()
       .then((c) => {
         setTheme(c.appearance.theme);
         setColorTheme(c.appearance.colorTheme);
@@ -69,10 +69,10 @@ function SettingsPage() {
   async function persist(next: {
     theme?: ThemeMode;
     colorTheme?: ColorTheme;
-    locale?: AppConfig["locale"];
+    locale?: AppSetting["locale"];
   }) {
     try {
-      await updateAppConfig({
+      await updateAppSetting({
         appearance: {
           theme: next.theme ?? theme,
           colorTheme: next.colorTheme ?? colorTheme,
@@ -114,7 +114,7 @@ function SettingsPage() {
     }
   }
 
-  async function handleChangeLanguage(next: AppConfig["locale"]) {
+  async function handleChangeLanguage(next: AppSetting["locale"]) {
     if (next === locale) return;
     const prev = locale;
 
@@ -216,7 +216,7 @@ function SettingsPage() {
               loading={loading}
               options={languageOptions}
               value={locale}
-              onChange={(v) => handleChangeLanguage(v as AppConfig["locale"])}
+              onChange={(v) => handleChangeLanguage(v as AppSetting["locale"])}
             />
           </SettingRow>
         </section>

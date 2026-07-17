@@ -12,9 +12,12 @@
 export { call } from './client';
 
 export * from './world';
+export * from './setting';
 export * from './character';
 export * from './element';
 export * from './event';
 export * from './novel';
+export * from './space';
+export * from './session';
 
 export type * from './types';

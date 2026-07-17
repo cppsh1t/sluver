@@ -9,9 +9,15 @@
     "Chapter": "章节",
     "Scene": "场景",
     "Phase": "阶段",
-    "World": "世界"
+    "World": "世界",
+    "Space": "空间"
   },
   "WORLD_NOT_FOUND": "未找到世界 ({{id}})",
   "NOT_FOUND": "未找到{{entity}} ({{id}})",
+  "SPACE_NOT_FOUND": "未找到空间 ({{id}})",
+  "SPACE_NAME_TAKEN": "空间名称「{{name}}」已被占用",
+  "SPACE_PASSWORD_REQUIRED": "该空间需要密码 ({{id}})",
+  "SPACE_WRONG_PASSWORD": "空间密码错误",
+  "SPACE_LOCKED": "空间已锁定 ({{id}})",
   "INTERNAL_ERROR": "发生内部错误"
 }

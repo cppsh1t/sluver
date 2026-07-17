@@ -12,7 +12,8 @@
   "nav": {
     "primaryNav": "主导航",
     "worlds": "世界",
-    "settings": "配置",
+    "spaces": "空间",
+    "settings": "设置",
     "library": "资料库",
     "version": "v{{version}} · 预览版",
     "backToWorlds": "所有世界",

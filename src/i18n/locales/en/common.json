@@ -12,6 +12,7 @@
   "nav": {
     "primaryNav": "Primary navigation",
     "worlds": "Worlds",
+    "spaces": "Spaces",
     "settings": "Settings",
     "library": "Library",
     "version": "v{{version}} · Preview",

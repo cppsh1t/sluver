@@ -15,10 +15,22 @@ export { itemIdSchema, type ItemId } from './item';
 export { loreIdSchema, type LoreId } from './lore';
 export { eventIdSchema, type EventId } from './event';
 export { novelIdSchema, type NovelId, chapterIdSchema, type ChapterId, sceneIdSchema, type SceneId } from './novel';
+export { spaceIdSchema, type SpaceId } from './space';
 
 // ─── Top-level ────────────────────────────────────────────────────────────
 export { worldSchema, type World } from './world';
-export { appConfigSchema, type AppConfig } from './config';
+export { appSettingSchema, type AppSetting } from './setting';
+export {
+  spaceSummarySchema,
+  type SpaceSummary,
+  createSpaceInputSchema,
+  type CreateSpaceInput,
+  updateSpaceInputSchema,
+  type UpdateSpaceInput,
+  setSpacePasswordInputSchema,
+  type SetSpacePasswordInput,
+} from './space';
+export { sessionStateSchema, type SessionState } from './session';
 
 // ─── World elements ───────────────────────────────────────────────────────
 export { characterSchema, type Character, characterPhaseSchema, type CharacterPhase, characterRefSchema, type CharacterRef } from './character';

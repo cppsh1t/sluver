@@ -1,7 +1,7 @@
-import type { AppConfig } from "@/types";
+import type { AppSetting } from "@/types";
 
-export type ThemeMode = AppConfig["appearance"]["theme"];
-export type ColorTheme = AppConfig["appearance"]["colorTheme"];
+export type ThemeMode = AppSetting["appearance"]["theme"];
+export type ColorTheme = AppSetting["appearance"]["colorTheme"];
 
 function systemPrefersDark(): boolean {
   return window.matchMedia("(prefers-color-scheme: dark)").matches;

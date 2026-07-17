@@ -1,0 +1,114 @@
+{
+  "tabs": {
+    "close": "关闭空间",
+    "closeConfirmTitle": "关闭「{{name}}」？",
+    "closeConfirmDescription": "关闭后该空间将被锁定，下次打开需要重新输入密码（如已设置）。",
+    "new": "新建",
+    "newSpace": "新建空间"
+  },
+  "picker": {
+    "label": "空间",
+    "empty": "还没有空间",
+    "emptyHint": "新建一个空间，开始组织你的世界。",
+    "createNew": "新建空间…",
+    "manage": "管理空间"
+  },
+  "gate": {
+    "title": "空间已锁定",
+    "subtitle": "输入密码以解锁「{{name}}」。",
+    "passwordLabel": "密码",
+    "passwordPlaceholder": "输入空间密码",
+    "unlock": "解锁",
+    "unlocking": "解锁中…",
+    "wrongPassword": "密码错误，请重试。",
+    "hint": "该空间受密码保护，仅授权用户可访问。",
+    "locked": "已锁定"
+  },
+  "home": {
+    "title": "空间",
+    "subtitle": "管理此空间下的世界，进入开始创作。",
+    "createWorld": "新建世界",
+    "manageSpace": "管理空间",
+    "emptyWorlds": {
+      "title": "此空间下还没有世界",
+      "description": "在该空间中创建第一个世界，开始角色设定、事件编织和小说创作。",
+      "cta": "创建第一个世界"
+    }
+  },
+  "landing": {
+    "title": "空间",
+    "subtitle": "选择一个空间开始，或将你的世界按空间分组管理。",
+    "createSpace": "新建空间"
+  },
+  "management": {
+    "create": {
+      "title": "新建空间",
+      "description": "创建一个新的空间，用于分组管理你的世界。",
+      "nameLabel": "名称",
+      "namePlaceholder": "输入空间名称",
+      "passwordLabel": "密码",
+      "passwordPlaceholder": "设置空间密码",
+      "passwordHint": "可选。设置后，打开该空间时需要输入密码。",
+      "setPassword": "为此空间设置密码",
+      "submit": "创建空间",
+      "submitting": "创建中…"
+    },
+    "edit": {
+      "title": "编辑空间",
+      "description": "修改空间的名称。",
+      "nameLabel": "名称",
+      "namePlaceholder": "输入空间名称",
+      "submit": "保存",
+      "submitting": "保存中…"
+    },
+    "delete": {
+      "title": "删除「{{name}}」？",
+      "description": "此操作不可撤销。该空间下的所有世界及其角色、地点、物品、传说、事件与小说数据将被永久删除。",
+      "worldsCount": "该空间包含 {{count}} 个世界，将一并删除。",
+      "confirm": "我确认删除此空间及其全部内容",
+      "passwordRequired": "该空间受密码保护，请输入密码以确认删除。",
+      "passwordLabel": "密码",
+      "passwordPlaceholder": "输入空间密码",
+      "submit": "永久删除",
+      "submitting": "删除中…"
+    },
+    "password": {
+      "titleAdd": "设置空间密码",
+      "titleChange": "修改空间密码",
+      "titleRemove": "移除空间密码",
+      "currentLabel": "当前密码",
+      "currentPlaceholder": "输入当前密码",
+      "newLabel": "新密码",
+      "newPlaceholder": "输入新密码",
+      "newConfirmLabel": "确认新密码",
+      "newConfirmPlaceholder": "再次输入新密码",
+      "mismatch": "两次输入的密码不一致",
+      "removeConfirm": "移除密码后，该空间将不再受到保护。",
+      "submit": "保存",
+      "submitting": "保存中…"
+    }
+  },
+  "toast": {
+    "createSuccess": "空间创建成功",
+    "createFailed": "创建空间失败",
+    "updateSuccess": "空间已更新",
+    "updateFailed": "更新空间失败",
+    "deleteSuccess": "空间已删除",
+    "deleteFailed": "删除空间失败",
+    "passwordSetSuccess": "空间密码已设置",
+    "passwordSetFailed": "设置密码失败",
+    "passwordRemoveSuccess": "空间密码已移除",
+    "passwordRemoveFailed": "移除密码失败",
+    "openFailed": "打开空间失败",
+    "wrongPassword": "密码错误，无法解锁",
+    "lockAll": "已锁定全部空间",
+    "lockAllFailed": "锁定空间失败"
+  },
+  "errors": {
+    "nameTaken": "该名称已被占用",
+    "notFound": "未找到空间",
+    "locked": "空间已锁定",
+    "passwordRequired": "此操作需要空间密码",
+    "wrongPassword": "密码错误"
+  }
+}

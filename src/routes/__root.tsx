@@ -3,7 +3,7 @@ import { Outlet, createRootRoute } from "@tanstack/react-router";
 
 import { TitleBar } from "@/components/title-bar";
 import { Toaster } from "@/components/ui/sonner";
-import { getAppConfig } from "@/api";
+import { getAppSetting } from "@/api";
 import {
   applyColorTheme,
   applyTheme,
@@ -21,7 +21,7 @@ function RootLayout() {
       applyTheme(mode);
       applyColorTheme(colorTheme);
     };
-    getAppConfig()
+    getAppSetting()
       .then((c) => {
         mode = c.appearance.theme;
         colorTheme = c.appearance.colorTheme;

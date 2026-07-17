@@ -1,4 +1,22 @@
 export {
+  useSpaces,
+  useSpace,
+  useCreateSpace,
+  useUpdateSpace,
+  useDeleteSpace,
+  useSetSpacePassword,
+} from "./use-spaces";
+
+export {
+  useSession,
+  useOpenSpace,
+  useCloseSpace,
+  useLockSpace,
+  useLockAllProtectedSpaces,
+  useSetActiveSpace,
+} from "./use-session";
+
+export {
   useWorlds,
   useWorld,
   useCreateWorld,
