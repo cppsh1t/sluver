@@ -60,8 +60,8 @@ function AppSidebar() {
   const { t } = useTranslation(["common", "space", "world"]);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
-  // Space-home: pathname is exactly `/space/{id}` (no deeper world segment).
-  const spaceHomeMatch = pathname.match(/^\/space\/([^/]+)$/);
+  // Space-home: pathname is `/space/{id}` (optionally with a trailing slash).
+  const spaceHomeMatch = pathname.match(/^\/space\/([^/]+)\/?$/);
   const spaceId = spaceHomeMatch?.[1] ?? null;
 
   return (

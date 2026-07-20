@@ -40,14 +40,30 @@ function RootLayout() {
   // the session so `useSession()` refetches — locked Spaces then render the
   // in-page `SpacePasswordGate` overlay. `listen` resolves to an `unlisten`
   // fn; call it on cleanup so the subscription dies with the root.
+  //
+  // Race guard: `listen()` returns a Promise. If the effect's cleanup runs
+  // before that Promise resolves, `unlisten` is still `undefined` and the
+  // subscription would leak permanently. We track a `cancelled` flag so a
+  // late-resolving subscription is torn down immediately.
   useEffect(() => {
     let unlisten: (() => void) | undefined;
+    let cancelled = false;
     listen("spaces-locked", () => {
       queryClient.invalidateQueries({ queryKey: ["session"] });
-    }).then((fn) => {
-      unlisten = fn;
-    });
+    })
+      .then((fn) => {
+        if (cancelled) {
+          fn(); // already cleaned up — unlisten immediately
+        } else {
+          unlisten = fn;
+        }
+      })
+      .catch(() => {
+        // listen() rejected before resolving — subscription never
+        // established, so there is nothing to tear down.
+      });
     return () => {
+      cancelled = true;
       unlisten?.();
     };
   }, [queryClient]);

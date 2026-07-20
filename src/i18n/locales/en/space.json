@@ -104,6 +104,8 @@
     "passwordRemoveSuccess": "Space password removed",
     "passwordRemoveFailed": "Failed to remove password",
     "openFailed": "Failed to open space",
+    "activateFailed": "Failed to switch space",
+    "closeFailed": "Failed to close space",
     "wrongPassword": "Wrong password, unable to unlock",
     "lockAll": "All spaces locked",
     "lockAllFailed": "Failed to lock spaces"

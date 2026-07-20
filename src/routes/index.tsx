@@ -7,17 +7,17 @@ import { Add01Icon } from "@hugeicons/core-free-icons";
 import { appLayoutRoute } from "./_app";
 import appIcon from "@/assets/app-icon.png";
 import { CreateSpaceDialog } from "@/components/space-management";
-import { SpacePicker } from "@/components/space-picker";
 import { Button } from "@/components/ui/button";
 
 /**
  * Landing tier (ADR-0009) — shown when no Space tab is open (first run, or
  * after the user closes every tab).
  *
- * This sits under `appLayoutRoute`, which already renders `AppSidebar`, so
- * the page itself is just the hero: brand + a Space launcher (`SpacePicker`)
- * + a prominent "Create Space" action. Centered, calm, inviting — the first
- * surface a new user sees.
+ * This sits under `appLayoutRoute`, which already renders `AppSidebar`, and
+ * `AppSidebar`'s footer always renders `<SpacePicker />`. The landing page
+ * itself is therefore just the hero: brand + a prominent "Create Space"
+ * action. The sidebar's picker is the single source of truth for switching
+ * Spaces; rendering a second picker here caused a duplicate-UI bug.
  */
 function LandingPage() {
   const { t } = useTranslation(["space", "common"]);
@@ -40,17 +40,14 @@ function LandingPage() {
           </p>
         </div>
 
-        <div className="flex w-full flex-col gap-2">
-          <SpacePicker />
-          <Button
-            variant="outline"
-            onClick={() => setCreateOpen(true)}
-            className="w-full"
-          >
-            <HugeiconsIcon icon={Add01Icon} data-icon="inline-start" strokeWidth={2} />
-            {t("space:landing.createSpace")}
-          </Button>
-        </div>
+        <Button
+          variant="outline"
+          onClick={() => setCreateOpen(true)}
+          className="w-full"
+        >
+          <HugeiconsIcon icon={Add01Icon} data-icon="inline-start" strokeWidth={2} />
+          {t("space:landing.createSpace")}
+        </Button>
       </div>
 
       <CreateSpaceDialog open={createOpen} onOpenChange={setCreateOpen} />

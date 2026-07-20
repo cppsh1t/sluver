@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
@@ -8,6 +9,7 @@ import { toErrorPayload } from "@/api/client";
 import {
   useCreateSpace,
   useDeleteSpace,
+  useOpenSpace,
   useSetSpacePassword,
 } from "@/hooks";
 import type { SpaceSummary } from "@/types";
@@ -59,6 +61,8 @@ interface CreateSpaceDialogProps {
 function CreateSpaceDialog({ open, onOpenChange }: CreateSpaceDialogProps) {
   const { t } = useTranslation(["space", "common"]);
   const createMut = useCreateSpace();
+  const openSpaceMut = useOpenSpace();
+  const navigate = useNavigate();
 
   const [name, setName] = useState("");
   const [nameError, setNameError] = useState<string | null>(null);
@@ -95,10 +99,19 @@ function CreateSpaceDialog({ open, onOpenChange }: CreateSpaceDialogProps) {
     }
 
     try {
-      await createMut.mutateAsync({
+      const input = {
         name: trimmed,
         password: passwordEnabled ? password : undefined,
+      };
+      const created = await createMut.mutateAsync(input);
+      // Auto-open the new Space so the user lands directly in it. If a
+      // password was set, pass it through so the Space opens UNLOCKED
+      // rather than rendering the password gate on top of fresh content.
+      await openSpaceMut.mutateAsync({
+        id: created.id,
+        password: input.password,
       });
+      navigate({ to: "/space/$spaceId", params: { spaceId: created.id } });
       toast.success(i18n.t("space:toast.createSuccess"));
       onOpenChange(false);
     } catch (err) {

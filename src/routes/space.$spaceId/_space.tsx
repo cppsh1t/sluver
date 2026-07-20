@@ -31,8 +31,7 @@ function SpaceLayout() {
   const sessionQ = useSession();
   const spacesQ = useSpaces();
 
-  const lockedIds = new Set(sessionQ.data?.lockedSpaceIds ?? []);
-  const isLocked = lockedIds.has(spaceIdBranded);
+  const isLocked = (sessionQ.data?.lockedSpaceIds ?? []).includes(spaceIdBranded);
   const spaceName =
     spacesQ.data?.find((s) => s.id === spaceIdBranded)?.name ?? spaceId;
 

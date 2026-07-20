@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Add01Icon,
@@ -16,6 +17,9 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { CreateSpaceDialog } from "@/components/space-management";
 import { cn } from "@/lib/utils";
+import i18n from "@/i18n";
+import { translateError } from "@/i18n/errors";
+import { toErrorPayload } from "@/api/client";
 import {
   useCloseSpace,
   useOpenSpace,
@@ -62,44 +66,65 @@ export function TitleBar() {
   const byId = (id: SpaceId): SpaceSummary | undefined =>
     spaces.find((s) => s.id === id);
 
-  function handleActivate(id: SpaceId) {
-    setActive.mutate(id);
-    navigate({ to: "/space/$spaceId", params: { spaceId: id } });
+  async function handleActivate(id: SpaceId) {
+    try {
+      await setActive.mutateAsync(id);
+      navigate({ to: "/space/$spaceId", params: { spaceId: id } });
+    } catch (e) {
+      toast.error(i18n.t("space:toast.activateFailed"), {
+        description: translateError(toErrorPayload(e)),
+      });
+    }
   }
 
   async function handleClose(id: SpaceId) {
-    const wasActive = id === activeId;
-    // Compute the fallback tab synchronously from current state — the
-    // mutation updates the session cache asynchronously, but we want the
-    // navigation to feel instant.
-    const remaining = openIds.filter((x) => x !== id);
-    await closeSpace.mutateAsync(id);
-    if (!wasActive) return;
-    if (remaining.length > 0) {
-      const idx = openIds.indexOf(id);
-      const nextIdx = Math.min(idx, remaining.length - 1);
-      const nextId = remaining[nextIdx];
-      await setActive.mutateAsync(nextId);
-      navigate({ to: "/space/$spaceId", params: { spaceId: nextId } });
-    } else {
-      navigate({ to: "/" });
+    try {
+      const wasActive = id === activeId;
+      // Compute the fallback tab synchronously from current state — the
+      // mutation updates the session cache asynchronously, but we want the
+      // navigation to feel instant.
+      const remaining = openIds.filter((x) => x !== id);
+      await closeSpace.mutateAsync(id);
+      if (!wasActive) return;
+      if (remaining.length > 0) {
+        const idx = openIds.indexOf(id);
+        const nextIdx = Math.min(idx, remaining.length - 1);
+        const nextId = remaining[nextIdx];
+        await setActive.mutateAsync(nextId);
+        navigate({ to: "/space/$spaceId", params: { spaceId: nextId } });
+      } else {
+        navigate({ to: "/" });
+      }
+    } catch (e) {
+      toast.error(i18n.t("space:toast.closeFailed"), {
+        description: translateError(toErrorPayload(e)),
+      });
     }
   }
 
   async function handleOpen(space: SpaceSummary) {
     // Mirrors SpacePicker semantics: already-open → switch; closed → open.
-    // A protected Space is opened in its locked state by the backend and the
-    // in-page `SpacePasswordGate` overlay takes over once the tab renders.
+    // After the backend's `open_space` fix, `openSpace({ id })` SUCCEEDS for
+    // a protected Space (opens in locked state) and the in-page
+    // `SpacePasswordGate` overlay takes over once the tab renders. The catch
+    // only fires for actual errors (DB corruption, etc.).
     if (openIdsSet.has(space.id)) {
-      setActive.mutate(space.id);
-      navigate({ to: "/space/$spaceId", params: { spaceId: space.id } });
+      try {
+        await setActive.mutateAsync(space.id);
+        navigate({ to: "/space/$spaceId", params: { spaceId: space.id } });
+      } catch (e) {
+        toast.error(i18n.t("space:toast.openFailed"), {
+          description: translateError(toErrorPayload(e)),
+        });
+      }
     } else {
       try {
         await openSpace.mutateAsync({ id: space.id });
         navigate({ to: "/space/$spaceId", params: { spaceId: space.id } });
-      } catch {
-        // Open rejected (e.g. protected). Stay put — do not navigate to a
-        // Space whose tab never materialized. No toast: matches picker.
+      } catch (e) {
+        toast.error(i18n.t("space:toast.openFailed"), {
+          description: translateError(toErrorPayload(e)),
+        });
       }
     }
     setMenuOpen(false);

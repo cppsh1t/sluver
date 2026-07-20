@@ -13,6 +13,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
+import { CreateSpaceDialog } from "@/components/space-management";
 import { cn } from "@/lib/utils";
 import { useOpenSpace, useSession, useSetActiveSpace, useSpaces } from "@/hooks";
 import type { SpaceSummary } from "@/types";
@@ -42,6 +43,11 @@ interface SpacePickerProps {
 function SpacePicker({ onCreateNew }: SpacePickerProps) {
   const { t } = useTranslation(["space", "common"]);
   const [open, setOpen] = useState(false);
+  // The picker owns its own create dialog by default so the "Create new
+  // Space" affordance is functional wherever `<SpacePicker />` is mounted
+  // (sidebar footer) without each parent having to wire a dialog up.
+  // `onCreateNew` is still fired for any caller that wants to override.
+  const [createOpen, setCreateOpen] = useState(false);
 
   const spacesQ = useSpaces();
   const sessionQ = useSession();
@@ -68,12 +74,17 @@ function SpacePicker({ onCreateNew }: SpacePickerProps) {
 
   function handleCreateNew() {
     setOpen(false);
-    onCreateNew?.();
+    if (onCreateNew) {
+      onCreateNew();
+    } else {
+      setCreateOpen(true);
+    }
   }
 
   const triggerLabel = activeSpace ? activeSpace.name : t("space:picker.label");
 
   return (
+    <>
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         render={
@@ -215,6 +226,9 @@ function SpacePicker({ onCreateNew }: SpacePickerProps) {
         )}
       </PopoverContent>
     </Popover>
+
+      <CreateSpaceDialog open={createOpen} onOpenChange={setCreateOpen} />
+    </>
   );
 }
 
