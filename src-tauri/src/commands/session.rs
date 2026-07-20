@@ -42,7 +42,7 @@ fn empty_session() -> SessionState {
 
 /// Read the persisted session. Absent row → empty default. Corrupt JSON →
 /// `DbError::Serde` (surfaces as `INTERNAL_ERROR` on the frontend).
-fn read_session(conn: &Connection) -> Result<SessionState, DbError> {
+pub(crate) fn read_session(conn: &Connection) -> Result<SessionState, DbError> {
     let json: Option<String> = match conn.query_row(
         "SELECT value FROM settings WHERE key = ?1",
         params![SESSION_KEY],
@@ -59,7 +59,7 @@ fn read_session(conn: &Connection) -> Result<SessionState, DbError> {
 }
 
 /// Persist the session, replacing any prior value (atomic upsert).
-fn write_session(conn: &Connection, session: &SessionState) -> Result<(), DbError> {
+pub(crate) fn write_session(conn: &Connection, session: &SessionState) -> Result<(), DbError> {
     let json = serde_json::to_string(session)?;
     conn.execute(
         "INSERT INTO settings (key, value) VALUES (?1, ?2)
@@ -112,11 +112,11 @@ fn is_locked(session: &SessionState, id: &str) -> bool {
 
 // ─── impl fns (private; take &DbManager so tests bypass `State<'_, _>`) ─────
 
-fn get_session_impl(manager: &DbManager) -> Result<SessionState, DbError> {
+pub(crate) fn get_session_impl(manager: &DbManager) -> Result<SessionState, DbError> {
     manager.with_meta(|c| read_session(c))
 }
 
-fn open_space_impl(
+pub(crate) fn open_space_impl(
     id: &str,
     password: Option<&str>,
     manager: &DbManager,
@@ -129,22 +129,83 @@ fn open_space_impl(
         Ok((hash, is_open(&session, id), is_locked(&session, id)))
     })?;
 
-    // 2. Password gate — ONLY when (not yet open) OR (open but currently
-    //    locked). An already-open unlocked Space re-activates without
-    //    re-auth (idempotent). Unprotected Spaces skip the gate entirely.
-    if let Some(phc) = hash.as_deref() {
-        let needs_verify = !was_open || was_locked;
-        if needs_verify {
-            let plain = password.ok_or_else(|| DbError::SpacePasswordRequired(id.to_string()))?;
-            let ok = crate::util::password::verify_password(plain, phc)?;
-            if !ok {
-                return Err(DbError::SpaceWrongPassword(id.to_string()));
+    // 2. State machine per ADR-0008: a protected Space can be opened WITHOUT
+    //    a password — it lands in a LOCKED state (tab visible, content hidden
+    //    behind the in-page password gate). This replaces the old
+    //    chicken-and-egg deadlock where protected Spaces were unreachable
+    //    until a password was supplied, but the UI had nowhere to enter one.
+    //
+    //    The triad below captures the session mutation phase intent:
+    //      warm_cache   — whether to open + cache `space.db` (content access)
+    //      mark_locked  — whether to ADD the id to `locked_space_ids`
+    //      clear_locked — whether to REMOVE the id from `locked_space_ids`
+    let warm_cache: bool;
+    let mark_locked: bool;
+    let clear_locked: bool;
+
+    match hash.as_deref() {
+        // Unprotected Space: always open + unlock + warm cache.
+        None => {
+            warm_cache = true;
+            mark_locked = false;
+            clear_locked = true;
+        }
+        Some(phc) => {
+            if !was_open {
+                // Protected Space, NOT yet open.
+                match password {
+                    Some(plain) => {
+                        // Password supplied → verify (argon2 runs lock-free).
+                        let ok = crate::util::password::verify_password(plain, phc)?;
+                        if !ok {
+                            return Err(DbError::SpaceWrongPassword(id.to_string()));
+                        }
+                        // Correct password → open + unlock + warm cache.
+                        warm_cache = true;
+                        mark_locked = false;
+                        clear_locked = true;
+                    }
+                    None => {
+                        // No password → LOCKED-STATE OPEN (ADR-0008).
+                        // Tab is visible but content stays hidden behind the
+                        // in-page gate; do NOT warm the cache.
+                        warm_cache = false;
+                        mark_locked = true;
+                        clear_locked = false;
+                    }
+                }
+            } else if was_locked {
+                // Protected Space, open but locked.
+                match password {
+                    Some(plain) => {
+                        // Password supplied → verify.
+                        let ok = crate::util::password::verify_password(plain, phc)?;
+                        if !ok {
+                            return Err(DbError::SpaceWrongPassword(id.to_string()));
+                        }
+                        // Correct password → unlock + warm cache.
+                        warm_cache = true;
+                        mark_locked = false;
+                        clear_locked = true;
+                    }
+                    None => {
+                        // No password → no-op (already locked, stays locked).
+                        // Return current session unchanged.
+                        return get_session_impl(manager);
+                    }
+                }
+            } else {
+                // Protected Space, open AND unlocked → idempotent no-op.
+                return get_session_impl(manager);
             }
         }
     }
 
     // 3. Warm the space.db cache (acquires the spaces lock; meta is NOT held).
-    manager.open_space_conn(id)?;
+    //    SKIPPED when opening in the locked state — content stays hidden.
+    if warm_cache {
+        manager.open_space_conn(id)?;
+    }
 
     // 4. Re-acquire meta to update + persist session state.
     let new_session = manager.with_meta(|conn| {
@@ -152,7 +213,12 @@ fn open_space_impl(
         if !is_open(&session, id) {
             session.open_space_ids.push(id.to_string());
         }
-        session.locked_space_ids.retain(|s| s.as_str() != id);
+        if mark_locked && !is_locked(&session, id) {
+            session.locked_space_ids.push(id.to_string());
+        }
+        if clear_locked {
+            session.locked_space_ids.retain(|s| s.as_str() != id);
+        }
         session.active_space_id = Some(id.to_string());
         write_session(conn, &session)?;
         Ok(session)
@@ -379,22 +445,80 @@ mod tests {
     // ─── open_space (protected) ─────────────────────────────────────────────
 
     #[test]
-    fn open_protected_space_requires_password_and_does_not_add_to_open_list() {
+    fn open_protected_space_without_password_opens_in_locked_state() {
         let f = Fixture::new();
         let phc = crate::util::password::hash_password("hunter2").expect("hash");
         f.insert_space("sp", "Protected", Some(&phc));
 
-        // No password supplied → SpacePasswordRequired.
-        let err = open_space_impl("sp", None, &f.manager).expect_err("require pw");
+        // No password supplied → ADR-0008 locked-state open (NOT a rejection).
+        let session = open_space_impl("sp", None, &f.manager).expect("open in locked state");
+
+        // Space IS in open_space_ids (tab is visible).
+        assert!(
+            session.open_space_ids.contains(&"sp".to_string()),
+            "locked-state open must add to open list"
+        );
+        // Space IS in locked_space_ids (locked state).
+        assert!(
+            session.locked_space_ids.contains(&"sp".to_string()),
+            "locked-state open must add to locked list"
+        );
+        assert_eq!(session.active_space_id.as_deref(), Some("sp"));
+        // Cache is NOT warmed — space.db file must not exist yet (content
+        // stays hidden behind the in-page password gate).
+        assert!(
+            !f.space_db_exists("sp"),
+            "space.db must NOT be created in locked state"
+        );
+    }
+
+    #[test]
+    fn open_protected_space_with_correct_password_unlocks() {
+        let f = Fixture::new();
+        let phc = crate::util::password::hash_password("hunter2").expect("hash");
+        f.insert_space("sp", "Protected", Some(&phc));
+
+        // First open without password → locked state.
+        open_space_impl("sp", None, &f.manager).expect("first open locked");
+
+        // Then open with correct password → unlocked.
+        let session = open_space_impl("sp", Some("hunter2"), &f.manager).expect("unlock");
+        assert!(session.open_space_ids.contains(&"sp".to_string()));
+        assert!(
+            !session.locked_space_ids.contains(&"sp".to_string()),
+            "correct password must clear locked state"
+        );
+        // Cache is now warmed.
+        assert!(f.space_db_exists("sp"), "space.db must exist after unlock");
+    }
+
+    #[test]
+    fn open_protected_space_with_wrong_password_returns_error() {
+        let f = Fixture::new();
+        let phc = crate::util::password::hash_password("hunter2").expect("hash");
+        f.insert_space("sp", "Protected", Some(&phc));
+
+        // First open without password → locked state.
+        open_space_impl("sp", None, &f.manager).expect("first open locked");
+
+        // Try to unlock with wrong password → SpaceWrongPassword error.
+        let err = open_space_impl("sp", Some("wrong"), &f.manager)
+            .expect_err("wrong password must reject");
         match err {
-            DbError::SpacePasswordRequired(id) => assert_eq!(id, "sp"),
-            other => panic!("expected SpacePasswordRequired, got {other:?}"),
+            DbError::SpaceWrongPassword(id) => assert_eq!(id, "sp"),
+            other => panic!("expected SpaceWrongPassword, got {other:?}"),
         }
-        // Session MUST be unchanged — space was NOT added to the open list.
-        let s = f.session();
-        assert!(s.open_space_ids.is_empty());
-        assert!(s.active_space_id.is_none());
-        assert!(f.manager.data_dir().join("spaces").join("sp").join("space.db").exists() == false);
+
+        // Space stays locked.
+        let session = f.session();
+        assert!(
+            session.locked_space_ids.contains(&"sp".to_string()),
+            "wrong password must leave Space locked"
+        );
+        assert!(
+            !f.space_db_exists("sp"),
+            "space.db must NOT be created on wrong password"
+        );
     }
 
     #[test]
@@ -462,16 +586,22 @@ mod tests {
     }
 
     #[test]
-    fn open_locked_protected_space_requires_reauth() {
+    fn open_locked_protected_space_without_password_is_noop() {
         let f = Fixture::new();
         let phc = crate::util::password::hash_password("pw").expect("hash");
         f.insert_space("sp", "Prot", Some(&phc));
         let _ = open_space_impl("sp", Some("pw"), &f.manager).expect("open");
         let _ = lock_space_impl("sp", &f.manager).expect("lock");
 
-        // Locked → re-opening with no password fails.
-        let err = open_space_impl("sp", None, &f.manager).expect_err("locked needs re-auth");
-        assert!(matches!(err, DbError::SpacePasswordRequired(_)));
+        // Locked + no password → no-op (returns current session unchanged).
+        // Per ADR-0008 the tab stays open in locked state; the in-page gate
+        // handles the re-auth UX. This is NOT a rejection.
+        let s = open_space_impl("sp", None, &f.manager).expect("locked no-op");
+        assert!(
+            s.locked_space_ids.contains(&"sp".to_string()),
+            "locked Space must stay locked without a password"
+        );
+        assert!(s.open_space_ids.contains(&"sp".to_string()));
 
         // Re-auth with the right password clears the locked flag.
         let s = open_space_impl("sp", Some("pw"), &f.manager).expect("re-auth open");

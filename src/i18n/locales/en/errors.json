@@ -18,6 +18,6 @@
   "SPACE_NAME_TAKEN": "Space name \"{{name}}\" is already taken",
   "SPACE_PASSWORD_REQUIRED": "Space password required ({{id}})",
   "SPACE_WRONG_PASSWORD": "Wrong space password",
-  "SPACE_LOCKED": "Space is locked ({{id}})",
+  "INVALID_INPUT": "Invalid input: {{message}}",
   "INTERNAL_ERROR": "An internal error occurred"
 }

@@ -221,7 +221,8 @@ fn do_update_space(
 //   2. close_space — drop cached space.db + world.db connections so no open
 //      handle blocks the directory removal
 //   3. DELETE the meta row
-//   4. remove_dir_all(`spaces/{id}/`)
+//   4. evict from session state (open/active/locked lists)
+//   5. remove_dir_all(`spaces/{id}/`)
 
 #[tauri::command]
 pub fn delete_space(
@@ -261,7 +262,23 @@ fn do_delete_space(
         return Err(DbError::SpaceNotFound(id.to_string()));
     }
 
-    // 5. Remove the Space's directory tree. Idempotent: if the dir is already
+    // 5. Remove from session state (open/active/locked lists). Without this
+    //    the deleted Space's id lingers in `open_space_ids`, causing orphaned
+    //    tabs in the TitleBar. Must run BEFORE the directory removal so the
+    //    session is consistent even if the file cleanup partially fails.
+    mgr.with_meta(|conn| {
+        let mut session = crate::commands::session::read_session(conn)?;
+        session.open_space_ids.retain(|s| s != id);
+        session.locked_space_ids.retain(|s| s != id);
+        if session.active_space_id.as_deref() == Some(id) {
+            // Successor rule: pick the next remaining open Space, else clear.
+            session.active_space_id = session.open_space_ids.first().cloned();
+        }
+        crate::commands::session::write_session(conn, &session)?;
+        Ok(())
+    })?;
+
+    // 6. Remove the Space's directory tree. Idempotent: if the dir is already
     //    gone (partial-cleanup recovery), treat as success.
     let space_dir = mgr.data_dir().join("spaces").join(id);
     if space_dir.exists() {
@@ -676,6 +693,91 @@ mod tests {
         let (_tmp, mgr) = make_manager();
         let err = do_delete_space(&mgr, "phantom", None).expect_err("delete missing");
         assert!(matches!(err, DbError::SpaceNotFound(_)));
+    }
+
+    /// Regression guard: deleting a Space evicts it from the persisted session
+    /// state (open/active/locked lists). Without this the deleted Space's id
+    /// would linger in `open_space_ids`, causing orphaned tabs in the TitleBar.
+    #[test]
+    fn delete_space_evicts_from_session_state() {
+        let (_tmp, mgr) = make_manager();
+        let a = do_create_space(
+            &mgr,
+            CreateSpaceInput {
+                name: "A".into(),
+                password: None,
+            },
+        )
+        .expect("create A");
+        let b = do_create_space(
+            &mgr,
+            CreateSpaceInput {
+                name: "B".into(),
+                password: None,
+            },
+        )
+        .expect("create B");
+
+        // Open both — active becomes B (last opened).
+        crate::commands::session::open_space_impl(&a.id, None, &mgr).expect("open A");
+        crate::commands::session::open_space_impl(&b.id, None, &mgr).expect("open B");
+
+        // Sanity: both are open, B is active.
+        let before = crate::commands::session::get_session_impl(&mgr).expect("session");
+        assert_eq!(before.open_space_ids.len(), 2);
+        assert_eq!(before.active_space_id.as_deref(), Some(b.id.as_str()));
+
+        // Delete the active Space (B).
+        do_delete_space(&mgr, &b.id, None).expect("delete B");
+
+        // Session must reflect the eviction: B gone from open list, active
+        // successor falls back to A (the first remaining open Space).
+        let after = crate::commands::session::get_session_impl(&mgr).expect("session");
+        assert!(
+            !after.open_space_ids.contains(&b.id),
+            "deleted Space must be evicted from open list"
+        );
+        assert!(
+            after.open_space_ids.contains(&a.id),
+            "unrelated Space must remain open"
+        );
+        assert_eq!(
+            after.active_space_id.as_deref(),
+            Some(a.id.as_str()),
+            "active must fall back to the successor"
+        );
+    }
+
+    /// Deleting a locked Space also removes it from `locked_space_ids`.
+    #[test]
+    fn delete_space_evicts_from_locked_list() {
+        let (_tmp, mgr) = make_manager();
+        let s = do_create_space(
+            &mgr,
+            CreateSpaceInput {
+                name: "Prot".into(),
+                password: Some("pw".into()),
+            },
+        )
+        .expect("create protected");
+
+        // Open in locked state (no password) — ADR-0008.
+        crate::commands::session::open_space_impl(&s.id, None, &mgr).expect("open locked");
+        let before = crate::commands::session::get_session_impl(&mgr).expect("session");
+        assert!(before.locked_space_ids.contains(&s.id));
+
+        // Delete with correct password.
+        do_delete_space(&mgr, &s.id, Some("pw".into())).expect("delete");
+
+        let after = crate::commands::session::get_session_impl(&mgr).expect("session");
+        assert!(
+            !after.locked_space_ids.contains(&s.id),
+            "deleted Space must be evicted from locked list"
+        );
+        assert!(
+            !after.open_space_ids.contains(&s.id),
+            "deleted Space must be evicted from open list"
+        );
     }
 
     // ─── set_space_password lifecycle ───────────────────────────────────────

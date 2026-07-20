@@ -10,18 +10,18 @@ const META_SQL: &str = r#"
     -- Space registry: each row is one Space. The Space owns a directory
     -- `spaces/{id}/` (path is computed, NOT stored) containing its
     -- `space.db` and its `worlds/{worldId}.db` content files.
-    CREATE TABLE spaces (
+    CREATE TABLE IF NOT EXISTS spaces (
         id            TEXT PRIMARY KEY,
         name          TEXT NOT NULL,
         password_hash TEXT,
         created_at    TEXT NOT NULL,
         updated_at    TEXT NOT NULL
     );
-    CREATE UNIQUE INDEX idx_spaces_name ON spaces(name);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_spaces_name ON spaces(name);
 
     -- Application-level key-value settings (AppSetting).
     -- The table name stays "settings"; only the Rust struct renames.
-    CREATE TABLE settings (
+    CREATE TABLE IF NOT EXISTS settings (
         key   TEXT PRIMARY KEY,
         value TEXT NOT NULL
     );
@@ -39,7 +39,7 @@ const SPACE_SQL: &str = r#"
     -- entity's source of truth (name, description). `db_path` is relative
     -- to `spaces/{spaceId}/`, e.g. "worlds/{id}.db". World name uniqueness
     -- is per-Space (ADR-0007) — enforced via the unique index below.
-    CREATE TABLE worlds (
+    CREATE TABLE IF NOT EXISTS worlds (
         id          TEXT PRIMARY KEY,
         name        TEXT NOT NULL,
         description TEXT NOT NULL DEFAULT '',
@@ -47,11 +47,11 @@ const SPACE_SQL: &str = r#"
         created_at  TEXT NOT NULL,
         updated_at  TEXT NOT NULL
     );
-    CREATE UNIQUE INDEX idx_worlds_name ON worlds(name);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_worlds_name ON worlds(name);
 
     -- Reserved per-Space key-value config module (CONTEXT.md).
     -- Intentionally empty for now; future Space-level settings land here.
-    CREATE TABLE space_config (
+    CREATE TABLE IF NOT EXISTS space_config (
         key   TEXT PRIMARY KEY,
         value TEXT NOT NULL
     );
@@ -64,7 +64,7 @@ const SPACE_SQL: &str = r#"
 
 const WORLD_SQL: &str = r#"
     -- Characters (no world_id column — implicit to this DB file)
-    CREATE TABLE characters (
+    CREATE TABLE IF NOT EXISTS characters (
         id          TEXT PRIMARY KEY,
         name        TEXT NOT NULL,
         aliases     TEXT NOT NULL DEFAULT '[]',
@@ -76,7 +76,7 @@ const WORLD_SQL: &str = r#"
     );
 
     -- Locations
-    CREATE TABLE locations (
+    CREATE TABLE IF NOT EXISTS locations (
         id          TEXT PRIMARY KEY,
         name        TEXT NOT NULL,
         description TEXT NOT NULL DEFAULT '',
@@ -87,7 +87,7 @@ const WORLD_SQL: &str = r#"
     );
 
     -- Items
-    CREATE TABLE items (
+    CREATE TABLE IF NOT EXISTS items (
         id          TEXT PRIMARY KEY,
         name        TEXT NOT NULL,
         description TEXT NOT NULL DEFAULT '',
@@ -98,7 +98,7 @@ const WORLD_SQL: &str = r#"
     );
 
     -- Lore
-    CREATE TABLE lores (
+    CREATE TABLE IF NOT EXISTS lores (
         id          TEXT PRIMARY KEY,
         name        TEXT NOT NULL,
         description TEXT NOT NULL DEFAULT '',
@@ -109,7 +109,7 @@ const WORLD_SQL: &str = r#"
     );
 
     -- Events (before character_phases — phases FK to events)
-    CREATE TABLE events (
+    CREATE TABLE IF NOT EXISTS events (
         id          TEXT PRIMARY KEY,
         name        TEXT NOT NULL,
         description TEXT NOT NULL DEFAULT '',
@@ -123,7 +123,7 @@ const WORLD_SQL: &str = r#"
     );
 
     -- Character phases (1:N to character, position column for ordering)
-    CREATE TABLE character_phases (
+    CREATE TABLE IF NOT EXISTS character_phases (
         id               TEXT PRIMARY KEY,
         character_id     TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
         appearance       TEXT NOT NULL DEFAULT '',
@@ -133,10 +133,10 @@ const WORLD_SQL: &str = r#"
         created_at       TEXT NOT NULL,
         updated_at       TEXT NOT NULL
     );
-    CREATE INDEX idx_phases_character ON character_phases(character_id);
+    CREATE INDEX IF NOT EXISTS idx_phases_character ON character_phases(character_id);
 
     -- Event ↔ Character refs (junction, composite PK = set semantics)
-    CREATE TABLE event_character_refs (
+    CREATE TABLE IF NOT EXISTS event_character_refs (
         event_id     TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
         character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
         phase_id     TEXT NOT NULL REFERENCES character_phases(id) ON DELETE CASCADE,
@@ -144,7 +144,7 @@ const WORLD_SQL: &str = r#"
     );
 
     -- Novels
-    CREATE TABLE novels (
+    CREATE TABLE IF NOT EXISTS novels (
         id         TEXT PRIMARY KEY,
         title      TEXT NOT NULL,
         tags       TEXT NOT NULL DEFAULT '[]',
@@ -153,7 +153,7 @@ const WORLD_SQL: &str = r#"
     );
 
     -- Chapters (position column maintains reading order within novel)
-    CREATE TABLE chapters (
+    CREATE TABLE IF NOT EXISTS chapters (
         id         TEXT PRIMARY KEY,
         novel_id   TEXT NOT NULL REFERENCES novels(id) ON DELETE CASCADE,
         title      TEXT NOT NULL,
@@ -162,10 +162,10 @@ const WORLD_SQL: &str = r#"
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     );
-    CREATE INDEX idx_chapters_novel ON chapters(novel_id);
+    CREATE INDEX IF NOT EXISTS idx_chapters_novel ON chapters(novel_id);
 
     -- Scenes (position column maintains narrative order within chapter)
-    CREATE TABLE scenes (
+    CREATE TABLE IF NOT EXISTS scenes (
         id          TEXT PRIMARY KEY,
         chapter_id  TEXT NOT NULL REFERENCES chapters(id) ON DELETE CASCADE,
         title       TEXT NOT NULL,
@@ -178,10 +178,10 @@ const WORLD_SQL: &str = r#"
         created_at  TEXT NOT NULL,
         updated_at  TEXT NOT NULL
     );
-    CREATE INDEX idx_scenes_chapter ON scenes(chapter_id);
+    CREATE INDEX IF NOT EXISTS idx_scenes_chapter ON scenes(chapter_id);
 
     -- Scene ↔ Character refs (junction, composite PK = set semantics)
-    CREATE TABLE scene_character_refs (
+    CREATE TABLE IF NOT EXISTS scene_character_refs (
         scene_id     TEXT NOT NULL REFERENCES scenes(id) ON DELETE CASCADE,
         character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
         phase_id     TEXT NOT NULL REFERENCES character_phases(id) ON DELETE CASCADE,
@@ -189,14 +189,14 @@ const WORLD_SQL: &str = r#"
     );
 
     -- Scene ↔ Item refs (junction)
-    CREATE TABLE scene_item_refs (
+    CREATE TABLE IF NOT EXISTS scene_item_refs (
         scene_id TEXT NOT NULL REFERENCES scenes(id) ON DELETE CASCADE,
         item_id  TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
         PRIMARY KEY (scene_id, item_id)
     );
 
     -- Scene ↔ Event refs (junction)
-    CREATE TABLE scene_event_refs (
+    CREATE TABLE IF NOT EXISTS scene_event_refs (
         scene_id TEXT NOT NULL REFERENCES scenes(id) ON DELETE CASCADE,
         event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
         PRIMARY KEY (scene_id, event_id)
@@ -217,19 +217,19 @@ pub const SPACE_MIGRATIONS: Migrations = Migrations::from_slice(SPACE_SLICE);
 /// Migrations for each world DB file (all world-scoped tables).
 const WORLD_MIGRATION_002: &str = r#"
     -- Name/title uniqueness
-    CREATE UNIQUE INDEX idx_characters_name ON characters(name);
-    CREATE UNIQUE INDEX idx_locations_name ON locations(name);
-    CREATE UNIQUE INDEX idx_items_name ON items(name);
-    CREATE UNIQUE INDEX idx_lores_name ON lores(name);
-    CREATE UNIQUE INDEX idx_events_name ON events(name);
-    CREATE UNIQUE INDEX idx_novels_title ON novels(title);
-    CREATE UNIQUE INDEX idx_chapters_novel_title ON chapters(novel_id, title);
-    CREATE UNIQUE INDEX idx_scenes_chapter_title ON scenes(chapter_id, title);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_characters_name ON characters(name);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_locations_name ON locations(name);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_items_name ON items(name);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_lores_name ON lores(name);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_events_name ON events(name);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_novels_title ON novels(title);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chapters_novel_title ON chapters(novel_id, title);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_scenes_chapter_title ON scenes(chapter_id, title);
 
     -- Position uniqueness per parent scope
-    CREATE UNIQUE INDEX idx_character_phases_char_pos ON character_phases(character_id, position);
-    CREATE UNIQUE INDEX idx_chapters_novel_pos ON chapters(novel_id, position);
-    CREATE UNIQUE INDEX idx_scenes_chapter_pos ON scenes(chapter_id, position);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_character_phases_char_pos ON character_phases(character_id, position);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chapters_novel_pos ON chapters(novel_id, position);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_scenes_chapter_pos ON scenes(chapter_id, position);
 
     -- Novel description column
     ALTER TABLE novels ADD COLUMN description TEXT NOT NULL DEFAULT '';

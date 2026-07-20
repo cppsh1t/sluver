@@ -45,8 +45,12 @@ pub enum DbError {
     #[error("Wrong password for space: {0}")]
     SpaceWrongPassword(String),
 
-    #[error("Space is locked: {0}")]
-    SpaceLocked(String),
+    /// Client supplied a malformed id used in path construction (e.g. a
+    /// non-UUID `space_id` that could enable path traversal). Surfaces as
+    /// `INVALID_INPUT` so the frontend can show a generic "bad request"
+    /// message; the raw id is kept in `message` for diagnostics.
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
@@ -96,9 +100,9 @@ impl DbError {
                 "SPACE_WRONG_PASSWORD",
                 HashMap::from([("id".to_string(), id.clone())]),
             ),
-            DbError::SpaceLocked(id) => (
-                "SPACE_LOCKED",
-                HashMap::from([("id".to_string(), id.clone())]),
+            DbError::InvalidInput(msg) => (
+                "INVALID_INPUT",
+                HashMap::from([("message".to_string(), msg.clone())]),
             ),
             // Infrastructure errors: opaque code, no structured args.
             DbError::Sqlite(_)
@@ -157,10 +161,10 @@ mod space_error_tests {
     }
 
     #[test]
-    fn space_locked_payload() {
-        let p = DbError::SpaceLocked("abc".into()).to_payload();
-        assert_eq!(p.code, "SPACE_LOCKED");
-        assert_eq!(p.args.get("id"), Some(&"abc".to_string()));
+    fn invalid_input_payload() {
+        let p = DbError::InvalidInput("bad id".into()).to_payload();
+        assert_eq!(p.code, "INVALID_INPUT");
+        assert_eq!(p.args.get("message"), Some(&"bad id".to_string()));
     }
 
     /// Regression guard: existing variants must keep their stable codes.

@@ -66,6 +66,38 @@ impl DbManager {
 
     // ─── pure path helpers (no locks) ──────────────────────────────────────
 
+    /// Validate that `id` is a UUID-shaped string (8-4-4-4-12 hex digits,
+    /// 36 chars total). This is a SHAPE check only — sufficient to reject
+    /// path-traversal attempts (e.g. "../../foo") and other malformed ids
+    /// that are used in filesystem path construction. The version nibble is
+    /// NOT validated; that is a concern of the id generator, not the consumer.
+    fn validate_id(id: &str) -> Result<(), DbError> {
+        // UUID shape: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+        // 32 hex digits + 4 dashes = 36 chars.
+        if id.len() != 36 {
+            return Err(DbError::InvalidInput(format!(
+                "invalid id length ({}): {}",
+                id.len(),
+                id
+            )));
+        }
+        for (i, c) in id.chars().enumerate() {
+            let expect_dash = matches!(i, 8 | 13 | 18 | 23);
+            if expect_dash {
+                if c != '-' {
+                    return Err(DbError::InvalidInput(format!(
+                        "invalid id format (expected '-' at position {i}): {id}"
+                    )));
+                }
+            } else if !c.is_ascii_hexdigit() {
+                return Err(DbError::InvalidInput(format!(
+                    "invalid id format (non-hex '{c}' at position {i}): {id}"
+                )));
+            }
+        }
+        Ok(())
+    }
+
     /// `data_dir/spaces/{space_id}`.
     fn space_dir(&self, space_id: &str) -> PathBuf {
         self.data_dir.join("spaces").join(space_id)
@@ -123,6 +155,7 @@ impl DbManager {
     where
         F: FnOnce(&mut Connection) -> Result<R, DbError>,
     {
+        Self::validate_id(space_id)?;
         let mut spaces = self.spaces.lock().unwrap();
         if !spaces.contains_key(space_id) {
             let conn = self.open_space_conn_inner(space_id)?;
@@ -156,6 +189,8 @@ impl DbManager {
     where
         F: FnOnce(&mut Connection) -> Result<R, DbError>,
     {
+        Self::validate_id(space_id)?;
+        Self::validate_id(world_id)?;
         let mut spaces = self.spaces.lock().unwrap();
 
         // Ensure the parent SpaceConn exists (opens space.db if needed).
@@ -268,22 +303,42 @@ mod stress_tests {
     use std::time::{Duration, Instant};
     use tempfile::TempDir;
 
+    /// Layout returned by [`bootstrap`]: each entry is a Space id and the list
+    /// of World ids registered under it. Extracted as a type alias to keep
+    /// `bootstrap`'s signature readable (avoids `clippy::type_complexity`).
+    type Layout = Vec<(String, Vec<String>)>;
+
+    /// Bootstrap result: temp dir (dropped last), manager, layout.
+    type BootstrapResult = (TempDir, Arc<DbManager>, Layout);
+
+    /// Format `n` into a 36-char UUID-shaped string (8-4-4-4-12 hex digits).
+    /// For test ids only — shape passes `validate_id`; value is deterministic.
+    fn uuid_shape(n: u64) -> String {
+        let h = format!("{n:032x}");
+        format!(
+            "{}-{}-{}-{}-{}",
+            &h[0..8],
+            &h[8..12],
+            &h[12..16],
+            &h[16..20],
+            &h[20..32]
+        )
+    }
+
     /// Bootstraps a DbManager with `num_spaces` Spaces, each registering
     /// `worlds_per_space` Worlds. The `space.db` + `world.db` files are
     /// created directly (bypassing commands) so the test doesn't depend on
     /// T11/T14 command wiring.
-    fn bootstrap(
-        num_spaces: usize,
-        worlds_per_space: usize,
-    ) -> (TempDir, Arc<DbManager>, Vec<(String, Vec<String>)>) {
+    fn bootstrap(num_spaces: usize, worlds_per_space: usize) -> BootstrapResult {
         let tmp = TempDir::new().expect("tempdir");
         let data_dir = tmp.path().to_path_buf();
         let manager = Arc::new(DbManager::new(data_dir.clone()).expect("manager new"));
 
         let now = "2026-01-01T00:00:00.000Z";
-        let mut layout = Vec::new();
+        let mut layout: Layout = Vec::new();
         for s in 0..num_spaces {
-            let space_id = format!("space-{s}");
+            // Space ids must be UUID-shaped (validated by with_space/with_world).
+            let space_id = uuid_shape((s as u64) + 1);
             let space_dir = data_dir.join("spaces").join(&space_id);
             std::fs::create_dir_all(space_dir.join("worlds")).expect("space dir");
 
@@ -297,7 +352,8 @@ mod stress_tests {
 
             let mut world_ids = Vec::new();
             for w in 0..worlds_per_space {
-                let world_id = format!("{space_id}-world-{w}");
+                // World ids must also be UUID-shaped.
+                let world_id = uuid_shape(((s as u64) + 1) * 1000 + w as u64);
                 let db_path = format!("worlds/{world_id}.db");
                 let mut wconn = Connection::open(space_dir.join(&db_path)).expect("open world.db");
                 wconn
@@ -400,19 +456,65 @@ mod stress_tests {
     }
 
     /// `with_world` returns `WorldNotFound` (not a panic) for an unregistered
-    /// world id, after transparently opening the Space's `space.db`.
+    /// world id (with a VALID UUID shape), after transparently opening the
+    /// Space's `space.db`.
     #[test]
     fn with_world_returns_world_not_found_for_unknown_world() {
         let (_tmp, manager, layout) = bootstrap(1, 0);
         let (space_id, _) = &layout[0];
+        // UUID-shaped but not registered in the Space's worlds table.
+        let ghost = "deadbeef-0000-0000-0000-00000000dead";
 
         let err = manager
-            .with_world(space_id, "no-such-world", |_| Ok::<(), DbError>(()))
+            .with_world(space_id, ghost, |_| Ok::<(), DbError>(()))
             .expect_err("unknown world should error");
         match err {
-            DbError::WorldNotFound(id) => assert_eq!(id, "no-such-world"),
+            DbError::WorldNotFound(id) => assert_eq!(id, ghost),
             other => panic!("expected WorldNotFound, got {other:?}"),
         }
+    }
+
+    /// `validate_id` rejects malformed ids that could enable path traversal.
+    /// Guards the filesystem boundary against frontend-supplied ids.
+    #[test]
+    fn validate_id_rejects_non_uuid_shapes() {
+        // Valid UUID shapes accepted.
+        assert!(DbManager::validate_id("01926f5e-1d5a-7bbf-b6c4-3e8e5f6a7b8c").is_ok());
+        assert!(DbManager::validate_id("00000000-0000-0000-0000-000000000000").is_ok());
+
+        // Path-traversal attempts rejected.
+        assert!(DbManager::validate_id("../../etc/passwd").is_err());
+        assert!(DbManager::validate_id("..").is_err());
+        assert!(DbManager::validate_id("foo/bar").is_err());
+
+        // Wrong length rejected.
+        assert!(DbManager::validate_id("short").is_err());
+        assert!(DbManager::validate_id("01926f5e-1d5a-7bbf-b6c4-3e8e5f6a7b8c-extra").is_err());
+
+        // Non-hex chars rejected.
+        assert!(DbManager::validate_id("01926f5z-1d5a-7bbf-b6c4-3e8e5f6a7b8c").is_err());
+
+        // Misplaced dashes rejected.
+        assert!(DbManager::validate_id("01926f5e1d5a-7bbf-b6c4-3e8e5f6a7b8c-").is_err());
+    }
+
+    /// `with_space` rejects malformed space ids BEFORE touching the filesystem,
+    /// so a path-traversal id can never reach `Connection::open`.
+    #[test]
+    fn with_space_rejects_invalid_id() {
+        let tmp = TempDir::new().expect("tempdir");
+        let manager = DbManager::new(tmp.path().to_path_buf()).expect("manager new");
+
+        let err = manager
+            .with_space("../../etc/passwd", |_| Ok::<(), DbError>(()))
+            .expect_err("traversal id must reject");
+        assert!(matches!(err, DbError::InvalidInput(_)));
+
+        // The traversal directory was NOT created.
+        assert!(
+            !tmp.path().join("../../etc/passwd").exists(),
+            "path traversal must not reach the filesystem"
+        );
     }
 
     /// `with_space` round-trips a write + read against the Space's
