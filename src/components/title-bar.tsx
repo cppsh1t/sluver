@@ -161,7 +161,7 @@ export function TitleBar() {
       <div
         role="tablist"
         aria-label={t("space:tabs.aria")}
-        className="flex min-w-0 items-center gap-0.5"
+        className="flex min-w-0 items-center gap-0.5 self-end -mb-px"
       >
         {openIds.map((id) => {
           const space = byId(id);
@@ -174,11 +174,11 @@ export function TitleBar() {
               role="tab"
               aria-selected={active ? true : undefined}
               className={cn(
-                "group/tab flex h-7 max-w-[200px] cursor-default items-center gap-1.5 rounded-md px-2.5 text-xs outline-none transition-colors",
+                "group/tab flex h-7 max-w-[200px] cursor-default items-center gap-1.5 rounded-t-md border border-b-transparent px-2.5 text-xs outline-none transition-colors",
                 "focus-visible:ring-2 focus-visible:ring-sidebar-ring",
                 active
-                  ? "bg-sidebar-accent text-sidebar-foreground"
-                  : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+                  ? "border-sidebar-border bg-background text-sidebar-foreground"
+                  : "border-transparent text-muted-foreground hover:border-sidebar-border hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
               )}
             >
               <button
