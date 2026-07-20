@@ -39,6 +39,28 @@
       "cta": "创建第一个世界"
     }
   },
+  "config": {
+    "title": "配置",
+    "subtitle": "管理此空间的名称、密码与危险操作。",
+    "name": {
+      "title": "名称",
+      "description": "此空间的显示名称，在空间注册表内唯一。",
+      "placeholder": "输入空间名称",
+      "save": "保存",
+      "saving": "保存中…"
+    },
+    "password": {
+      "title": "密码保护",
+      "descriptionSet": "此空间已受密码保护。",
+      "descriptionUnset": "此空间未设置密码。",
+      "manage": "管理密码"
+    },
+    "danger": {
+      "title": "删除空间",
+      "description": "永久删除此空间及其所有世界与内容，此操作不可撤销。",
+      "button": "删除空间"
+    }
+  },
   "landing": {
     "title": "空间",
     "subtitle": "选择一个空间开始，或将你的世界按空间分组管理。",

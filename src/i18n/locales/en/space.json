@@ -39,6 +39,28 @@
       "cta": "Create your first world"
     }
   },
+  "config": {
+    "title": "Config",
+    "subtitle": "Manage this space's name, password, and danger zone.",
+    "name": {
+      "title": "Name",
+      "description": "This space's display name, unique within the space registry.",
+      "placeholder": "Enter space name",
+      "save": "Save",
+      "saving": "Saving…"
+    },
+    "password": {
+      "title": "Password protection",
+      "descriptionSet": "This space is password-protected.",
+      "descriptionUnset": "This space has no password set.",
+      "manage": "Manage password"
+    },
+    "danger": {
+      "title": "Delete space",
+      "description": "Permanently delete this space and all of its worlds and content. This cannot be undone.",
+      "button": "Delete space"
+    }
+  },
   "landing": {
     "title": "Spaces",
     "subtitle": "Pick a space to continue, or organize your worlds into spaces.",
