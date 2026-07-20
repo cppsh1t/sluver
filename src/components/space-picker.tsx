@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Add01Icon,
@@ -15,6 +17,9 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { CreateSpaceDialog } from "@/components/space-management";
 import { cn } from "@/lib/utils";
+import i18n from "@/i18n";
+import { translateError } from "@/i18n/errors";
+import { toErrorPayload } from "@/api/client";
 import { useOpenSpace, useSession, useSetActiveSpace, useSpaces } from "@/hooks";
 import type { SpaceSummary } from "@/types";
 
@@ -42,6 +47,7 @@ interface SpacePickerProps {
 
 function SpacePicker({ onCreateNew }: SpacePickerProps) {
   const { t } = useTranslation(["space", "common"]);
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   // The picker owns its own create dialog by default so the "Create new
   // Space" affordance is functional wherever `<SpacePicker />` is mounted
@@ -60,14 +66,23 @@ function SpacePicker({ onCreateNew }: SpacePickerProps) {
   const activeSpace: SpaceSummary | undefined =
     activeId != null ? spaces.find((s) => s.id === activeId) : undefined;
 
-  function handleSelect(space: SpaceSummary) {
-    if (openIds.has(space.id)) {
-      setActive.mutate(space.id);
-    } else {
-      // Fire-and-forget. For a protected Space the backend rejects with
-      // INVALID_PASSWORD and the parent's PasswordGate overlay takes over
-      // (T20). Don't manage auth flow here.
-      openSpace.mutate({ id: space.id });
+  // Navigation MUST follow the session mutation — otherwise the tab opens /
+  // activates in the TitleBar but the content area stays put (bug). Same
+  // pattern as `TitleBar.handleOpen` / `handleActivate`. For a protected
+  // Space, `openSpace` succeeds in a locked state and the in-page password
+  // gate overlay takes over once the route renders.
+  async function handleSelect(space: SpaceSummary) {
+    try {
+      if (openIds.has(space.id)) {
+        await setActive.mutateAsync(space.id);
+      } else {
+        await openSpace.mutateAsync({ id: space.id });
+      }
+      navigate({ to: "/space/$spaceId", params: { spaceId: space.id } });
+    } catch (e) {
+      toast.error(i18n.t("space:toast.openFailed"), {
+        description: translateError(toErrorPayload(e)),
+      });
     }
     setOpen(false);
   }
