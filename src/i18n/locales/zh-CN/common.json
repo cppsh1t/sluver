@@ -15,6 +15,7 @@
     "worlds": "世界",
     "spaces": "空间",
     "settings": "设置",
+    "config": "配置",
     "library": "资料库",
     "version": "v{{version}} · 预览版",
     "backToWorlds": "所有世界",

@@ -15,6 +15,7 @@
     "worlds": "Worlds",
     "spaces": "Spaces",
     "settings": "Settings",
+    "config": "Config",
     "library": "Library",
     "version": "v{{version}} · Preview",
     "backToWorlds": "All Worlds",
