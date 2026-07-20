@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Add01Icon,
@@ -32,12 +33,14 @@ import type { SpaceId, SpaceSummary } from "@/types";
 /**
  * Custom frameless titlebar — browser-style Space tabs (ADR-0009).
  *
- * The bar is a Tauri drag region (`data-tauri-drag-region="deep"`, Tauri 2.11):
- * `deep` propagates window-dragging to the bar's non-interactive area (the
- * gaps between tabs), while the tabs / close buttons / `[+]` are real
- * `<button>` elements that opt out of dragging by being interactive. Window
- * controls are NOT rendered here — `tauri-plugin-decorum` injects them
- * (Windows caption buttons top-right; macOS traffic lights top-left).
+ * Window dragging is handled programmatically via `startDragging()` on
+ * mousedown — NOT via `data-tauri-drag-region`. Tauri's drag-region attribute
+ * intercepts mousedown at the WebView level before the DOM evaluates CSS
+ * pointer-events, so clicks on <span>/<svg> children inside <button>s were
+ * swallowed as drag attempts, making every tab/close/[+] button dead.
+ * The `onMouseDown` handler below calls `startDragging()` only when the press
+ * lands on a non-interactive area (gaps, padding), and returns early for
+ * clicks inside buttons/links.
  *
  * Tabs mirror the session's `openSpaceIds`; the active tab mirrors
  * `activeSpaceId`. Clicking a tab activates it server-side and navigates to
@@ -135,9 +138,19 @@ export function TitleBar() {
     setCreateOpen(true);
   }
 
+  function handleTitleBarMouseDown(e: React.MouseEvent<HTMLDivElement>) {
+    // Only start window dragging when the press lands on a non-interactive
+    // area (gaps between tabs, left/right padding). Interactive elements
+    // (buttons, links) handle their own events — return early so the click
+    // reaches them.
+    const target = e.target as HTMLElement;
+    if (target.closest("button, a, input, select, textarea")) return;
+    getCurrentWindow().startDragging();
+  }
+
   return (
     <div
-      data-tauri-drag-region="deep"
+      onMouseDown={handleTitleBarMouseDown}
       className={cn(
         "flex h-9 shrink-0 items-center gap-1 border-b border-sidebar-border bg-sidebar px-2",
         // Leave room for decorum's native caption buttons (Win/Linux, top-right)

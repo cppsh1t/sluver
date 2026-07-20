@@ -206,19 +206,6 @@
     }
 }
 
-/* ── Tauri drag-region: keep button/link children click-through ─────────── */
-/* Tauri's drag-region hit-test checks the *direct* event target's tag name
-   against an interactive-element whitelist (button, a, input, …).  When the
-   user clicks an icon or <span> nested inside a <button> in the titlebar,
-   the target is the child element — which is NOT on the whitelist — so
-   Tauri swallows the mousedown for window dragging and the click never
-   reaches the button.  Disabling pointer-events on children forces the
-   <button> itself to always be the event target. */
-[data-tauri-drag-region] button > *,
-[data-tauri-drag-region] a > * {
-  pointer-events: none;
-}
-
 /* ── tauri-plugin-decorum: injected window caption buttons ────────────── */
 /* Windows/Linux only — macOS uses native traffic lights. Decorum injects
    native buttons (#decorum-tb-minimize/maximize/close) for Snap Layout. We
