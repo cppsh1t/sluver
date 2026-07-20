@@ -69,7 +69,7 @@ Global application preferences that apply regardless of which Space is open: UI 
 _Avoid_: Config, Preferences, Options
 
 **Space config**:
-A reserved module on each Space, intentionally empty for now, intended for future Space-scoped settings of a different nature than global `Settings`. The term `config` is reserved for this Space-level use; do not use it for global `Settings`.
+A Space's own control surface — its identity, access control, and lifecycle management (rename, password, deletion) — as distinct from global `Settings`. The term `config` is reserved for this Space-level use; do not use it for global `Settings`.
 _Avoid_: Space settings, Space preferences
 
 ## Conventions
