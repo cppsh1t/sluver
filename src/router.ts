@@ -4,9 +4,10 @@ import { rootRoute } from "./routes/__root";
 import { appLayoutRoute } from "./routes/_app";
 import { indexRoute } from "./routes/index";
 import { settingsRoute } from "./routes/settings";
-import { libraryRoute } from "./routes/library";
 import { spaceLayoutRoute } from "./routes/space.$spaceId/_space";
 import { spaceHomeRoute } from "./routes/space.$spaceId/index";
+import { spaceConfigRoute } from "./routes/space.$spaceId/config";
+import { spaceLibraryRoute } from "./routes/space.$spaceId/library";
 import { worldLayoutRoute } from "./routes/world.$worldId/_world";
 import { worldIndexRoute } from "./routes/world.$worldId/index";
 import { charactersRoute } from "./routes/world.$worldId/characters";
@@ -21,14 +22,18 @@ import { novelWorkspaceRoute } from "./routes/world.$worldId/novels.$novelId";
 import { novelIndexRoute } from "./routes/world.$worldId/novels.$novelId/index";
 import { chapterWorkspaceRoute } from "./routes/world.$worldId/novels.$novelId/chapters.$chapterId";
 
-// Three-tier layout (ADR-0009):
-//   landing (app layout) → space-home (space layout) → world (world layout).
-// `worldLayoutRoute` is now a child of `spaceLayoutRoute`, so every world
-// route inherits the `/space/$spaceId` prefix and the `spaceId` param.
+// Three-tier layout (ADR-0009, amended):
+//   landing (app layout) → space-home / space-config / space-library (space
+//   layout) → world (world layout).
+// The Library is now a Space-tier destination alongside 世界 (world list) and
+// 配置 (space management). `worldLayoutRoute` is a child of `spaceLayoutRoute`,
+// so every world route inherits the `/space/$spaceId` prefix and `spaceId`.
 const routeTree = rootRoute.addChildren([
-  appLayoutRoute.addChildren([indexRoute, settingsRoute, libraryRoute]),
+  appLayoutRoute.addChildren([indexRoute, settingsRoute]),
   spaceLayoutRoute.addChildren([
     spaceHomeRoute,
+    spaceConfigRoute,
+    spaceLibraryRoute,
     worldLayoutRoute.addChildren([
       worldIndexRoute,
       charactersRoute,
