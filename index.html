@@ -8,6 +8,31 @@
   </head>
 
   <body>
+    <!--
+      Static host for tauri-plugin-decorum's injected caption buttons.
+
+      `create_overlay_titlebar()` (lib.rs) evals `titlebar.js` on DOMContentLoaded.
+      That script's FIRST action is `document.querySelector("[data-tauri-decorum-tb]")`.
+      If it finds nothing, it creates a transparent full-width × 32px-tall
+      drag-region overlay (z-index:100) at the top of the viewport — which
+      swallows EVERY click in the top 32px (Issue #32). Our TitleBar is h-9
+      (36px), so all tabs / close / [+] buttons sit inside that kill zone.
+
+      By providing this empty host element statically in the HTML (parsed
+      BEFORE DOMContentLoaded fires), `titlebar.js` finds it and skips
+      creating the overlay. `controls.js` (Windows) / `linux-controls.js`
+      then inject the native min/max/close buttons INTO this host, which
+      is anchored to the top-right corner — exactly where `TitleBar`'s
+      `pr-[140px]` reserves space.
+
+      z-index:200 — above shadcn modals (z-50) so users can always reach
+      the window controls, and above decorum's default overlay (z-100) as
+      defense-in-depth in case preemption ever races.
+    -->
+    <div
+      data-tauri-decorum-tb
+      style="position:fixed;top:0;right:0;height:36px;z-index:200;display:flex;align-items:center"
+    ></div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
