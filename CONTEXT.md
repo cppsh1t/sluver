@@ -72,6 +72,10 @@ _Avoid_: Config, Preferences, Options
 A Space's own control surface — its identity, access control, and lifecycle management (rename, password, deletion) — as distinct from global `Settings`. The term `config` is reserved for this Space-level use; do not use it for global `Settings`.
 _Avoid_: Space settings, Space preferences
 
+**Tab state**:
+The complete frontend runtime state of an open Space tab — every route subtree the user has visited within that Space, kept mounted in the DOM (hidden via CSS when the tab is inactive) rather than unmounted on navigation. Includes each cached route's component state: form drafts, scroll positions, modal/dialog open state, and other `useState`/`useRef` contents. Bounded by the Space's entry in `openSpaceIds`: closing the tab destroys all of it, app restart destroys all of it (only the active Space's home route is restored by `__root.tsx`'s startup logic). Navigating within a tab to a new route hides the previous route's subtree and mounts the new one — both stay alive until tab close. Switching tabs never unmounts the inactive tab's subtree.
+_Avoid_: View state, workspace state, page state
+
 ## Conventions
 
 **Name uniqueness**: Within each scope, the `name` or `title` field is unique — `Space.name` across the Space registry; `World.name` within its Space; `Character.name`, `Location.name`, `Item.name`, `Lore.name`, `Event.name`, `Novel.title` within their World; `CharacterPhase.name` within their Character; `Chapter.title` within their Novel; `Scene.title` within their Chapter. Identity is always by `id` (UUID v7); the display label is scoped-unique.

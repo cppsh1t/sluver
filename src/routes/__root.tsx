@@ -9,6 +9,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 
 import { TitleBar } from "@/components/title-bar";
+import { KeepAliveProvider } from "@/components/keep-alive-outlet";
+import { TabStateProvider } from "@/components/tab-state-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { getAppSetting } from "@/api";
 import { useSession } from "@/hooks";
@@ -96,13 +98,17 @@ function RootLayout() {
   }, [queryClient]);
 
   return (
-    <div className="flex h-svh flex-col overflow-hidden bg-background text-foreground">
-      <TitleBar />
-      <div className="flex flex-1 overflow-hidden">
-        <Outlet />
-      </div>
-      <Toaster />
-    </div>
+    <KeepAliveProvider>
+      <TabStateProvider>
+        <div className="flex h-svh flex-col overflow-hidden bg-background text-foreground">
+          <TitleBar />
+          <div className="flex flex-1 overflow-hidden">
+            <Outlet />
+          </div>
+          <Toaster />
+        </div>
+      </TabStateProvider>
+    </KeepAliveProvider>
   );
 }
 

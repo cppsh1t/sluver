@@ -1,6 +1,7 @@
-import { Outlet, createRoute, useParams } from "@tanstack/react-router";
+import { createRoute, useParams } from "@tanstack/react-router";
 
 import { rootRoute } from "../__root";
+import { KeepAliveOutlet } from "@/components/keep-alive-outlet";
 import { SpacePasswordGate } from "@/components/space-password-gate";
 import { useSpaces, useSession } from "@/hooks";
 import type { SpaceId } from "@/types";
@@ -37,7 +38,7 @@ function SpaceLayout() {
 
   return (
     <div className="relative flex flex-1 overflow-hidden">
-      <Outlet />
+      <KeepAliveOutlet />
       {isLocked && (
         <SpacePasswordGate spaceId={spaceIdBranded} spaceName={spaceName} />
       )}

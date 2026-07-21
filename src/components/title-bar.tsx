@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { CreateSpaceDialog } from "@/components/space-management";
+import { useTabState } from "@/components/tab-state-provider";
 import { cn } from "@/lib/utils";
 import i18n from "@/i18n";
 import { translateError } from "@/i18n/errors";
@@ -43,10 +44,14 @@ import type { SpaceId, SpaceSummary } from "@/types";
  * clicks inside buttons/links.
  *
  * Tabs mirror the session's `openSpaceIds`; the active tab mirrors
- * `activeSpaceId`. Clicking a tab activates it server-side and navigates to
- * `/space/$spaceId`; closing the active tab navigates to the next remaining
- * open Space or back to the landing. The `[+]` opens a small launcher popover
- * (switch to an existing Space / open a closed one / create a new one).
+ * `activeSpaceId`. Clicking a tab activates it server-side and navigates
+ * to the Space's last-seen route if any (`useTabState().getLastRoute`),
+ * else `/space/$spaceId` — preserving Tab state across switches per
+ * ADR-0010. Closing the active tab evicts that Space's keep-alive cache
+ * via `clearSpaceTabState`, then navigates to the next remaining open
+ * Space's last route (or back to the landing if none remain). The `[+]`
+ * opens a small launcher popover (switch to an existing Space / open a
+ * closed one / create a new one).
  */
 export function TitleBar() {
   const { t } = useTranslation(["space", "common"]);
@@ -57,6 +62,7 @@ export function TitleBar() {
   const setActive = useSetActiveSpace();
   const closeSpace = useCloseSpace();
   const openSpace = useOpenSpace();
+  const { getLastRoute, clearSpaceTabState } = useTabState();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -72,7 +78,12 @@ export function TitleBar() {
   async function handleActivate(id: SpaceId) {
     try {
       await setActive.mutateAsync(id);
-      navigate({ to: "/space/$spaceId", params: { spaceId: id } });
+      const last = getLastRoute(id);
+      if (last) {
+        navigate({ to: last });
+      } else {
+        navigate({ to: "/space/$spaceId", params: { spaceId: id } });
+      }
     } catch (e) {
       toast.error(i18n.t("space:toast.activateFailed"), {
         description: translateError(toErrorPayload(e)),
@@ -88,13 +99,19 @@ export function TitleBar() {
       // navigation to feel instant.
       const remaining = openIds.filter((x) => x !== id);
       await closeSpace.mutateAsync(id);
+      clearSpaceTabState(id); // evict keep-alive cache + lastRoute for closed Space
       if (!wasActive) return;
       if (remaining.length > 0) {
         const idx = openIds.indexOf(id);
         const nextIdx = Math.min(idx, remaining.length - 1);
         const nextId = remaining[nextIdx];
         await setActive.mutateAsync(nextId);
-        navigate({ to: "/space/$spaceId", params: { spaceId: nextId } });
+        const nextLast = getLastRoute(nextId);
+        if (nextLast) {
+          navigate({ to: nextLast });
+        } else {
+          navigate({ to: "/space/$spaceId", params: { spaceId: nextId } });
+        }
       } else {
         navigate({ to: "/" });
       }
@@ -114,7 +131,12 @@ export function TitleBar() {
     if (openIdsSet.has(space.id)) {
       try {
         await setActive.mutateAsync(space.id);
-        navigate({ to: "/space/$spaceId", params: { spaceId: space.id } });
+        const last = getLastRoute(space.id);
+        if (last) {
+          navigate({ to: last });
+        } else {
+          navigate({ to: "/space/$spaceId", params: { spaceId: space.id } });
+        }
       } catch (e) {
         toast.error(i18n.t("space:toast.openFailed"), {
           description: translateError(toErrorPayload(e)),
