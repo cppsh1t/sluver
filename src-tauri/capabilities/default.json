@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
-  "windows": ["main"],
+  "description": "Capability for all app windows (launcher + per-Space windows — ADR-0011). Uses \"*\" so dynamically-created Space windows (label \"space-{uuid}\") inherit the same ACL as the statically-configured \"main\" window. Per Tauri v2 docs, glob patterns like \"space-*\" are supported in theory, but \"*\" is the documented \"all app windows\" pattern and avoids any glob-matching ambiguity at build time.",
+  "windows": ["*"],
   "permissions": [
     "core:default",
     "opener:default",

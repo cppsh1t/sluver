@@ -138,7 +138,7 @@ pub fn list_spaces(state: State<'_, DbManager>) -> Result<Vec<SpaceSummary>, DbE
     do_list_spaces(&state)
 }
 
-fn do_list_spaces(mgr: &DbManager) -> Result<Vec<SpaceSummary>, DbError> {
+pub(crate) fn do_list_spaces(mgr: &DbManager) -> Result<Vec<SpaceSummary>, DbError> {
     mgr.with_meta(|conn| {
         let mut stmt = conn.prepare(
             "SELECT id, name, password_hash, created_at, updated_at

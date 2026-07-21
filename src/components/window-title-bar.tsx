@@ -1,27 +1,33 @@
 /**
- * Minimal frameless title bar — drag region only (ADR-0011).
+ * Minimal frameless title bar — drag region + decorum caption button host.
  *
- * Replaces the browser-style tab bar (ADR-0009, superseded). Each Space
- * now opens in its own OS window, so there are no tabs to render.
+ * `data-tauri-decorum-tb` is the escape hatch (decorum docs Pattern 2 / Issue
+ * #41): when decorum's `titlebar.js` finds an existing element with this
+ * attribute, it skips creating its own z-index:100 overlay and instead mounts
+ * the caption buttons (minimize/maximize/close) INSIDE our element via
+ * `controls.js`. This avoids the two-overlay conflict (Issue #32) where our
+ * opaque drag region swallowed clicks meant for decorum's buttons.
  *
- * Decorum's `create_overlay_titlebar()` (called from `lib.rs` on every
- * window) injects the native close/minimize/maximize buttons as an overlay
- * on the right (Windows/Linux) or left (macOS). This component only needs
- * to provide a drag region and leave space for the overlay — no buttons.
+ * `data-tauri-drag-region` stays on the outer div — since decorum no longer
+ * creates its own drag div, we must provide drag ourselves. Tauri v2's drag
+ * region does NOT intercept clicks on interactive descendants (`<button>`),
+ * so decorum's caption buttons work correctly inside this container.
  *
- * `data-tauri-drag-region` is safe here because the title bar contains
- * NO interactive children (unlike the old TitleBar which had tab/close
- * buttons that conflicted with the drag region).
+ * Each Space opens in its own OS window (ADR-0009, superseded the browser-style
+ * tab bar); this title bar replaces that. macOS traffic lights are positioned
+ * separately via `set_traffic_lights_inset` in Rust — no frontend change needed.
  */
 export function WindowTitleBar() {
   return (
     <div
-      className="flex h-9 shrink-0 items-center justify-center bg-background"
+      data-tauri-decorum-tb
       data-tauri-drag-region
+      className="relative flex h-9 shrink-0 items-center justify-end bg-background"
     >
-      <span className="pointer-events-none select-none text-xs font-medium tracking-wide text-muted-foreground/50">
+      <span className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 select-none text-xs font-medium tracking-wide text-muted-foreground/50">
         Sluver
       </span>
+      {/* decorum's controls.js appends caption <button> elements here on DOMContentLoaded */}
     </div>
   );
 }

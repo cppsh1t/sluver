@@ -41,22 +41,35 @@ pub fn run() {
             // `set_tray_locale` right after bootstrap. See `tray.rs`.
             tray::setup(app.handle())?;
 
-            // Auto-open the last Space window (ADR-0011). `WebviewWindowBuilder
-            // ::build` has main-thread affinity on Windows (WebView2 boot
-            // path), so we hop to the main thread instead of spawning on the
-            // tokio runtime. The outer `let _ =` swallows any dispatch error:
-            // if the window can't auto-open (process is shutting down, main
-            // thread is saturated), the user can still open it from the
-            // launcher — this is a UX nicety, not a correctness invariant.
+            // Decide which window to show on startup (ADR-0011). Priority:
+            //   1. lastOpenedSpaceId (if the Space still exists)
+            //   2. first Space in the registry (sorted by created_at)
+            //   3. launcher (main window) — no Spaces at all
+            // The main window starts hidden (tauri.conf.json visible:false).
+            // We show it only as a fallback. When a Space window opens, main
+            // stays hidden. `WebviewWindowBuilder::build` has main-thread
+            // affinity on Windows (WebView2 boot path), so we hop to the main
+            // thread instead of spawning on the tokio runtime. The outer
+            // `let _ =` swallows any dispatch error: if the window can't
+            // auto-open (process is shutting down, main thread is saturated),
+            // the user can still open it from the launcher — this is a UX
+            // nicety, not a correctness invariant.
             let app_handle = app.handle().clone();
             if let Some(db_manager) = app.try_state::<db::DbManager>() {
-                if let Ok(session) = commands::session::get_session_impl(&db_manager) {
-                    if let Some(space_id) = session.last_opened_space_id {
+                match determine_startup_space(&db_manager) {
+                    Some(space_id) => {
                         let app_for_thread = app_handle.clone();
                         let _ = app_handle.run_on_main_thread(move || {
                             let _ =
                                 window_manager::ensure_space_window(&app_for_thread, &space_id);
                         });
+                    }
+                    None => {
+                        // No Spaces at all → show the launcher.
+                        if let Some(main_window) = app_handle.get_webview_window("main") {
+                            let _ = main_window.show();
+                            let _ = main_window.set_focus();
+                        }
                     }
                 }
             }
@@ -183,9 +196,49 @@ pub fn run() {
                         state.close_space(&space_id);
                     }
                     crate::tray::refresh(app);
+
+                    // If this was the last Space window, show the launcher so
+                    // the user can pick or create a new Space. At this point
+                    // `webview_windows()` no longer includes the just-destroyed
+                    // window, so any remaining `space-*` label means another
+                    // Space is still open.
+                    let has_space_windows = app
+                        .webview_windows()
+                        .keys()
+                        .any(|k| crate::window_manager::space_id_from_label(k).is_some());
+                    if !has_space_windows {
+                        if let Some(main_window) = app.get_webview_window("main") {
+                            let _ = main_window.show();
+                            let _ = main_window.set_focus();
+                        }
+                    }
                 }
             }
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Determine which Space to open on startup (ADR-0011). Returns `None` if
+/// there are no Spaces at all — caller should show the launcher.
+///
+/// Priority:
+///   1. `lastOpenedSpaceId` from the persisted session, IF that Space still
+///      exists in the registry (defensive against stale ids — the session row
+///      is normally evicted on delete, but a hand-edited DB or a partially-
+///      failed delete could leave a dangling id).
+///   2. The first Space by `created_at` (`do_list_spaces` sorts ascending).
+fn determine_startup_space(db: &db::DbManager) -> Option<String> {
+    let session = commands::session::get_session_impl(db).ok()?;
+    let spaces = commands::space::do_list_spaces(db).ok()?;
+
+    // 1. lastOpenedSpaceId (if it still exists in the registry)
+    if let Some(id) = session.last_opened_space_id {
+        if spaces.iter().any(|s| s.id == id) {
+            return Some(id);
+        }
+    }
+
+    // 2. First Space by created_at (do_list_spaces already sorts by created_at)
+    spaces.first().map(|s| s.id.clone())
 }
