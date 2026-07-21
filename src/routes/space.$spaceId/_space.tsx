@@ -1,13 +1,12 @@
-import { createRoute, useParams } from "@tanstack/react-router";
+import { createRoute, Outlet, useParams } from "@tanstack/react-router";
 
 import { rootRoute } from "../__root";
-import { KeepAliveOutlet } from "@/components/keep-alive-outlet";
 import { SpacePasswordGate } from "@/components/space-password-gate";
 import { useSpaces, useSession } from "@/hooks";
 import type { SpaceId } from "@/types";
 
 /**
- * Space-tier layout (ADR-0009).
+ * Space-tier layout (ADR-0011).
  *
  * This is a **passthrough + locked-gate wrapper** — it deliberately does NOT
  * render `AppSidebar`. Rendering the sidebar here would double it up with
@@ -18,10 +17,11 @@ import type { SpaceId } from "@/types";
  *   - world routes render `WorldSidebar` via `_world.tsx`.
  *
  * The wrapper's one cross-cutting concern is the password gate: when the
- * route's Space is in `lockedSpaceIds`, the gate overlays the whole content
- * (sidebar + main) so a locked Space hides ALL of its data while leaving the
- * TitleBar tabs clickable (the gate is an in-page overlay, NOT a modal — see
- * CONTEXT.md + ADR-0008).
+ * route's Space is in `lockedSpaceIds`, the gate overlays the window's
+ * whole content (sidebar + main) so a locked Space hides ALL of its data.
+ * Under ADR-0011 each Space is its own OS window, so the gate is an in-page
+ * overlay (NOT a modal) — the OS window controls and tray stay available
+ * outside the page; see CONTEXT.md + ADR-0008.
  */
 function SpaceLayout() {
   // TanStack Router exposes path params as plain `string`; the session's
@@ -38,7 +38,7 @@ function SpaceLayout() {
 
   return (
     <div className="relative flex flex-1 overflow-hidden">
-      <KeepAliveOutlet />
+      <Outlet />
       {isLocked && (
         <SpacePasswordGate spaceId={spaceIdBranded} spaceName={spaceName} />
       )}

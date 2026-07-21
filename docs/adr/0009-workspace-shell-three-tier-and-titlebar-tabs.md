@@ -1,6 +1,6 @@
 # Workspace shell: three-tier layout + Space tabs in the TitleBar
 
-**Status**: accepted — supersedes ADR-0005.
+**Status**: **superseded by [ADR-0011](./0011-one-space-per-window.md)** (multi-window architecture). The browser-style title bar tabs and tab-switching logic have been replaced by one native OS window per Space.
 
 > ## Amendment (2026-07-20)
 >

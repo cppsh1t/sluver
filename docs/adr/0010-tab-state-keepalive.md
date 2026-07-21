@@ -1,5 +1,7 @@
 # Tab state preservation via in-app DOM keep-alive
 
+**Status**: **superseded by [ADR-0011](./0011-one-space-per-window.md)** (multi-window architecture). The `cloneDeep(router)` approach was fundamentally broken — deep-cloning the TanStack Router produces inconsistent state (frozen data + live method references) that corrupts matchId resolution. Replaced by one OS window per Space, where state isolation is natural and no cloning is needed.
+
 When a Space tab was activated, the URL was hardcoded to `/space/$spaceId` (the Space home), so switching from Tab A to Tab B and back lost Tab A's deep route. The deeper complaint that motivated this: once AI writing ships, a tab switch would terminate any in-flight AI stream. We preserve the full **Tab state** (see `CONTEXT.md`) by keeping every visited route subtree mounted in the DOM, hidden via CSS when inactive.
 
 The chosen implementation is **hand-rolled in-app keep-alive**: a single TanStack Router with `useRouter()` + `<RouterContextProvider>` snapshotting per cached route, all cached routes rendered simultaneously, CSS `hidden` toggling between them. `KeepAliveProvider` lives at `__root.tsx` (above both `TitleBar` and `_space.tsx`) so that `useTabState()` is available to the title bar for `getLastRoute` / `clearSpaceTabState`. The cache Map is **shared across all Spaces**; eviction is by path-prefix (`/space/<id>`) when a Space tab closes. Cache key is the full route pathname. Nothing is evicted until a Space's tab is closed.

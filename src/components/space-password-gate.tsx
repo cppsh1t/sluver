@@ -32,17 +32,17 @@ interface SpacePasswordGateProps {
  * In-page overlay that obscures a password-protected Space's content while
  * the Space is in its *locked* state (per ADR-0008 + CONTEXT.md).
  *
- * The Space tab stays open in the TitleBar; this gate covers only the
- * Space's content area (absolute inset-0 within a relative-positioned
- * parent). The parent renders it when the session reports the Space as
- * locked and stops rendering it once {@link useOpenSpace} succeeds — the
- * hook updates the `['session']` cache via `setQueryData`, the parent
- * re-renders, and this component unmounts.
+ * Under ADR-0011 each Space lives in its own OS window, so this gate only
+ * needs to cover the window's own content area (absolute inset-0 within a
+ * relative-positioned parent). The parent renders it when the session
+ * reports the Space as locked and stops rendering it once
+ * {@link useOpenSpace} succeeds — the hook updates the `['session']` cache
+ * via `setQueryData`, the parent re-renders, and this component unmounts.
  *
  * This is deliberately NOT a pre-entry screen, NOT a dismissable modal,
- * and NOT `aria-modal`: the TitleBar tabs must remain focusable/clickable
- * so the user can switch Spaces even while one is locked. The only way
- * past the gate is the correct password or closing the tab.
+ * and NOT `aria-modal`: the window's OS-level controls (close / minimize /
+ * tray) stay available outside the page, and the only way past the gate is
+ * the correct password or closing the window.
  */
 export function SpacePasswordGate({
   spaceId,

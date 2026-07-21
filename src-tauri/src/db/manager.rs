@@ -235,8 +235,8 @@ impl DbManager {
     // ─── connection-lifecycle helpers ──────────────────────────────────────
     //
     // These manage ONLY the connection cache. Persisted session state
-    // (openSpaceIds / activeSpaceId / lockedSpaceIds in meta.db settings KV)
-    // is owned by the session command layer, not here.
+    // (`lastOpenedSpaceId` / `lockedSpaceIds` in `meta.db` settings KV,
+    // post-ADR-0011) is owned by the session command layer, not here.
 
     /// Ensure the Space's `space.db` connection is cached (idempotent — no-op
     /// if already open). Used by the session layer (T12) when opening a Space
@@ -257,9 +257,10 @@ impl DbManager {
     }
 
     /// Drop a Space's cached `space.db` AND all its cached World content
-    /// connections. Idempotent (no-op if the Space isn't cached). Used by
-    /// the session layer's `close_space` command (T12) when the user closes
-    /// a Space tab.
+    /// connections. Idempotent (no-op if the Space isn't cached). Called by
+    /// the window-event router in `lib.rs` when a Space window is destroyed
+    /// (ADR-0011) and by `commands::space::do_delete_space` during the
+    /// deletion cascade.
     ///
     /// Single-lock operation (only `spaces`). The nested design means
     /// removing one `SpaceConn` entry drops both the space.db conn and every

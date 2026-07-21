@@ -1,11 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  closeSpace,
   getSession,
   lockAllProtectedSpaces,
   lockSpace,
   openSpace,
-  setActiveSpace,
 } from "@/api";
 import type { SpaceId } from "@/types";
 
@@ -33,14 +31,6 @@ export const useOpenSpace = () => {
   });
 };
 
-export const useCloseSpace = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: SpaceId) => closeSpace(id),
-    onSuccess: (next) => qc.setQueryData(SESSION_KEY, next),
-  });
-};
-
 export const useLockSpace = () => {
   const qc = useQueryClient();
   return useMutation({
@@ -53,14 +43,6 @@ export const useLockAllProtectedSpaces = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => lockAllProtectedSpaces(),
-    onSuccess: (next) => qc.setQueryData(SESSION_KEY, next),
-  });
-};
-
-export const useSetActiveSpace = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: SpaceId) => setActiveSpace(id),
     onSuccess: (next) => qc.setQueryData(SESSION_KEY, next),
   });
 };

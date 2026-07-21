@@ -3,21 +3,21 @@ import { z } from "zod";
 import { spaceIdSchema } from "./space";
 
 /**
- * 会话状态（Session state）— 当前打开的 Space 标签页与锁定状态。
+ * 会话状态（Session state）— multi-window model (ADR-0011).
  *
  * Session state persists in `meta.db` settings KV across restarts. The
  * frontend mirrors it as a React Query cache keyed `['session']`.
  *
- * - `openSpaceIds` — tabs currently open in the TitleBar (close-tab ≠ delete-Space).
- * - `activeSpaceId` — which tab is focused; `null` when none (e.g. landing tier).
- * - `lockedSpaceIds` — subset of `openSpaceIds` whose `space.db` connection has
- *   been dropped and whose content is obscured by the password-gate overlay.
- *   Re-auth via `openSpace(id, password)` is required to unlock.
+ * - `lastOpenedSpaceId` — the Space whose window was most recently opened.
+ *   On startup, the backend auto-opens this Space's window. `null` when the
+ *   user has never opened a Space (first run) or the last Space was deleted.
+ * - `lockedSpaceIds` — Spaces whose `space.db` connection has been dropped
+ *   and whose content is obscured by the password-gate overlay. Re-auth via
+ *   `openSpace(id, password)` is required to unlock.
  */
 
 export const sessionStateSchema = z.object({
-  openSpaceIds: z.array(spaceIdSchema),
-  activeSpaceId: spaceIdSchema.nullable(),
+  lastOpenedSpaceId: spaceIdSchema.nullable(),
   lockedSpaceIds: z.array(spaceIdSchema),
 });
 

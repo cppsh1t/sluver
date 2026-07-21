@@ -3,6 +3,7 @@ mod db;
 mod models;
 mod tray;
 mod util;
+mod window_manager;
 
 use tauri::{Emitter, Manager};
 use tauri_plugin_decorum::WebviewWindowExt;
@@ -40,6 +41,26 @@ pub fn run() {
             // `set_tray_locale` right after bootstrap. See `tray.rs`.
             tray::setup(app.handle())?;
 
+            // Auto-open the last Space window (ADR-0011). `WebviewWindowBuilder
+            // ::build` has main-thread affinity on Windows (WebView2 boot
+            // path), so we hop to the main thread instead of spawning on the
+            // tokio runtime. The outer `let _ =` swallows any dispatch error:
+            // if the window can't auto-open (process is shutting down, main
+            // thread is saturated), the user can still open it from the
+            // launcher — this is a UX nicety, not a correctness invariant.
+            let app_handle = app.handle().clone();
+            if let Some(db_manager) = app.try_state::<db::DbManager>() {
+                if let Ok(session) = commands::session::get_session_impl(&db_manager) {
+                    if let Some(space_id) = session.last_opened_space_id {
+                        let app_for_thread = app_handle.clone();
+                        let _ = app_handle.run_on_main_thread(move || {
+                            let _ =
+                                window_manager::ensure_space_window(&app_for_thread, &space_id);
+                        });
+                    }
+                }
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -59,13 +80,13 @@ pub fn run() {
             commands::space::update_space,
             commands::space::delete_space,
             commands::space::set_space_password,
-            // Session (open/close/lock Space tabs)
+            // Session (open/lock Space tabs)
             commands::session::get_session,
             commands::session::open_space,
-            commands::session::close_space,
             commands::session::lock_space,
             commands::session::lock_all_protected_spaces,
-            commands::session::set_active_space,
+            // Window (per-Space OS windows — ADR-0011)
+            commands::window::open_space_window,
             // Character + Phase
             commands::character::create_character,
             commands::character::get_character,
@@ -126,22 +147,22 @@ pub fn run() {
             commands::tray::set_tray_locale,
         ])
         .on_window_event(|window, event| {
-            // Intercept the main window's close button: hide to tray instead
-            // of tearing down the process. Only "main" is affected so future
-            // auxiliary windows (dialogs, pickers, ...) can close normally.
-            if window.label() == "main" {
+            let label = window.label();
+
+            if label == "main" {
+                // Launcher window: hide-to-tray instead of tearing down the
+                // process. Hide-to-tray re-lock (ADR-0008): every protected
+                // Space drops its cached `space.db`/`world.db` connections
+                // and is marked locked in the persisted session, so restoring
+                // the window requires per-Space re-auth. Best-effort — a
+                // failure here must NEVER block the hide (the user still
+                // expects the window to vanish on close). The frontend
+                // listens for the `"spaces-locked"` event (T27) and
+                // invalidates its session cache to show the overlays.
+                //
+                // Order matters: lock → emit → hide. Emitting AFTER hide
+                // would race the webview teardown (T27).
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                    // Hide-to-tray re-lock (ADR-0008): every protected Space
-                    // drops its cached `space.db`/`world.db` connections and
-                    // is marked locked in the persisted session, so restoring
-                    // the window requires per-Space re-auth. Best-effort — a
-                    // failure here must NEVER block the hide (the user still
-                    // expects the window to vanish on close). The frontend
-                    // listens for the `"spaces-locked"` event (T27) and
-                    // invalidates its session cache to show the overlays.
-                    //
-                    // Order matters: lock → emit → hide. Emitting AFTER hide
-                    // would race the webview teardown (T27).
                     let app = window.app_handle();
                     if let Some(state) = app.try_state::<crate::db::DbManager>() {
                         let _ = commands::session::lock_all_protected_spaces_impl(&state);
@@ -149,6 +170,19 @@ pub fn run() {
                     let _ = app.emit("spaces-locked", ());
                     let _ = window.hide();
                     api.prevent_close();
+                }
+            } else if let Some(space_id) = crate::window_manager::space_id_from_label(label) {
+                // Space window: close normally. On Destroyed (after the
+                // webview is torn down), drop this Space's cached DB
+                // connections so the file handles don't linger, and refresh
+                // the tray menu (the window is no longer listed).
+                if let tauri::WindowEvent::Destroyed = event {
+                    let app = window.app_handle();
+                    let space_id = space_id.to_string();
+                    if let Some(state) = app.try_state::<crate::db::DbManager>() {
+                        state.close_space(&space_id);
+                    }
+                    crate::tray::refresh(app);
                 }
             }
         })

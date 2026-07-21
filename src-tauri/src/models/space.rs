@@ -41,11 +41,21 @@ pub struct SetSpacePasswordInput {
 }
 
 /// Session state persisted in `meta.db` settings KV across restarts.
-/// `locked_space_ids` is always a subset of `open_space_ids`.
+///
+/// Per ADR-0011 (per-Space OS windows) the open/active lists collapsed into
+/// a single `last_opened_space_id` (restored on startup). `locked_space_ids`
+/// tracks which protected Spaces currently need a password to access content
+/// (their cached `space.db` connections have been dropped — see ADR-0008).
+///
+/// `deny_unknown_fields` is REQUIRED for transparent migration from the
+/// pre-ADR-0011 format (`openSpaceIds` + `activeSpaceId`): without it, serde
+/// would silently accept old JSON (ignoring the extra fields) and
+/// `last_opened_space_id` would default to `None`, losing the user's last
+/// active Space. With it, old JSON fails deserialization and the migration
+/// path in [`crate::commands::session::read_session`] kicks in.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SessionState {
-    pub open_space_ids: Vec<String>,
-    pub active_space_id: Option<String>,
+    pub last_opened_space_id: Option<String>,
     pub locked_space_ids: Vec<String>,
 }

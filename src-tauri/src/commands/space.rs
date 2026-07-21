@@ -16,7 +16,7 @@
 // derived boolean `has_password` flag leaves this module.
 
 use rusqlite::params;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 use crate::db::{DbError, DbManager};
 use crate::models::space::{
@@ -221,19 +221,23 @@ fn do_update_space(
 //   2. close_space — drop cached space.db + world.db connections so no open
 //      handle blocks the directory removal
 //   3. DELETE the meta row
-//   4. evict from session state (open/active/locked lists)
-//   5. remove_dir_all(`spaces/{id}/`)
+//   4. evict from session state (last_opened + locked lists)
+//   5. close the Space's OS window (if open) so it doesn't keep hitting
+//      SpaceNotFound on every IPC after the meta row is gone
+//   6. remove_dir_all(`spaces/{id}/`)
 
 #[tauri::command]
 pub fn delete_space(
     id: String,
     password: Option<String>,
+    app: AppHandle,
     state: State<'_, DbManager>,
 ) -> Result<(), DbError> {
-    do_delete_space(&state, &id, password)
+    do_delete_space(Some(&app), &state, &id, password)
 }
 
 fn do_delete_space(
+    app: Option<&AppHandle>,
     mgr: &DbManager,
     id: &str,
     password_arg: Option<String>,
@@ -262,23 +266,35 @@ fn do_delete_space(
         return Err(DbError::SpaceNotFound(id.to_string()));
     }
 
-    // 5. Remove from session state (open/active/locked lists). Without this
-    //    the deleted Space's id lingers in `open_space_ids`, causing orphaned
-    //    tabs in the TitleBar. Must run BEFORE the directory removal so the
-    //    session is consistent even if the file cleanup partially fails.
+    // 5. Remove from session state (last_opened + locked lists). Without
+    //    this the deleted Space's id lingers, causing the startup auto-open
+    //    (ADR-0011) to target a non-existent window. Must run BEFORE the
+    //    window close + directory removal so the session is consistent
+    //    even if the file cleanup partially fails.
     mgr.with_meta(|conn| {
         let mut session = crate::commands::session::read_session(conn)?;
-        session.open_space_ids.retain(|s| s != id);
         session.locked_space_ids.retain(|s| s != id);
-        if session.active_space_id.as_deref() == Some(id) {
-            // Successor rule: pick the next remaining open Space, else clear.
-            session.active_space_id = session.open_space_ids.first().cloned();
+        if session.last_opened_space_id.as_deref() == Some(id) {
+            session.last_opened_space_id = None;
         }
         crate::commands::session::write_session(conn, &session)?;
         Ok(())
     })?;
 
-    // 6. Remove the Space's directory tree. Idempotent: if the dir is already
+    // 6. Close the Space's OS window (if one is open). After step 4 the meta
+    //    row is gone, so any further IPC from this window would resolve to
+    //    SpaceNotFound — better to tear it down explicitly. `destroy()`
+    //    asynchronously fires the `Destroyed` window event whose handler
+    //    (lib.rs) calls `DbManager::close_space` again; that's idempotent.
+    //    `app` is `None` only in unit tests that bypass the Tauri runtime.
+    if let Some(app) = app {
+        if let Some(w) = app.get_webview_window(&crate::window_manager::space_window_label(id))
+        {
+            let _ = w.destroy();
+        }
+    }
+
+    // 7. Remove the Space's directory tree. Idempotent: if the dir is already
     //    gone (partial-cleanup recovery), treat as success.
     let space_dir = mgr.data_dir().join("spaces").join(id);
     if space_dir.exists() {
@@ -618,7 +634,7 @@ mod tests {
             },
         )
         .expect("create");
-        do_delete_space(&mgr, &s.id, None).expect("delete unprotected needs no password");
+        do_delete_space(None, &mgr, &s.id, None).expect("delete unprotected needs no password");
         // Row is gone.
         let err = do_get_space(&mgr, &s.id).expect_err("space should be gone");
         assert!(matches!(err, DbError::SpaceNotFound(_)));
@@ -635,7 +651,7 @@ mod tests {
             },
         )
         .expect("create");
-        let err = do_delete_space(&mgr, &s.id, None).expect_err("must require password");
+        let err = do_delete_space(None, &mgr, &s.id, None).expect_err("must require password");
         match err {
             DbError::SpacePasswordRequired(id) => assert_eq!(id, s.id),
             other => panic!("expected SpacePasswordRequired, got {other:?}"),
@@ -656,7 +672,7 @@ mod tests {
             },
         )
         .expect("create");
-        let err = do_delete_space(&mgr, &s.id, Some("wrong".into()))
+        let err = do_delete_space(None, &mgr, &s.id, Some("wrong".into()))
             .expect_err("wrong password must reject");
         match err {
             DbError::SpaceWrongPassword(id) => assert_eq!(id, s.id),
@@ -681,7 +697,7 @@ mod tests {
         let dir = space_dir(&mgr, &s.id);
         assert!(dir.exists(), "dir exists pre-delete");
 
-        do_delete_space(&mgr, &s.id, Some("pw".into())).expect("delete with correct password");
+        do_delete_space(None, &mgr, &s.id, Some("pw".into())).expect("delete with correct password");
 
         assert!(!dir.exists(), "dir must be removed after cascade delete");
         let err = do_get_space(&mgr, &s.id).expect_err("row must be gone");
@@ -691,13 +707,14 @@ mod tests {
     #[test]
     fn delete_space_not_found() {
         let (_tmp, mgr) = make_manager();
-        let err = do_delete_space(&mgr, "phantom", None).expect_err("delete missing");
+        let err = do_delete_space(None, &mgr, "phantom", None).expect_err("delete missing");
         assert!(matches!(err, DbError::SpaceNotFound(_)));
     }
 
     /// Regression guard: deleting a Space evicts it from the persisted session
-    /// state (open/active/locked lists). Without this the deleted Space's id
-    /// would linger in `open_space_ids`, causing orphaned tabs in the TitleBar.
+    /// state (last_opened + locked lists). Without this the deleted Space's id
+    /// would linger, causing the startup auto-open (ADR-0011) to target a
+    /// non-existent window.
     #[test]
     fn delete_space_evicts_from_session_state() {
         let (_tmp, mgr) = make_manager();
@@ -718,33 +735,23 @@ mod tests {
         )
         .expect("create B");
 
-        // Open both — active becomes B (last opened).
+        // Open both — B becomes last_opened (last opened wins).
         crate::commands::session::open_space_impl(&a.id, None, &mgr).expect("open A");
         crate::commands::session::open_space_impl(&b.id, None, &mgr).expect("open B");
 
-        // Sanity: both are open, B is active.
+        // Sanity: B is last_opened.
         let before = crate::commands::session::get_session_impl(&mgr).expect("session");
-        assert_eq!(before.open_space_ids.len(), 2);
-        assert_eq!(before.active_space_id.as_deref(), Some(b.id.as_str()));
+        assert_eq!(before.last_opened_space_id.as_deref(), Some(b.id.as_str()));
 
-        // Delete the active Space (B).
-        do_delete_space(&mgr, &b.id, None).expect("delete B");
+        // Delete B (the last_opened Space).
+        do_delete_space(None, &mgr, &b.id, None).expect("delete B");
 
-        // Session must reflect the eviction: B gone from open list, active
-        // successor falls back to A (the first remaining open Space).
+        // Session must reflect the eviction: B cleared from last_opened.
         let after = crate::commands::session::get_session_impl(&mgr).expect("session");
-        assert!(
-            !after.open_space_ids.contains(&b.id),
-            "deleted Space must be evicted from open list"
-        );
-        assert!(
-            after.open_space_ids.contains(&a.id),
-            "unrelated Space must remain open"
-        );
-        assert_eq!(
-            after.active_space_id.as_deref(),
-            Some(a.id.as_str()),
-            "active must fall back to the successor"
+        assert_ne!(
+            after.last_opened_space_id.as_deref(),
+            Some(b.id.as_str()),
+            "deleted Space must be cleared from last_opened"
         );
     }
 
@@ -767,16 +774,17 @@ mod tests {
         assert!(before.locked_space_ids.contains(&s.id));
 
         // Delete with correct password.
-        do_delete_space(&mgr, &s.id, Some("pw".into())).expect("delete");
+        do_delete_space(None, &mgr, &s.id, Some("pw".into())).expect("delete");
 
         let after = crate::commands::session::get_session_impl(&mgr).expect("session");
         assert!(
             !after.locked_space_ids.contains(&s.id),
             "deleted Space must be evicted from locked list"
         );
-        assert!(
-            !after.open_space_ids.contains(&s.id),
-            "deleted Space must be evicted from open list"
+        assert_ne!(
+            after.last_opened_space_id.as_deref(),
+            Some(s.id.as_str()),
+            "deleted Space must be cleared from last_opened"
         );
     }
 
@@ -821,7 +829,7 @@ mod tests {
         .expect("change password");
         // The old password no longer verifies against the space: prove it via
         // delete_space (wrong pw rejects, new pw succeeds).
-        do_delete_space(&mgr, &s.id, Some("first".into()))
+        do_delete_space(None, &mgr, &s.id, Some("first".into()))
             .expect_err("old password must no longer work");
         // (Don't actually delete yet — cancel by checking it rejected.)
 
@@ -841,7 +849,7 @@ mod tests {
         );
 
         // Now unprotected — delete without a password should succeed.
-        do_delete_space(&mgr, &s.id, None).expect("delete after password removal");
+        do_delete_space(None, &mgr, &s.id, None).expect("delete after password removal");
     }
 
     #[test]
@@ -867,7 +875,7 @@ mod tests {
         .expect_err("add onto protected must reject");
         assert!(matches!(err, DbError::SpaceWrongPassword(_)));
         // Stored hash is unchanged — the original password still works.
-        do_delete_space(&mgr, &s.id, Some("original".into()))
+        do_delete_space(None, &mgr, &s.id, Some("original".into()))
             .expect("original password must still work");
     }
 
@@ -893,9 +901,9 @@ mod tests {
         .expect_err("wrong current must reject");
         assert!(matches!(err, DbError::SpaceWrongPassword(_)));
         // new password was NOT set.
-        do_delete_space(&mgr, &s.id, Some("new".into()))
+        do_delete_space(None, &mgr, &s.id, Some("new".into()))
             .expect_err("new password must not be active");
-        do_delete_space(&mgr, &s.id, Some("right".into()))
+        do_delete_space(None, &mgr, &s.id, Some("right".into()))
             .expect("right password still works");
     }
 
