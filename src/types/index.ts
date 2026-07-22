@@ -16,6 +16,7 @@ export { loreIdSchema, type LoreId } from './lore';
 export { eventIdSchema, type EventId } from './event';
 export { novelIdSchema, type NovelId, chapterIdSchema, type ChapterId, sceneIdSchema, type SceneId } from './novel';
 export { spaceIdSchema, type SpaceId } from './space';
+export { providerCredentialIdSchema, type ProviderCredentialId, agentIdSchema, type AgentId } from './ai';
 
 // ─── Top-level ────────────────────────────────────────────────────────────
 export { worldSchema, type World } from './world';
@@ -31,6 +32,22 @@ export {
   type SetSpacePasswordInput,
 } from './space';
 export { sessionStateSchema, type SessionState } from './session';
+
+// ─── AI config ─────────────────────────────────────────────────────────────
+export {
+  providerCredentialSchema,
+  type ProviderCredential,
+  setProviderCredentialInputSchema,
+  type SetProviderCredentialInput,
+  agentSchema,
+  type Agent,
+  catalogModelSchema,
+  type CatalogModel,
+  catalogProviderSchema,
+  type CatalogProvider,
+  modelsDevCatalogSchema,
+  type ModelsDevCatalog,
+} from './ai';
 
 // ─── World elements ───────────────────────────────────────────────────────
 export { characterSchema, type Character, characterPhaseSchema, type CharacterPhase, characterRefSchema, type CharacterRef } from './character';
