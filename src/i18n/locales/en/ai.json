@@ -1,0 +1,59 @@
+{
+  "providers": {
+    "title": "AI Providers",
+    "description": "Configure API keys for the model providers used by Agents.",
+    "empty": {
+      "title": "No providers added yet",
+      "description": "Add a provider to enable AI features."
+    },
+    "add": "Add provider",
+    "added": "Added",
+    "searchPlaceholder": "Search providers…",
+    "searchEmpty": "No matching providers found",
+    "apiKeyLabel": "API key",
+    "apiKeyPlaceholder": "Enter API key",
+    "save": "Save",
+    "saving": "Saving…",
+    "cancel": "Cancel",
+    "delete": {
+      "title": "Delete provider",
+      "description": "This will remove the API key for {{name}}.",
+      "cascadeWarning": "The following agents will have their model selection cleared:",
+      "cascadeNone": "No agents are bound to this provider.",
+      "confirm": "Delete"
+    },
+    "toast": {
+      "saveSuccess": "Provider credential saved",
+      "saveFailed": "Failed to save credential",
+      "deleteSuccess": "Provider credential deleted",
+      "deleteFailed": "Failed to delete credential"
+    }
+  },
+  "agents": {
+    "title": "Agent Models",
+    "description": "Choose a model for each agent. Only providers with a configured key are shown.",
+    "providerPlaceholder": "Select provider",
+    "modelPlaceholder": "Select model",
+    "modelNone": "No model selected",
+    "nonePlaceholder": "None",
+    "toast": {
+      "updateSuccess": "Agent model updated",
+      "updateFailed": "Failed to update model"
+    },
+    "name": {
+      "explorer": "Explorer",
+      "writer": "Writer"
+    }
+  },
+  "catalog": {
+    "loading": "Loading model catalog…",
+    "error": "Could not load model catalog",
+    "staleBanner": "Model catalog update failed, using last known version ({{fetchedAt}}).",
+    "refresh": "Refresh",
+    "refreshing": "Refreshing…",
+    "toast": {
+      "refreshSuccess": "Model catalog refreshed",
+      "refreshFailed": "Failed to refresh model catalog"
+    }
+  }
+}

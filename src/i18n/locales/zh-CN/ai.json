@@ -1,0 +1,59 @@
+{
+  "providers": {
+    "title": "AI 服务商",
+    "description": "为 Agent 绑定的模型提供商配置 API 密钥。",
+    "empty": {
+      "title": "尚未添加服务商",
+      "description": "添加一个服务商以启用 AI 功能。"
+    },
+    "add": "添加服务商",
+    "added": "已添加",
+    "searchPlaceholder": "搜索服务商…",
+    "searchEmpty": "未找到匹配的服务商",
+    "apiKeyLabel": "API 密钥",
+    "apiKeyPlaceholder": "输入 API 密钥",
+    "save": "保存",
+    "saving": "保存中…",
+    "cancel": "取消",
+    "delete": {
+      "title": "删除服务商",
+      "description": "这将移除 {{name}} 的 API 密钥。",
+      "cascadeWarning": "以下 Agent 的模型选择将被清空：",
+      "cascadeNone": "没有 Agent 绑定到此服务商。",
+      "confirm": "删除"
+    },
+    "toast": {
+      "saveSuccess": "服务商凭证已保存",
+      "saveFailed": "保存凭证失败",
+      "deleteSuccess": "服务商凭证已删除",
+      "deleteFailed": "删除凭证失败"
+    }
+  },
+  "agents": {
+    "title": "Agent 模型",
+    "description": "为每个 Agent 选择模型。仅显示已配置密钥的服务商。",
+    "providerPlaceholder": "选择服务商",
+    "modelPlaceholder": "选择模型",
+    "modelNone": "未选择模型",
+    "nonePlaceholder": "无",
+    "toast": {
+      "updateSuccess": "Agent 模型已更新",
+      "updateFailed": "更新模型失败"
+    },
+    "name": {
+      "explorer": "探索者",
+      "writer": "作者"
+    }
+  },
+  "catalog": {
+    "loading": "正在加载模型目录…",
+    "error": "无法加载模型目录",
+    "staleBanner": "模型目录更新失败，使用上次版本（{{fetchedAt}}）。",
+    "refresh": "刷新",
+    "refreshing": "刷新中…",
+    "toast": {
+      "refreshSuccess": "模型目录已刷新",
+      "refreshFailed": "刷新模型目录失败"
+    }
+  }
+}

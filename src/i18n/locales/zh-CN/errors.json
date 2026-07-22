@@ -18,6 +18,9 @@
   "SPACE_NAME_TAKEN": "空间名称「{{name}}」已被占用",
   "SPACE_PASSWORD_REQUIRED": "该空间需要密码 ({{id}})",
   "SPACE_WRONG_PASSWORD": "空间密码错误",
+  "PROVIDER_CREDENTIAL_NOT_FOUND": "未找到服务商凭证 ({{id}})",
+  "AGENT_NOT_FOUND": "未找到 Agent ({{id}})",
+  "CATALOG_FETCH_FAILED": "拉取模型目录失败且无本地缓存",
   "INVALID_INPUT": "无效输入：{{message}}",
   "INTERNAL_ERROR": "发生内部错误"
 }

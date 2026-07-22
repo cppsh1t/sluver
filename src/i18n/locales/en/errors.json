@@ -18,6 +18,9 @@
   "SPACE_NAME_TAKEN": "Space name \"{{name}}\" is already taken",
   "SPACE_PASSWORD_REQUIRED": "Space password required ({{id}})",
   "SPACE_WRONG_PASSWORD": "Wrong space password",
+  "PROVIDER_CREDENTIAL_NOT_FOUND": "Provider credential not found ({{id}})",
+  "AGENT_NOT_FOUND": "Agent not found ({{id}})",
+  "CATALOG_FETCH_FAILED": "Failed to fetch model catalog and no local copy available",
   "INVALID_INPUT": "Invalid input: {{message}}",
   "INTERNAL_ERROR": "An internal error occurred"
 }
