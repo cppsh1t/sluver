@@ -84,3 +84,13 @@ export {
   useDeleteScene,
   useReorderScenes,
 } from "./use-novels";
+
+export {
+  useProviderCredentials,
+  useSetProviderCredential,
+  useDeleteProviderCredential,
+  useAgents,
+  useUpdateAgentModel,
+  useModelsDevCatalog,
+  useRefreshModelsDevCatalog,
+} from "./use-ai";
