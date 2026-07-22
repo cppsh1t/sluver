@@ -55,6 +55,32 @@ const SPACE_SQL: &str = r#"
         key   TEXT PRIMARY KEY,
         value TEXT NOT NULL
     );
+
+    -- AI provider credentials (ADR-0012: Space-scoped AI config). One row per
+    -- configured provider. `provider_id` aligns with models.dev's id (e.g.
+    -- 'anthropic', 'openai'). API keys are stored as plaintext per ADR-0013
+    -- (threat model + upgrade path documented there).
+    CREATE TABLE IF NOT EXISTS provider_credentials (
+        id          TEXT PRIMARY KEY,
+        provider_id TEXT NOT NULL UNIQUE,
+        api_key     TEXT NOT NULL,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+    );
+
+    -- AI agents (ADR-0012). Seeded with 'explorer' + 'writer' on Space
+    -- creation (see commands::space::do_create_space). `model_id` is a
+    -- composite '{provider_id}/{model_id}' (e.g. 'anthropic/claude-sonnet-5')
+    -- or NULL when no model is selected. Deleting a provider credential
+    -- cascades a NULL-out of any agent whose model_id is rooted at that
+    -- provider (see commands::ai::do_delete_provider_credential).
+    CREATE TABLE IF NOT EXISTS agents (
+        id          TEXT PRIMARY KEY,
+        name        TEXT NOT NULL UNIQUE,
+        model_id    TEXT,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+    );
 "#;
 
 // ─── world DB schema ────────────────────────────────────────────────────────

@@ -45,6 +45,23 @@ pub enum DbError {
     #[error("Wrong password for space: {0}")]
     SpaceWrongPassword(String),
 
+    /// AI provider credential row not found (delete on a missing id).
+    /// Surfaces as `PROVIDER_CREDENTIAL_NOT_FOUND` with `{ id }`.
+    #[error("Provider credential not found: {0}")]
+    ProviderCredentialNotFound(String),
+
+    /// AI agent row not found (update on a missing agent id).
+    /// Surfaces as `AGENT_NOT_FOUND` with `{ id }`.
+    #[error("Agent not found: {0}")]
+    AgentNotFound(String),
+
+    /// models.dev catalog fetch failed AND no local fallback copy exists.
+    /// Surfaces as `CATALOG_FETCH_FAILED` (no args). When a stale local copy
+    /// IS available, the catalog commands return it with `is_stale: true`
+    /// instead of surfacing this error.
+    #[error("Catalog fetch failed and no local copy available")]
+    CatalogFetchFailed,
+
     /// Client supplied a malformed id used in path construction (e.g. a
     /// non-UUID `space_id` that could enable path traversal). Surfaces as
     /// `INVALID_INPUT` so the frontend can show a generic "bad request"
@@ -100,6 +117,17 @@ impl DbError {
                 "SPACE_WRONG_PASSWORD",
                 HashMap::from([("id".to_string(), id.clone())]),
             ),
+            DbError::ProviderCredentialNotFound(id) => (
+                "PROVIDER_CREDENTIAL_NOT_FOUND",
+                HashMap::from([("id".to_string(), id.clone())]),
+            ),
+            DbError::AgentNotFound(id) => (
+                "AGENT_NOT_FOUND",
+                HashMap::from([("id".to_string(), id.clone())]),
+            ),
+            DbError::CatalogFetchFailed => {
+                ("CATALOG_FETCH_FAILED", HashMap::new())
+            },
             DbError::InvalidInput(msg) => (
                 "INVALID_INPUT",
                 HashMap::from([("message".to_string(), msg.clone())]),
