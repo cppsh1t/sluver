@@ -29,3 +29,6 @@ PLAN.md
 .sisyphus
 .env
 notes
+
+# models.dev catalog 本地副本 (3.2MB, 按需重新下载)
+examples/ai-sdk-models-dev/models-dev.api.json
