@@ -197,21 +197,13 @@ pub fn run() {
                     }
                     crate::tray::refresh(app);
 
-                    // If this was the last Space window, show the launcher so
-                    // the user can pick or create a new Space. At this point
-                    // `webview_windows()` no longer includes the just-destroyed
-                    // window, so any remaining `space-*` label means another
-                    // Space is still open.
-                    let has_space_windows = app
-                        .webview_windows()
-                        .keys()
-                        .any(|k| crate::window_manager::space_id_from_label(k).is_some());
-                    if !has_space_windows {
-                        if let Some(main_window) = app.get_webview_window("main") {
-                            let _ = main_window.show();
-                            let _ = main_window.set_focus();
-                        }
-                    }
+                    // NOTE (ADR-0011): closing the last Space window does NOT
+                    // auto-show the launcher. The app stays dormant in the
+                    // tray (launcher hidden, `lastOpenedSpaceId` preserved);
+                    // the user returns via the tray menu's "Open Launcher" or
+                    // by relaunching the app (which reopens
+                    // `lastOpenedSpaceId`). Do NOT re-add a `main.show()` on
+                    // last-close — it was a bug.
                 }
             }
         })

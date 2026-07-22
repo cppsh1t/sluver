@@ -72,9 +72,9 @@ _Avoid_: Config, Preferences, Options
 A Space's own control surface — its identity, access control, and lifecycle management (rename, password, deletion) — as distinct from global `Settings`. The term `config` is reserved for this Space-level use; do not use it for global `Settings`.
 _Avoid_: Space settings, Space preferences
 
-**Tab state**:
-The complete frontend runtime state of an open Space tab — every route subtree the user has visited within that Space, kept mounted in the DOM (hidden via CSS when the tab is inactive) rather than unmounted on navigation. Includes each cached route's component state: form drafts, scroll positions, modal/dialog open state, and other `useState`/`useRef` contents. Bounded by the Space's entry in `openSpaceIds`: closing the tab destroys all of it, app restart destroys all of it (only the active Space's home route is restored by `__root.tsx`'s startup logic). Navigating within a tab to a new route hides the previous route's subtree and mounts the new one — both stay alive until tab close. Switching tabs never unmounts the inactive tab's subtree.
-_Avoid_: View state, workspace state, page state
+**Launcher**:
+The app's anchor window outside any Space — the OS window whose label is the statically configured `"main"` (`tauri.conf.json`), rendering the Space picker / landing UI where Spaces are selected and created. Distinct from Space windows in two ways: it hides to tray on close (keeping the process alive) rather than being destroyed, and closing all Space windows does NOT auto-show it — the user returns to it via the tray menu or by relaunching the app (which auto-reopens `lastOpenedSpaceId`). Identity is its fixed label `"main"` (single instance).
+_Avoid_: Dashboard, Home, Welcome screen, Hub, Shell
 
 ## Conventions
 

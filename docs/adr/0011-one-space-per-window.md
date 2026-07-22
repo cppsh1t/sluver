@@ -33,6 +33,7 @@ Rather than continue fighting TanStack Router's singleton architecture, we elimi
 - **Window close behavior**:
   - Launcher window → hide to tray (prevent close), lock all protected Spaces.
   - Space window → close normally (drop DB connections, refresh tray). `lastOpenedSpaceId` is NOT cleared (user's decision: close window ≠ close session).
+  - Closing the **last** remaining Space window does NOT auto-show the launcher. The process stays dormant in the tray (launcher hidden, `lastOpenedSpaceId` preserved); the user returns via the tray menu's "Open Launcher" or by relaunching the app (which reopens `lastOpenedSpaceId`). An earlier implementation re-added `main.show()` on last-Space-close — that was a bug, since reverted.
 
 - **Cross-window communication**: none. Each window queries the backend independently (decision 6B). SQLite consistency handles concurrent access. No Tauri event broadcasting for state sync between Space windows. The `spaces-locked` event (backend → all windows) is kept — it's a backend instruction, not window-to-window sync.
 

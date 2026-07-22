@@ -10,7 +10,8 @@
         "hiddenTitle": true,
         "width": 1280,
         "height": 800,
-        "maximized": true
+        "maximized": true,
+        "visible": false
       }
     ]
   }
