@@ -6,7 +6,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { locale as detectOsLocale } from "@tauri-apps/plugin-os";
 
 import { router } from "./router";
-import { getAppSetting, setTrayLocale } from "@/api";
+import { getAppSetting, getModelsDevCatalog, setTrayLocale } from "@/api";
 import {
   AUTO_LOCALE,
   DEFAULT_LOCALE,
@@ -87,6 +87,10 @@ resolveInitialLocale()
     // failure leaves the tray on its English startup default, which is
     // preferable to blocking the render pipeline.
     setTrayLocale(lng).catch(() => {});
+    // Warm the models.dev catalog cache (ADR-0012). Fire-and-forget: the
+    // Space config page re-fetches via React Query if this hasn't landed
+    // by the time the user navigates there, so a failure here is silent.
+    getModelsDevCatalog().catch(() => {});
   })
   .catch(() => {
     // Swallow — render anyway with whatever i18next managed to load.

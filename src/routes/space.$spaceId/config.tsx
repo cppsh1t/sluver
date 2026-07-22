@@ -14,10 +14,20 @@ import {
   DeleteSpaceDialog,
   SpacePasswordDialog,
 } from "@/components/space-management";
+import { AgentModelPicker } from "@/components/ai/agent-model-picker";
+import { CatalogStatusBanner } from "@/components/ai/catalog-status-banner";
+import { ProviderCombobox } from "@/components/ai/provider-combobox";
+import { ProviderCredentialList } from "@/components/ai/provider-credential-list";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { useSpaces, useUpdateSpace } from "@/hooks";
+import {
+  useAgents,
+  useModelsDevCatalog,
+  useProviderCredentials,
+  useSpaces,
+  useUpdateSpace,
+} from "@/hooks";
 import type { SpaceId } from "@/types";
 
 // Stable error code from the Rust backend (db/error.rs `to_payload`).
@@ -36,10 +46,16 @@ const SPACE_NAME_TAKEN = "SPACE_NAME_TAKEN";
  * the space-home and space-library siblings; `_space.tsx` is a passthrough.
  */
 function SpaceConfigPage() {
-  const { t } = useTranslation(["space", "common"]);
+  const { t } = useTranslation(["space", "common", "ai"]);
   const { spaceId } = useParams({ from: "/space/$spaceId" });
   const spacesQ = useSpaces();
   const updateSpace = useUpdateSpace();
+
+  // AI config data (ADR-0012: Space-scoped). The catalog is global — the
+  // same query is shared across Spaces and pre-warmed at bootstrap.
+  const catalogQ = useModelsDevCatalog();
+  const providersQ = useProviderCredentials(spaceId as SpaceId);
+  const agentsQ = useAgents(spaceId as SpaceId);
 
   const space = spacesQ.data?.find((s) => s.id === (spaceId as SpaceId));
   const spaceName = space?.name;
@@ -48,6 +64,15 @@ function SpaceConfigPage() {
   const [nameError, setNameError] = useState<string | null>(null);
   const [pwOpen, setPwOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+
+  // Catalog readiness gate: provider/model controls stay disabled until the
+  // catalog data is available (loading or error). Agents without a provider
+  // list can't make a meaningful selection.
+  const catalogReady = catalogQ.data !== undefined;
+  const catalogProviders = catalogQ.data?.providers ?? [];
+  const existingProviderIds = new Set(
+    (providersQ.data ?? []).map((c) => c.providerId),
+  );
 
   // Sync the local input when the Space summary first loads or its name
   // changes server-side (e.g. after a successful rename refetch). Deps are
@@ -173,6 +198,72 @@ function SpaceConfigPage() {
                 {t("space:config.danger.button")}
               </Button>
             </ConfigRow>
+          </section>
+
+          {/* ─── AI Providers ─────────────────────────────────────────── */}
+          <section className="mt-8 flex flex-col gap-3 border-y border-border py-5">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-0.5">
+                <h2 className="font-heading text-sm font-medium tracking-tight">
+                  {t("ai:providers.title")}
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  {t("ai:providers.description")}
+                </p>
+              </div>
+              <ProviderCombobox
+                spaceId={spaceId as SpaceId}
+                catalogProviders={catalogProviders}
+                existingProviderIds={existingProviderIds}
+                disabled={!catalogReady}
+              />
+            </div>
+
+            {/* Stale catalog warning — only when the last fetch failed and
+                a cached copy was served instead. */}
+            {catalogQ.data?.isStale && (
+              <CatalogStatusBanner fetchedAt={catalogQ.data.fetchedAt} />
+            )}
+
+            {/* Loading / error states before the list is ready. */}
+            {catalogQ.isLoading ? (
+              <p className="py-4 text-center text-xs/relaxed text-muted-foreground">
+                {t("ai:catalog.loading")}
+              </p>
+            ) : catalogQ.isError ? (
+              <p className="py-4 text-center text-xs/relaxed text-destructive">
+                {t("ai:catalog.error")}
+              </p>
+            ) : (
+              <ProviderCredentialList
+                spaceId={spaceId as SpaceId}
+                credentials={providersQ.data ?? []}
+                catalogProviders={catalogProviders}
+                agents={agentsQ.data ?? []}
+              />
+            )}
+          </section>
+
+          {/* ─── Agent Models ─────────────────────────────────────────── */}
+          <section className="flex flex-col divide-y divide-border border-b border-border">
+            <div className="flex flex-col gap-0.5 pb-3">
+              <h2 className="font-heading text-sm font-medium tracking-tight">
+                {t("ai:agents.title")}
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                {t("ai:agents.description")}
+              </p>
+            </div>
+            {(agentsQ.data ?? []).map((agent) => (
+              <AgentModelPicker
+                key={agent.id}
+                spaceId={spaceId as SpaceId}
+                agent={agent}
+                providers={catalogProviders}
+                credentials={providersQ.data ?? []}
+                disabled={!catalogReady}
+              />
+            ))}
           </section>
         </div>
       </main>
