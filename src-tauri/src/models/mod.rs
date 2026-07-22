@@ -1,3 +1,5 @@
+pub mod agent;
+pub mod catalog;
 pub mod character;
 pub mod setting;
 pub mod event;
@@ -5,6 +7,7 @@ pub mod item;
 pub mod location;
 pub mod lore;
 pub mod novel;
+pub mod provider_credential;
 pub mod ref_counts;
 pub mod space;
 pub mod world;
