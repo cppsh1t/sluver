@@ -158,6 +158,14 @@ pub fn run() {
             commands::novel::reorder_scenes,
             // Tray
             commands::tray::set_tray_locale,
+            // AI config (space.db)
+            commands::ai::list_provider_credentials,
+            commands::ai::set_provider_credential,
+            commands::ai::delete_provider_credential,
+            commands::ai::list_agents,
+            commands::ai::update_agent_model,
+            commands::ai::get_models_dev_catalog,
+            commands::ai::refresh_models_dev_catalog,
         ])
         .on_window_event(|window, event| {
             let label = window.label();

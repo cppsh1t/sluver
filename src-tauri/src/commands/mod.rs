@@ -1,3 +1,4 @@
+pub mod ai;
 pub mod character;
 pub mod element;
 pub mod event;
