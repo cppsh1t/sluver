@@ -41,6 +41,10 @@ rusqlite_migration = "2.5.0"
 uuid = { version = "1.23.4", features = ["v7"] }
 chrono = "0.4.45"
 thiserror = "2.0.18"
+# Async HTTP client for models.dev catalog fetch (ADR-0012). rustls-tls avoids
+# a Windows OpenSSL dependency; `default-features = false` drops native-tls.
+# NO `blocking` feature — catalog commands are async (see commands/ai.rs).
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 
 [dev-dependencies]
 # Filesystem isolation for DbManager / command integration tests (T10 stress test).
