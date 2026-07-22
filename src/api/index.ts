@@ -19,5 +19,6 @@ export * from './event';
 export * from './novel';
 export * from './space';
 export * from './session';
+export * from './ai';
 
 export type * from './types';
