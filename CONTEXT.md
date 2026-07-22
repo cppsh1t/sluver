@@ -69,8 +69,12 @@ Global application preferences that apply regardless of which Space is open: UI 
 _Avoid_: Config, Preferences, Options
 
 **Space config**:
-A Space's own control surface — its identity, access control, and lifecycle management (rename, password, deletion) — as distinct from global `Settings`. The term `config` is reserved for this Space-level use; do not use it for global `Settings`.
+A Space's own control surface — its identity, access control, AI provider credentials, Agent model preferences, and lifecycle management (rename, password, deletion) — as distinct from global `Settings`. The term `config` is reserved for this Space-level use; do not use it for global `Settings`.
 _Avoid_: Space settings, Space preferences
+
+**Agent**:
+A named AI configuration slot within a Space. Each Agent binds exactly one AI model chosen from the Space's configured providers; future versions will extend an Agent with behavior (system prompt, tools, parameters). Two Agents are predefined per Space — **Explorer** and **Writer** — both seeded into `space.db` on Space creation; users pick a model for each but cannot create or delete Agents in v1.
+_Avoid_: Assistant, Persona, Bot, Role
 
 **Launcher**:
 The app's anchor window outside any Space — the OS window whose label is the statically configured `"main"` (`tauri.conf.json`), rendering the Space picker / landing UI where Spaces are selected and created. Distinct from Space windows in two ways: it hides to tray on close (keeping the process alive) rather than being destroyed, and closing all Space windows does NOT auto-show it — the user returns to it via the tray menu or by relaunching the app (which auto-reopens `lastOpenedSpaceId`). Identity is its fixed label `"main"` (single instance).

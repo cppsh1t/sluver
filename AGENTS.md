@@ -4,7 +4,7 @@ Tauri v2 desktop app for **worldbuilding & novel writing**. React 19 + TypeScrip
 
 ## Project Documentation
 
-- **[CONTEXT.md](./CONTEXT.md)** — Domain glossary. Single source of truth for ubiquitous language (World, Character, Phase, CharacterRef, Event, Location, Item, Lore, Novel, Chapter, Scene) plus cross-cutting conventions (name uniqueness, World isolation, position uniqueness).
+- **[CONTEXT.md](./CONTEXT.md)** — Domain glossary. Single source of truth for ubiquitous language (World, Character, Phase, CharacterRef, Event, Location, Item, Lore, Novel, Chapter, Scene, Agent) plus cross-cutting conventions (name uniqueness, World isolation, position uniqueness).
 - **[docs/adr/](./docs/adr/)** — Architecture Decision Records. Read before questioning "why is X like this?":
   - [ADR-0001](./docs/adr/0001-two-database-design.md) — Two-database design (meta.db + per-World files)
   - [ADR-0002](./docs/adr/0002-character-ref-composite-pk.md) — CharacterRef composite PK includes phase_id
@@ -12,6 +12,11 @@ Tauri v2 desktop app for **worldbuilding & novel writing**. React 19 + TypeScrip
   - [ADR-0004](./docs/adr/0004-world-isolation.md) — World isolation (no cross-World references)
   - [ADR-0005](./docs/adr/0005-workspace-shell-layout.md) — Workspace shell layout (dual layout: app vs world)
   - [ADR-0006](./docs/adr/0006-deletion-cascade-to-character-refs.md) — Phase/Character deletion cascades to CharacterRefs, with pre-delete disclosure
+  - [ADR-0007](./docs/adr/0007-three-database-design.md) — Three-database design (meta.db + per-Space space.db + per-World files)
+  - [ADR-0008](./docs/adr/0008-space-password-is-auth-gate.md) — Space password is an auth gate (argon2id hash), not at-rest encryption
+  - [ADR-0011](./docs/adr/0011-one-space-per-window.md) — One Space per OS window
+  - [ADR-0012](./docs/adr/0012-space-scoped-ai-config.md) — AI provider configuration is Space-scoped, not global Setting
+  - [ADR-0013](./docs/adr/0013-api-key-plaintext-storage.md) — API keys stored as plaintext in space.db (threat model + upgrade path)
 
 ## Git commit style
 
