@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Link,
   useRouterState,
@@ -13,6 +14,7 @@ import {
 import appIcon from "@/assets/app-icon.png";
 import { cn } from "@/lib/utils";
 import { SpacePicker } from "@/components/space-picker";
+import { SettingsDialog } from "@/components/settings-dialog";
 
 /**
  * Context-sensitive application sidebar (ADR-0009, amended).
@@ -147,8 +149,7 @@ function SpaceNavContent({
 
 function SidebarFooter() {
   const { t } = useTranslation("common");
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const settingsActive = pathname === "/settings";
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
     <div className="mt-auto">
@@ -156,39 +157,29 @@ function SidebarFooter() {
         <SpacePicker />
       </div>
       <div className="px-3 pb-2">
-        <Link
-          to="/settings"
-          aria-current={settingsActive ? "page" : undefined}
+        <button
+          type="button"
+          onClick={() => setSettingsOpen(true)}
           className={cn(
-            "group relative flex items-center gap-2.5 rounded-md px-3 py-2 text-sm outline-none transition-colors",
+            "group relative flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm outline-none transition-colors",
             "focus-visible:ring-2 focus-visible:ring-sidebar-ring",
-            settingsActive
-              ? "bg-sidebar-accent font-medium text-sidebar-foreground"
-              : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+            "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
           )}
         >
-          {settingsActive && (
-            <span
-              aria-hidden
-              className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full bg-sidebar-primary"
-            />
-          )}
           <HugeiconsIcon
             icon={Settings02Icon}
             strokeWidth={2}
-            className={cn(
-              "size-[18px]",
-              settingsActive && "text-sidebar-primary",
-            )}
+            className="size-[18px]"
           />
           <span>{t("nav.settings")}</span>
-        </Link>
+        </button>
       </div>
       <div className="px-5 py-3">
         <p className="text-[11px] tracking-wide text-muted-foreground/70">
           {t("nav.version", { version: "0.1.0" })}
         </p>
       </div>
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
   );
 }

@@ -3,7 +3,6 @@ import { createRouter } from "@tanstack/react-router";
 import { rootRoute } from "./routes/__root";
 import { appLayoutRoute } from "./routes/_app";
 import { indexRoute } from "./routes/index";
-import { settingsRoute } from "./routes/settings";
 import { spaceLayoutRoute } from "./routes/space.$spaceId/_space";
 import { spaceHomeRoute } from "./routes/space.$spaceId/index";
 import { spaceConfigRoute } from "./routes/space.$spaceId/config";
@@ -29,7 +28,7 @@ import { chapterWorkspaceRoute } from "./routes/world.$worldId/novels.$novelId/c
 // 配置 (space management). `worldLayoutRoute` is a child of `spaceLayoutRoute`,
 // so every world route inherits the `/space/$spaceId` prefix and `spaceId`.
 const routeTree = rootRoute.addChildren([
-  appLayoutRoute.addChildren([indexRoute, settingsRoute]),
+  appLayoutRoute.addChildren([indexRoute]),
   spaceLayoutRoute.addChildren([
     spaceHomeRoute,
     spaceConfigRoute,

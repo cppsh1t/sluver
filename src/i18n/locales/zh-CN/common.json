@@ -2,6 +2,7 @@
   "actions": {
     "cancel": "取消",
     "save": "保存",
+    "done": "完成",
     "saving": "保存中…",
     "create": "创建",
     "creating": "创建中…",

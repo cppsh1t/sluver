@@ -1,14 +1,12 @@
 import { useEffect, useState } from "react";
-import { createRoute } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { locale as detectOsLocale } from "@tauri-apps/plugin-os";
 
-import { appLayoutRoute } from "./_app";
-import { getAppSetting, setTrayLocale, updateAppSetting } from "@/api";
-import { toErrorPayload } from "@/api/client";
 import { resolveLocale, AUTO_LOCALE } from "@/i18n";
 import i18n from "@/i18n";
-import { locale as detectOsLocale } from "@tauri-apps/plugin-os";
+import { getAppSetting, setTrayLocale, updateAppSetting } from "@/api";
+import { toErrorPayload } from "@/api/client";
 import { setDayjsLocale } from "@/lib/format";
 import {
   applyColorTheme,
@@ -18,8 +16,36 @@ import {
 } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import type { AppSetting } from "@/types";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
-function SettingsPage() {
+interface SettingsDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+/**
+ * Global application settings (CONTEXT.md `Setting`) as a modal.
+ *
+ * `Setting`s live ABOVE the Space layer — locale, theme, accent color — so
+ * they are presented as a dialog opened from any window (launcher or Space)
+ * rather than a route. Navigating a Space window to a launcher-scoped
+ * `/settings` route would orphan its OS-window label (the tray keys off the
+ * label, which is fixed at creation) — see the ADR-0011 "window label tier
+ * must match route tier" corollary. A dialog sidesteps navigation entirely.
+ *
+ * Each control applies optimistically and persists immediately; a persist
+ * failure rolls the UI back to the previous value.
+ */
+function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { t } = useTranslation(["settings", "common"]);
   const [theme, setTheme] = useState<ThemeMode>("system");
   const [colorTheme, setColorTheme] = useState<ColorTheme>("neutral");
@@ -159,16 +185,14 @@ function SettingsPage() {
   }
 
   return (
-    <div className="flex flex-1 flex-col overflow-y-auto">
-      <div className="mx-auto w-full max-w-2xl px-6 py-10">
-        <header className="mb-8">
-          <h1 className="font-heading text-xl font-semibold tracking-tight">
-            {t("settings:title")}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t("settings:title")}</DialogTitle>
+          <DialogDescription>
             {t("settings:subtitle", { app: "sluver" })}
-          </p>
-        </header>
+          </DialogDescription>
+        </DialogHeader>
 
         <section className="flex flex-col divide-y divide-border border-y border-border">
           <SettingRow
@@ -220,8 +244,14 @@ function SettingsPage() {
             />
           </SettingRow>
         </section>
-      </div>
-    </div>
+
+        <DialogFooter className="mt-4">
+          <DialogClose render={<Button variant="outline" type="button" />}>
+            {t("common:actions.done")}
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -294,8 +324,4 @@ function Segmented<T extends { value: string; label: string }>({
   );
 }
 
-export const settingsRoute = createRoute({
-  getParentRoute: () => appLayoutRoute,
-  path: "/settings",
-  component: SettingsPage,
-});
+export { SettingsDialog };
