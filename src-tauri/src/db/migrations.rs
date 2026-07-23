@@ -55,11 +55,17 @@ const SPACE_SQL: &str = r#"
         key   TEXT PRIMARY KEY,
         value TEXT NOT NULL
     );
+"#;
 
-    -- AI provider credentials (ADR-0012: Space-scoped AI config). One row per
-    -- configured provider. `provider_id` aligns with models.dev's id (e.g.
-    -- 'anthropic', 'openai'). API keys are stored as plaintext per ADR-0013
-    -- (threat model + upgrade path documented there).
+/// Migration 2 for `space.db`: AI provider credentials + agents tables
+/// (ADR-0012: Space-scoped AI config). Added as a separate migration so
+/// existing `space.db` files (created before this feature) get these tables
+/// via `rusqlite_migration`'s incremental migration tracking — modifying the
+/// original `SPACE_SQL` would NOT re-run for already-migrated databases.
+const SPACE_MIGRATION_002: &str = r#"
+    -- AI provider credentials (ADR-0012). One row per configured provider.
+    -- `provider_id` aligns with models.dev's id. API keys are plaintext per
+    -- ADR-0013 (threat model + upgrade path documented there).
     CREATE TABLE IF NOT EXISTS provider_credentials (
         id          TEXT PRIMARY KEY,
         provider_id TEXT NOT NULL UNIQUE,
@@ -69,11 +75,9 @@ const SPACE_SQL: &str = r#"
     );
 
     -- AI agents (ADR-0012). Seeded with 'explorer' + 'writer' on Space
-    -- creation (see commands::space::do_create_space). `model_id` is a
-    -- composite '{provider_id}/{model_id}' (e.g. 'anthropic/claude-sonnet-5')
-    -- or NULL when no model is selected. Deleting a provider credential
-    -- cascades a NULL-out of any agent whose model_id is rooted at that
-    -- provider (see commands::ai::do_delete_provider_credential).
+    -- creation. `model_id` is a composite '{provider_id}/{model_id}' or NULL.
+    -- Deleting a provider credential cascades a NULL-out of dependent agents
+    -- (app-layer cascade, see commands::ai::do_delete_provider_credential).
     CREATE TABLE IF NOT EXISTS agents (
         id          TEXT PRIMARY KEY,
         name        TEXT NOT NULL UNIQUE,
@@ -237,7 +241,7 @@ const META_SLICE: &[M] = &[M::up(META_SQL)];
 pub const META_MIGRATIONS: Migrations = Migrations::from_slice(META_SLICE);
 
 /// Migrations for each `space.db` (that Space's world registry + config).
-const SPACE_SLICE: &[M] = &[M::up(SPACE_SQL)];
+const SPACE_SLICE: &[M] = &[M::up(SPACE_SQL), M::up(SPACE_MIGRATION_002)];
 pub const SPACE_MIGRATIONS: Migrations = Migrations::from_slice(SPACE_SLICE);
 
 /// Migrations for each world DB file (all world-scoped tables).

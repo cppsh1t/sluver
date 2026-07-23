@@ -128,7 +128,11 @@ pub(crate) fn do_create_space(
     //    table). The cached conn is reused by the frontend's first
     //    `list_agents` call. The frontend looks these up by `name`, not by
     //    the random UUID id, so the ids here are throwaway.
-    mgr.with_space(&id, |conn| {
+    //
+    //    On failure, roll back the entire Space (meta row + directory) so we
+    //    don't leave a registered Space with a broken agent table — matching
+    //    the step-3 rollback pattern.
+    if let Err(seed_err) = mgr.with_space(&id, |conn| {
         for name in ["explorer", "writer"] {
             let aid = new_id();
             conn.execute(
@@ -138,7 +142,16 @@ pub(crate) fn do_create_space(
             )?;
         }
         Ok(())
-    })?;
+    }) {
+        // Best-effort cleanup: delete meta row + remove directory.
+        let _ = mgr.with_meta(|conn| {
+            conn.execute("DELETE FROM spaces WHERE id = ?1", params![id])?;
+            Ok(())
+        });
+        mgr.close_space(&id);
+        let _ = std::fs::remove_dir_all(&space_dir);
+        return Err(seed_err);
+    }
 
     Ok(SpaceSummary {
         id,

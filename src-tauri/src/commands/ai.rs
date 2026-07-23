@@ -176,10 +176,18 @@ pub(crate) fn do_delete_provider_credential(
         // Cascade: clear any agent.model_id rooted at this provider. The
         // pattern match (`provider_id/%`) is the contract's defined cascade
         // semantic — see ADR-0006 for the analogous Phase/Character cascade.
-        let pattern = format!("{provider_id}/%");
+        //
+        // SQL LIKE wildcards `_` and `%` in the provider_id are escaped so
+        // they match literally (ESCAPE '\'). Without this, a provider like
+        // `my_provider` would also clear `myXprovider/foo`.
+        let escaped = provider_id
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
+        let pattern = format!("{escaped}/%");
         tx.execute(
             "UPDATE agents SET model_id = NULL, updated_at = ?1
-             WHERE model_id LIKE ?2",
+             WHERE model_id LIKE ?2 ESCAPE '\\'",
             params![now, pattern],
         )?;
         tx.commit()?;
@@ -396,7 +404,7 @@ fn load_catalog_from_disk(
     let mut catalog = parse_catalog(&text)?;
     catalog.fetched_at = read_meta(meta_path)
         .map(|m| m.fetched_at)
-        .unwrap_or_default();
+        .unwrap_or_else(now_iso);
     catalog.is_stale = is_stale;
     Ok(catalog)
 }

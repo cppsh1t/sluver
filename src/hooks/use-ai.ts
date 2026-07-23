@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -9,6 +10,7 @@ import {
   setProviderCredential,
   updateAgentModel,
 } from "@/api";
+import { parseModelId, type ResolvedModelConfig } from "@/lib/ai";
 import type { ProviderCredentialId, SpaceId } from "@/types";
 
 // Hooks are toast-free on purpose: components own success/error UX so the
@@ -112,3 +114,87 @@ export const useRefreshModelsDevCatalog = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: aiKeys.catalog() }),
   });
 };
+
+// ─── Resolved model config (compose agent + credential + catalog) ───────────
+
+/**
+ * Compose everything needed to call `createLanguageModel()` for a specific
+ * agent, by joining three data sources:
+ *
+ * 1. **Agent** — its `modelId` (`"anthropic/claude-sonnet-5"`) gives us the
+ *    provider id and model id via {@link parseModelId}.
+ * 2. **Catalog** — the provider's `npm` field tells us which `@ai-sdk/*`
+ *    package to load (e.g. `"@ai-sdk/anthropic"`).
+ * 3. **Credential** — the stored `apiKey` for that provider.
+ *
+ * Returns `config: null` when any piece is missing (agent unbound, no
+ * credential, provider not in catalog). The consumer should guard on `config`
+ * before attempting to generate text.
+ *
+ * @example
+ * ```tsx
+ * const { config, isLoading } = useResolvedModelConfig(spaceId, "writer");
+ * const handleGenerate = async () => {
+ *   if (!config) return;
+ *   const model = createLanguageModel(config);
+ *   const { text } = await generateText({ model, prompt: "..." });
+ * };
+ * ```
+ */
+export function useResolvedModelConfig(
+  spaceId: SpaceId,
+  agentName: string,
+): {
+  config: ResolvedModelConfig | null;
+  isLoading: boolean;
+  error: Error | null;
+} {
+  const agents = useAgents(spaceId);
+  const credentials = useProviderCredentials(spaceId);
+  const catalog = useModelsDevCatalog();
+
+  return useMemo(() => {
+    const isLoading =
+      agents.isLoading || credentials.isLoading || catalog.isLoading;
+    const error = agents.error ?? credentials.error ?? catalog.error;
+
+    const agent = agents.data?.find((a) => a.name === agentName);
+    const [providerId, modelId] = parseModelId(agent?.modelId ?? null);
+
+    if (!providerId || !modelId) {
+      return { config: null, isLoading, error };
+    }
+
+    const credential = credentials.data?.find(
+      (c) => c.providerId === providerId,
+    );
+    const catalogProvider = catalog.data?.providers.find(
+      (p) => p.id === providerId,
+    );
+
+    if (!credential || !catalogProvider?.npm) {
+      return { config: null, isLoading, error };
+    }
+
+    return {
+      config: {
+        npmPackage: catalogProvider.npm,
+        modelId,
+        apiKey: credential.apiKey,
+      },
+      isLoading,
+      error,
+    };
+  }, [
+    agents.data,
+    agents.isLoading,
+    agents.error,
+    credentials.data,
+    credentials.isLoading,
+    credentials.error,
+    catalog.data,
+    catalog.isLoading,
+    catalog.error,
+    agentName,
+  ]);
+}

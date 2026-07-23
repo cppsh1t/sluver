@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
@@ -6,26 +6,13 @@ import i18n from "@/i18n";
 import { translateError } from "@/i18n/errors";
 import { toErrorPayload } from "@/api/client";
 import { useUpdateAgentModel } from "@/hooks";
+import { parseModelId } from "@/lib/ai";
 import type {
   Agent,
   CatalogProvider,
   ProviderCredential,
 } from "@/types";
 import { ModelCascadingSelect } from "./model-cascading-select";
-
-/**
- * Split a composite `"{providerId}/{modelId}"` modelId into its parts.
- * Returns `[null, null]` when the value is null or doesn't contain a slash,
- * so an unbound or malformed agent renders as "no selection".
- */
-function parseModelId(
-  modelId: string | null,
-): [string | null, string | null] {
-  if (!modelId) return [null, null];
-  const slash = modelId.indexOf("/");
-  if (slash === -1) return [null, null];
-  return [modelId.slice(0, slash), modelId.slice(slash + 1)];
-}
 
 /**
  * One row per agent: a label (Explorer / Writer) on the left, the cascading
@@ -57,10 +44,24 @@ export function AgentModelPicker({
   );
   const [localModel, setLocalModel] = useState<string | null>(serverModel);
 
+  // Track the last modelId we persisted ourselves. The useEffect below
+  // syncs local state when `agent.modelId` changes externally (e.g. provider
+  // deletion cascade). But when WE triggered the change (via persistModel),
+  // the server echo would clobber the user's in-progress selection — e.g.
+  // they pick "openai", we persist null, server returns null, and the effect
+  // would reset the provider dropdown. This ref lets the effect skip its
+  // own echo: if the incoming value matches what we just sent, consume the
+  // ref and bail.
+  const lastPersistedRef = useRef<string | null | undefined>(undefined);
+
   // Re-sync local state whenever the server-side modelId changes (mutation
   // result, cascade clear from provider deletion, etc.). We key on the raw
   // modelId string so a no-op server response doesn't clobber mid-interaction.
   useEffect(() => {
+    if (agent.modelId === lastPersistedRef.current) {
+      lastPersistedRef.current = undefined;
+      return;
+    }
     const [p, m] = parseModelId(agent.modelId);
     setLocalProvider(p);
     setLocalModel(m);
@@ -69,10 +70,12 @@ export function AgentModelPicker({
   const availableProviderIds = new Set(credentials.map((c) => c.providerId));
 
   async function persistModel(composite: string | null) {
+    lastPersistedRef.current = composite;
     try {
       await updateMut.mutateAsync({ id: agent.id, modelId: composite });
       toast.success(i18n.t("ai:agents.toast.updateSuccess"));
     } catch (err) {
+      lastPersistedRef.current = undefined;
       toast.error(i18n.t("ai:agents.toast.updateFailed"), {
         description: translateError(toErrorPayload(err)),
       });

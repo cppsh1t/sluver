@@ -94,4 +94,5 @@ export {
   useUpdateAgentModel,
   useModelsDevCatalog,
   useRefreshModelsDevCatalog,
+  useResolvedModelConfig,
 } from "./use-ai";
