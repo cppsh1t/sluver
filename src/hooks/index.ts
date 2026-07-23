@@ -10,6 +10,7 @@ export {
 export {
   useSession,
   useOpenSpace,
+  useOpenSpaceInWindow,
   useLockSpace,
   useLockAllProtectedSpaces,
 } from "./use-session";

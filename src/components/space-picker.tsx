@@ -19,24 +19,19 @@ import { cn } from "@/lib/utils";
 import i18n from "@/i18n";
 import { translateError } from "@/i18n/errors";
 import { toErrorPayload } from "@/api/client";
-import { openSpaceWindow } from "@/api";
-import { useOpenSpace, useSpaces } from "@/hooks";
+import { useOpenSpaceInWindow, useSpaces } from "@/hooks";
 import type { SpaceSummary } from "@/types";
 
 /**
  * Space picker — sidebar footer switcher (ADR-0011 multi-window).
  *
  * Lives at the bottom of `AppSidebar`. Clicking a Space opens it in a NEW
- * OS window (or focuses an existing one). This replaces the old tab-
- * switching behavior (ADR-0009, superseded).
+ * OS window (or focuses an existing one) via `useOpenSpaceInWindow`, which
+ * composes the session/DB unlock and the native-window creation. This
+ * replaces the old tab-switching behavior (ADR-0009, superseded).
  *
- * Flow:
- * 1. `useOpenSpace` — sets `lastOpenedSpaceId` + opens DB connection (with
- *    password handling per ADR-0008). For protected Spaces without a
- *    password, this opens in a locked state — the new window will show the
- *    `SpacePasswordGate` overlay.
- * 2. `openSpaceWindow` — creates or focuses the native window for that
- *    Space. Single-instance: if the window already exists, just focuses it.
+ * For protected Spaces without a password, the Space opens in a locked
+ * state — the new window will show the `SpacePasswordGate` overlay.
  *
  * The picker does NOT handle password entry — that's the gate's job.
  */
@@ -51,14 +46,13 @@ function SpacePicker({ onCreateNew }: SpacePickerProps) {
   const [createOpen, setCreateOpen] = useState(false);
 
   const spacesQ = useSpaces();
-  const openSpace = useOpenSpace();
+  const openInWindow = useOpenSpaceInWindow();
 
   const spaces = spacesQ.data ?? [];
 
   async function handleSelect(space: SpaceSummary) {
     try {
-      await openSpace.mutateAsync({ id: space.id });
-      await openSpaceWindow(space.id);
+      await openInWindow.mutateAsync({ id: space.id });
     } catch (e) {
       toast.error(i18n.t("space:toast.openFailed"), {
         description: translateError(toErrorPayload(e)),
