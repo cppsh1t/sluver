@@ -1,5 +1,6 @@
 mod commands;
 mod db;
+mod logging;
 mod models;
 mod tray;
 mod util;
@@ -18,8 +19,42 @@ pub fn run() {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
             std::fs::create_dir_all(data_dir.join("spaces"))?;
+
+            // Logging foundation (ADR-0014 / ADR-0015 / ADR-0016). MUST be
+            // initialized before any subsystem that emits `tracing`/`log`
+            // events — i.e. before DbManager, which constructs rusqlite
+            // pools that emit log records. The `LoggingState` is managed
+            // for the app lifetime so its `WorkerGuard` survives until
+            // shutdown (dropping it flushes + joins the writer thread).
+            // `cleanup_old_logs` runs best-effort and never propagates.
+            std::fs::create_dir_all(data_dir.join("logs"))?;
+            let logging_state = logging::init(&data_dir)?;
+            app.manage(logging_state);
+            logging::cleanup_old_logs(&data_dir, logging::DEFAULT_RETENTION_DAYS);
+
+            tracing::info!(
+                app_version = env!("CARGO_PKG_VERSION"),
+                os = std::env::consts::OS,
+                arch = std::env::consts::ARCH,
+                "sluver starting"
+            );
+
             let db_manager = db::DbManager::new(data_dir)?;
             app.manage(db_manager);
+
+            // Re-apply persisted verbosity tier (settings.app.logLevel).
+            // Best-effort: any failure (missing row, corrupted/unrecognized
+            // value, reload error) is logged and swallowed so app startup is
+            // never blocked by a corrupted setting. The bootstrap default
+            // from `logging::init` keeps running on any failure path. See
+            // ADR-0014. MUST run AFTER both LoggingState and DbManager are
+            // managed (we need both to read the setting and apply the filter).
+            if let (Some(logging_state), Some(db_manager)) = (
+                app.try_state::<logging::LoggingState>(),
+                app.try_state::<db::DbManager>(),
+            ) {
+                reapply_persisted_log_level(&logging_state, &db_manager);
+            }
 
             // Frameless window: decorum injects native caption controls on
             // Windows/Linux (retaining Win11 Snap Layout). On macOS the native
@@ -166,6 +201,13 @@ pub fn run() {
             commands::ai::update_agent_model,
             commands::ai::get_models_dev_catalog,
             commands::ai::refresh_models_dev_catalog,
+            // Diagnostics (logging — ADR-0014 / ADR-0015)
+            commands::diagnostics::frontend_log,
+            commands::diagnostics::get_log_level,
+            commands::diagnostics::set_log_level,
+            commands::diagnostics::get_logs_dir,
+            commands::diagnostics::export_logs,
+            commands::diagnostics::clear_logs,
         ])
         .on_window_event(|window, event| {
             let label = window.label();
@@ -184,6 +226,11 @@ pub fn run() {
                 // Order matters: lock → emit → hide. Emitting AFTER hide
                 // would race the webview teardown (T27).
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    tracing::info!(
+                        window = "main",
+                        event = "close_requested_hide_to_tray",
+                        "main window hiding to tray"
+                    );
                     let app = window.app_handle();
                     if let Some(state) = app.try_state::<crate::db::DbManager>() {
                         let _ = commands::session::lock_all_protected_spaces_impl(&state);
@@ -198,6 +245,11 @@ pub fn run() {
                 // connections so the file handles don't linger, and refresh
                 // the tray menu (the window is no longer listed).
                 if let tauri::WindowEvent::Destroyed = event {
+                    tracing::info!(
+                        window = %label,
+                        event = "destroyed",
+                        "space window destroyed"
+                    );
                     let app = window.app_handle();
                     let space_id = space_id.to_string();
                     if let Some(state) = app.try_state::<crate::db::DbManager>() {
@@ -241,4 +293,78 @@ fn determine_startup_space(db: &db::DbManager) -> Option<String> {
 
     // 2. First Space by created_at (do_list_spaces already sorts by created_at)
     spaces.first().map(|s| s.id.clone())
+}
+
+/// Read the persisted verbosity tier (`settings.app.logLevel`) from
+/// `meta.db` and re-apply it to the live `EnvFilter` (ADR-0014).
+///
+/// # Why this exists
+///
+/// `logging::init` always bootstraps the subscriber from `RUST_LOG` or
+/// [`logging::DEFAULT_FILTER`]; it does NOT consult the persisted tier. Without
+/// this re-application, a user who picks "Very verbose", restarts the app,
+/// and reopens Settings would see "Very verbose" selected (the dialog reads
+/// from the same row we read here) while the runtime filter is silently still
+/// at the default tier. The UI would lie about the active filter.
+///
+/// # Failure semantics (best-effort, never fatal)
+///
+/// App startup MUST succeed regardless of what's in `meta.db`. Every failure
+/// path is logged and swallowed so the bootstrap default stays active:
+///   - Missing row (first run) → no-op, no log (default stays — nothing was
+///     persisted).
+///   - Unrecognized tier value → `tracing::warn!`, default stays.
+///   - Reload failure → `tracing::warn!`, default stays (the reload handle
+///     keeps the prior filter on failure, which here is the default).
+///   - `meta.db` read failure → `tracing::warn!`, default stays.
+///
+/// # Single source of truth
+///
+/// Uses [`logging::tier_to_filter`] so the tier→filter mapping is shared with
+/// `commands::diagnostics::set_log_level` (the runtime-change path). The two
+/// paths cannot drift.
+fn reapply_persisted_log_level(
+    logging_state: &logging::LoggingState,
+    db_manager: &db::DbManager,
+) {
+    // Read the persisted tier. `query_row` errors (most commonly
+    // `QueryReturnedNoRows` on a fresh install) collapse to `None` via
+    // `.ok()` so the match below treats any read failure as "no tier" —
+    // indistinguishable from a first run, which is the correct UX.
+    let tier_result: Result<Option<String>, db::DbError> = db_manager.with_meta(|conn| {
+        let tier: Option<String> = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'app.logLevel'",
+                rusqlite::params![],
+                |row| row.get::<_, String>(0),
+            )
+            .ok();
+        Ok(tier)
+    });
+
+    match tier_result {
+        Ok(Some(tier)) => match logging::tier_to_filter(&tier) {
+            Some(filter) => match logging_state.reload_filter_str(filter) {
+                Ok(()) => tracing::info!(
+                    persisted_tier = %tier,
+                    filter = %filter,
+                    "re-applied persisted log level"
+                ),
+                Err(e) => tracing::warn!(
+                    error = %e,
+                    persisted_tier = %tier,
+                    "failed to re-apply persisted log level"
+                ),
+            },
+            None => tracing::warn!(
+                persisted_tier = %tier,
+                "unrecognized persisted log level, falling back to default"
+            ),
+        },
+        Ok(None) => {
+            // First run — no row yet. Default filter stays. No log needed
+            // (this is the expected state on a fresh install).
+        }
+        Err(e) => tracing::warn!(error = %e, "failed to read persisted log level"),
+    }
 }

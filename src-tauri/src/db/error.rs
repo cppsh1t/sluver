@@ -84,6 +84,45 @@ pub enum DbError {
     /// information, so it's not worth translating.
     #[error("{0}")]
     Internal(String),
+
+    /// Failed to initialize the `tracing` logging subscriber
+    /// (ADR-0014). Surfaces as `LOGGING_INIT_FAILED` with no args — the
+    /// dynamic error message lives in `message` for diagnostics only. This is
+    /// raised before logging is even available, so it can't be logged itself;
+    /// the frontend surfaces a generic translated message via the code.
+    #[error("Logging init failed: {0}")]
+    LoggingInit(String),
+
+    /// Failed to reload the `EnvFilter` on an already-initialized subscriber.
+    /// Surfaces as `LOGGING_RELOAD_FAILED` — distinct from `LoggingInit`
+    /// because it happens at runtime (post-startup verbosity change) where
+    /// the original subscriber is still healthy and emitting.
+    #[allow(dead_code)] // Constructed only by `LoggingState::reload_filter*`
+                       // which is wired up in a downstream task (logging
+                       // commands TBA — see ADR-0014 "frontend_log" + the
+                       // runtime verbosity change UI).
+    #[error("Logging reload failed: {0}")]
+    LoggingReload(String),
+
+    /// Caller passed a value to `set_log_level` that isn't one of the three
+    /// allowed tiers (`standard` / `verbose` / `very_verbose`). Surfaces as
+    /// `INVALID_LOG_LEVEL` with `{ provided }` so the frontend can render
+    /// a translated "unknown log level '<provided>'" message.
+    #[allow(dead_code)] // Constructed only by the `set_log_level` command,
+                       // wired up in a downstream task (logging commands
+                       // TBA — see ADR-0014).
+    #[error("Invalid log level: {0}")]
+    InvalidLogLevel(String),
+
+    /// `export_logs` failed midway (zip write, file read, IO). The dynamic
+    /// message is the only useful information; surfaces as
+    /// `LOG_EXPORT_FAILED` with no args. The partial output file (if any)
+    /// is the caller's responsibility to clean up.
+    #[allow(dead_code)] // Constructed only by the `export_logs` command,
+                       // wired up in a downstream task (logging commands
+                       // TBA — see ADR-0014).
+    #[error("Log export failed: {0}")]
+    LogExportFailed(String),
 }
 
 impl DbError {
@@ -138,6 +177,24 @@ impl DbError {
             | DbError::Migration(_)
             | DbError::Serde(_)
             | DbError::Internal(_) => ("INTERNAL_ERROR", HashMap::new()),
+            // Logging subsystem (ADR-0014): distinct stable codes so the
+            // frontend can show a targeted "logging setup failed" / "verbosity
+            // change failed" message even though the raw error message is
+            // dynamic and not worth interpolating. No `args` — everything
+            // useful is in `message` as the English fallback.
+            DbError::LoggingInit(_) => ("LOGGING_INIT_FAILED", HashMap::new()),
+            DbError::LoggingReload(_) => {
+                ("LOGGING_RELOAD_FAILED", HashMap::new())
+            }
+            // `set_log_level` validation failure: surface the rejected value
+            // so the frontend can quote it back to the user.
+            DbError::InvalidLogLevel(provided) => (
+                "INVALID_LOG_LEVEL",
+                HashMap::from([("provided".to_string(), provided.clone())]),
+            ),
+            // `export_logs` failure: dynamic IO/zip message — code is enough,
+            // everything useful is in `message`.
+            DbError::LogExportFailed(_) => ("LOG_EXPORT_FAILED", HashMap::new()),
         };
         ErrorPayload {
             code: code.to_string(),

@@ -168,6 +168,7 @@ fn load_scene(conn: &rusqlite::Connection, id: &str) -> Result<Scene, DbError> {
 
 // ─── Novel CRUD ────────────────────────────────────────────────────────────
 
+#[tracing::instrument(skip(state, input), fields(entity_id))]
 #[tauri::command]
 pub fn create_novel(
     space_id: String,
@@ -176,6 +177,7 @@ pub fn create_novel(
     state: State<'_, DbManager>,
 ) -> Result<Novel, DbError> {
     let id = new_id();
+    tracing::Span::current().record("entity_id", id.as_str());
     let now = now_iso();
     let tags_json = serde_json::to_string(&input.tags)?;
 
@@ -189,6 +191,7 @@ pub fn create_novel(
     })
 }
 
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn get_novel(
     space_id: String,
@@ -201,6 +204,7 @@ pub fn get_novel(
     })
 }
 
+#[tracing::instrument(skip(state))]
 #[tauri::command]
 pub fn list_novels(
     space_id: String,
@@ -287,6 +291,7 @@ pub fn list_novels(
 }
 
 /// Batch-load all chapters of a novel (with scene IDs), avoiding N+1.
+#[tracing::instrument(skip(state))]
 #[tauri::command]
 pub fn list_chapters(
     space_id: String,
@@ -370,6 +375,7 @@ pub fn list_chapters(
 }
 
 /// Batch-load all scenes of a chapter (with all junction refs), avoiding N+1.
+#[tracing::instrument(skip(state))]
 #[tauri::command]
 pub fn list_scenes(
     space_id: String,
@@ -508,6 +514,7 @@ pub fn list_scenes(
 })
 }
 
+#[tracing::instrument(skip(state, input, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn update_novel(
     space_id: String,
@@ -531,6 +538,7 @@ pub fn update_novel(
     })
 }
 
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn delete_novel(
     space_id: String,
@@ -549,6 +557,7 @@ pub fn delete_novel(
 
 // ─── Chapter CRUD ──────────────────────────────────────────────────────────
 
+#[tracing::instrument(skip(state, input), fields(entity_id))]
 #[tauri::command]
 pub fn create_chapter(
     space_id: String,
@@ -558,6 +567,7 @@ pub fn create_chapter(
     state: State<'_, DbManager>,
 ) -> Result<Chapter, DbError> {
     let id = new_id();
+    tracing::Span::current().record("entity_id", id.as_str());
     let now = now_iso();
 
     state.with_world(&space_id, &world_id, |conn| {
@@ -580,6 +590,7 @@ pub fn create_chapter(
     })
 }
 
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn get_chapter(
     space_id: String,
@@ -590,6 +601,7 @@ pub fn get_chapter(
     state.with_world(&space_id, &world_id, |conn| load_chapter(conn, &id))
 }
 
+#[tracing::instrument(skip(state, input, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn update_chapter(
     space_id: String,
@@ -612,6 +624,7 @@ pub fn update_chapter(
     })
 }
 
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn delete_chapter(
     space_id: String,
@@ -628,6 +641,7 @@ pub fn delete_chapter(
     })
 }
 
+#[tracing::instrument(skip(state, chapter_ids))]
 #[tauri::command]
 pub fn reorder_chapters(
     space_id: String,
@@ -664,6 +678,7 @@ pub fn reorder_chapters(
 
 // ─── Scene CRUD ──────────────────────────────────────────────────────────────
 
+#[tracing::instrument(skip(state, input), fields(entity_id))]
 #[tauri::command]
 pub fn create_scene(
     space_id: String,
@@ -673,6 +688,7 @@ pub fn create_scene(
     state: State<'_, DbManager>,
 ) -> Result<Scene, DbError> {
     let id = new_id();
+    tracing::Span::current().record("entity_id", id.as_str());
     let now = now_iso();
 
     state.with_world(&space_id, &world_id, |conn| {
@@ -729,6 +745,7 @@ pub fn create_scene(
 })
 }
 
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn get_scene(
     space_id: String,
@@ -739,6 +756,7 @@ pub fn get_scene(
     state.with_world(&space_id, &world_id, |conn| load_scene(conn, &id))
 }
 
+#[tracing::instrument(skip(state, input, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn update_scene(
     space_id: String,
@@ -809,6 +827,7 @@ pub fn update_scene(
 })
 }
 
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn delete_scene(
     space_id: String,
@@ -825,6 +844,7 @@ pub fn delete_scene(
     })
 }
 
+#[tracing::instrument(skip(state, scene_ids))]
 #[tauri::command]
 pub fn reorder_scenes(
     space_id: String,

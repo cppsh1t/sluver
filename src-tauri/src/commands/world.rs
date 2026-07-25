@@ -25,6 +25,7 @@ fn row_to_world(row: &rusqlite::Row) -> rusqlite::Result<World> {
 // reads/writes) and gain `space_id` as the first param. World content DB
 // files live at `spaces/{spaceId}/worlds/{worldId}.db`.
 
+#[tracing::instrument(skip(state, input), fields(entity_id))]
 #[tauri::command]
 pub fn create_world(
     space_id: String,
@@ -32,6 +33,7 @@ pub fn create_world(
     state: State<'_, DbManager>,
 ) -> Result<World, DbError> {
     let id = new_id();
+    tracing::Span::current().record("entity_id", id.as_str());
     let now = now_iso();
     let db_path = format!("worlds/{id}.db");
 
@@ -77,6 +79,7 @@ pub fn create_world(
     })
 }
 
+#[tracing::instrument(skip(state))]
 #[tauri::command]
 pub fn list_worlds(space_id: String, state: State<'_, DbManager>) -> Result<Vec<World>, DbError> {
     state.with_space(&space_id, |conn| {
@@ -90,6 +93,7 @@ pub fn list_worlds(space_id: String, state: State<'_, DbManager>) -> Result<Vec<
     })
 }
 
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn get_world(
     space_id: String,
@@ -109,6 +113,7 @@ pub fn get_world(
     })
 }
 
+#[tracing::instrument(skip(state, input, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn update_world(
     space_id: String,
@@ -134,6 +139,7 @@ pub fn update_world(
     })
 }
 
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn delete_world(
     space_id: String,

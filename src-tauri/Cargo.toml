@@ -46,6 +46,21 @@ thiserror = "2.0.18"
 # NO `blocking` feature — catalog commands are async (see commands/ai.rs).
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 
+# Logging stack (ADR-0014): `tracing` ecosystem + `tracing-log` bridge so that
+# `log::*` emits from deps (tauri, rusqlite, reqwest, tokio) are captured by
+# the same subscriber that owns our structured JSON-lines file writer
+# (ADR-0015). `json` feature is required by `fmt::layer().json()`.
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt", "json"] }
+tracing-appender = "0.2.5"
+tracing-log = "0.2.0"
+
+# Diagnostics log export (ADR-0015): produces the zip archive the
+# `export_logs` command hands back to the user. `default-features = false`
+# + `deflate` only — drops unsupported codecs (bzip2/zstd/lzma) to keep
+# the binary slim. Pinned to `^8` (latest stable line as of writing).
+zip = { version = "8", default-features = false, features = ["deflate"] }
+
 [dev-dependencies]
 # Filesystem isolation for DbManager / command integration tests (T10 stress test).
 tempfile = "3"

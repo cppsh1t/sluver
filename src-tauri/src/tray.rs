@@ -183,6 +183,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
             }
         })
         .build(app)?;
+    tracing::info!("system tray initialized");
     Ok(())
 }
 
@@ -191,12 +192,14 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
 /// (see the window-event router in `lib.rs`). Safe to call from anywhere —
 /// it only touches the tray (via the app handle) and the DB read lock.
 pub fn refresh(app: &AppHandle) {
+    let window_count = app.webview_windows().len() as u32;
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         let locale = current_locale();
         if let Ok(menu) = build_menu(app, &locale) {
             let _ = tray.set_menu(Some(menu));
         }
     }
+    tracing::debug!(window_count = window_count, "tray menu refreshed");
 }
 
 /// Rebuild the tray menu with translated labels for `locale`, and store the

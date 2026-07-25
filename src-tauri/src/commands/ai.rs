@@ -63,6 +63,7 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
     })
 }
 
+#[tracing::instrument(skip(state))]
 #[tauri::command]
 pub fn list_provider_credentials(
     space_id: String,
@@ -87,6 +88,7 @@ pub(crate) fn do_list_provider_credentials(
     })
 }
 
+#[tracing::instrument(skip(state, input))]
 #[tauri::command]
 pub fn set_provider_credential(
     space_id: String,
@@ -130,6 +132,7 @@ pub(crate) fn do_set_provider_credential(
     })
 }
 
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn delete_provider_credential(
     space_id: String,
@@ -199,6 +202,7 @@ pub(crate) fn do_delete_provider_credential(
 // agents (read + update model only — creation is seed-only at Space create)
 // ═══════════════════════════════════════════════════════════════════════════
 
+#[tracing::instrument(skip(state))]
 #[tauri::command]
 pub fn list_agents(
     space_id: String,
@@ -221,6 +225,7 @@ pub(crate) fn do_list_agents(
     })
 }
 
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn update_agent_model(
     space_id: String,
@@ -264,6 +269,7 @@ pub(crate) fn do_update_agent_model(
 // catalog (global — models.dev fetch with 24h TTL + stale-copy fallback)
 // ═══════════════════════════════════════════════════════════════════════════
 
+#[tracing::instrument(skip(state))]
 #[tauri::command]
 pub async fn get_models_dev_catalog(
     state: State<'_, DbManager>,
@@ -300,6 +306,7 @@ pub(crate) async fn do_get_models_dev_catalog(
     load_catalog_from_disk(&cat_path, &meta_path, false)
 }
 
+#[tracing::instrument(skip(state))]
 #[tauri::command]
 pub async fn refresh_models_dev_catalog(
     state: State<'_, DbManager>,

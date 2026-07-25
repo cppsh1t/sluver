@@ -29,6 +29,7 @@ use crate::db::DbError;
 /// The startup path in `lib.rs` doesn't hit this because it already uses
 /// `run_on_main_thread` (the closure runs after `setup` returns, when the
 /// main thread is idle).
+#[tracing::instrument(skip(app))]
 #[tauri::command]
 pub async fn open_space_window(space_id: String, app: AppHandle) -> Result<(), DbError> {
     let (tx, rx) = mpsc::channel::<Result<(), DbError>>();

@@ -61,6 +61,7 @@ fn load_event(conn: &mut rusqlite::Connection, id: &str, world_id: &str) -> Resu
     })
 }
 
+#[tracing::instrument(skip(state, input), fields(entity_id))]
 #[tauri::command]
 pub fn create_event(
     space_id: String,
@@ -69,6 +70,7 @@ pub fn create_event(
     state: State<'_, DbManager>,
 ) -> Result<Event, DbError> {
     let event_id = new_id();
+    tracing::Span::current().record("entity_id", event_id.as_str());
     let now = now_iso();
     let tags_json = serde_json::to_string(&input.tags)?;
 
@@ -101,6 +103,7 @@ pub fn create_event(
 })
 }
 
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn get_event(
     space_id: String,
@@ -113,6 +116,7 @@ pub fn get_event(
     })
 }
 
+#[tracing::instrument(skip(state))]
 #[tauri::command]
 pub fn list_events(
     space_id: String,
@@ -212,6 +216,7 @@ pub fn list_events(
 })
 }
 
+#[tracing::instrument(skip(state, input, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn update_event(
     space_id: String,
@@ -259,6 +264,7 @@ pub fn update_event(
 })
 }
 
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn delete_event(
     space_id: String,
@@ -283,6 +289,7 @@ pub fn delete_event(
 // Slice 4 ships Scene UI — the `scene_character_refs` table already exists.
 
 /// Count how many Events and Scenes reference a single phase.
+#[tracing::instrument(skip(state, phase_id), fields(entity_id = %phase_id))]
 #[tauri::command]
 pub fn count_phase_refs(
     space_id: String,
@@ -307,6 +314,7 @@ pub fn count_phase_refs(
 
 /// Count how many Events and Scenes reference ANY phase of the given character
 /// (aggregates across all of the character's phases).
+#[tracing::instrument(skip(state, character_id), fields(entity_id = %character_id))]
 #[tauri::command]
 pub fn count_character_refs(
     space_id: String,

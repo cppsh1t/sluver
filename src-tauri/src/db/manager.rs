@@ -50,13 +50,19 @@ impl DbManager {
     /// Initialize the manager: open `meta.db`, run `META_MIGRATIONS`, and
     /// create the `spaces/` container directory.
     pub fn new(data_dir: PathBuf) -> Result<Self, DbError> {
+        tracing::info!(data_dir = ?data_dir, "DbManager initializing");
+
         let meta_path = data_dir.join("meta.db");
         let mut meta = Connection::open(&meta_path)?;
         meta.execute_batch("PRAGMA foreign_keys = ON;")?;
+        tracing::info!(db = "meta", path = %meta_path.display(), "opened meta.db");
+        tracing::info!(db_kind = "meta", "applying migrations");
         META_MIGRATIONS.to_latest(&mut meta)?;
+        tracing::debug!(db_kind = "meta", "migrations applied");
 
         std::fs::create_dir_all(data_dir.join("spaces"))?;
 
+        tracing::info!(data_dir = ?data_dir, "DbManager initialized");
         Ok(Self {
             meta: Mutex::new(meta),
             spaces: Mutex::new(HashMap::new()),
@@ -126,7 +132,15 @@ impl DbManager {
         }
         let mut conn = Connection::open(&path)?;
         conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")?;
+        tracing::info!(
+            db = "space",
+            space_id = %space_id,
+            path = %path.display(),
+            "opened space.db"
+        );
+        tracing::info!(db_kind = "space", space_id = %space_id, "applying migrations");
         SPACE_MIGRATIONS.to_latest(&mut conn)?;
+        tracing::debug!(db_kind = "space", space_id = %space_id, "migrations applied");
         Ok(conn)
     }
 
@@ -140,6 +154,7 @@ impl DbManager {
     where
         F: FnOnce(&mut Connection) -> Result<R, DbError>,
     {
+        tracing::debug!(db = "meta", "acquiring meta connection");
         let mut meta = self.meta.lock().unwrap();
         f(&mut meta)
     }
@@ -155,8 +170,10 @@ impl DbManager {
     where
         F: FnOnce(&mut Connection) -> Result<R, DbError>,
     {
+        tracing::debug!(db = "space", space_id = %space_id, "acquiring space connection");
         Self::validate_id(space_id)?;
         let mut spaces = self.spaces.lock().unwrap();
+        tracing::trace!(db = "space", space_id = %space_id, "spaces lock acquired");
         if !spaces.contains_key(space_id) {
             let conn = self.open_space_conn_inner(space_id)?;
             spaces.insert(
@@ -189,9 +206,21 @@ impl DbManager {
     where
         F: FnOnce(&mut Connection) -> Result<R, DbError>,
     {
+        tracing::debug!(
+            db = "world",
+            space_id = %space_id,
+            world_id = %world_id,
+            "acquiring world connection"
+        );
         Self::validate_id(space_id)?;
         Self::validate_id(world_id)?;
         let mut spaces = self.spaces.lock().unwrap();
+        tracing::trace!(
+            db = "world",
+            space_id = %space_id,
+            world_id = %world_id,
+            "spaces lock acquired"
+        );
 
         // Ensure the parent SpaceConn exists (opens space.db if needed).
         if !spaces.contains_key(space_id) {
@@ -224,7 +253,26 @@ impl DbManager {
             let path = self.world_db_path(space_id, &relative);
             let mut conn = Connection::open(&path)?;
             conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")?;
+            tracing::info!(
+                db = "world",
+                space_id = %space_id,
+                world_id = %world_id,
+                path = %path.display(),
+                "opened world db"
+            );
+            tracing::info!(
+                db_kind = "world",
+                space_id = %space_id,
+                world_id = %world_id,
+                "applying migrations"
+            );
             WORLD_MIGRATIONS.to_latest(&mut conn)?;
+            tracing::debug!(
+                db_kind = "world",
+                space_id = %space_id,
+                world_id = %world_id,
+                "migrations applied"
+            );
             space_conn.worlds.insert(world_id.to_string(), conn);
         }
 
@@ -266,6 +314,7 @@ impl DbManager {
     /// removing one `SpaceConn` entry drops both the space.db conn and every
     /// world conn in one go.
     pub fn close_space(&self, space_id: &str) {
+        tracing::info!(db_kind = "space", space_id = %space_id, "closed space.db connections");
         let mut spaces = self.spaces.lock().unwrap();
         spaces.remove(space_id);
     }

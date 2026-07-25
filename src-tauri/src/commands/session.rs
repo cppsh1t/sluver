@@ -318,11 +318,13 @@ pub(crate) fn lock_all_protected_spaces_impl(manager: &DbManager) -> Result<Sess
 // derefs to `&DbManager`, so `&state` coerces to the impl signature. Splitting
 // the impl out keeps the Tauri-flavoured wrapper free of testable logic.
 
+#[tracing::instrument(skip(state))]
 #[tauri::command]
 pub fn get_session(state: State<'_, DbManager>) -> Result<SessionState, DbError> {
     get_session_impl(&state)
 }
 
+#[tracing::instrument(skip(state, password, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn open_space(
     id: String,
@@ -332,11 +334,13 @@ pub fn open_space(
     open_space_impl(&id, password.as_deref(), &state)
 }
 
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn lock_space(id: String, state: State<'_, DbManager>) -> Result<SessionState, DbError> {
     lock_space_impl(&id, &state)
 }
 
+#[tracing::instrument(skip(state))]
 #[tauri::command]
 pub fn lock_all_protected_spaces(state: State<'_, DbManager>) -> Result<SessionState, DbError> {
     lock_all_protected_spaces_impl(&state)

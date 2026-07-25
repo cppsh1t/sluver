@@ -73,12 +73,15 @@ fn load_password_hash(mgr: &DbManager, id: &str) -> Result<Option<String>, DbErr
 
 // ─── create ─────────────────────────────────────────────────────────────────
 
+#[tracing::instrument(skip(state, input), fields(entity_id))]
 #[tauri::command]
 pub fn create_space(
     input: CreateSpaceInput,
     state: State<'_, DbManager>,
 ) -> Result<SpaceSummary, DbError> {
-    do_create_space(&state, input)
+    let summary = do_create_space(&state, input)?;
+    tracing::Span::current().record("entity_id", summary.id.as_str());
+    Ok(summary)
 }
 
 pub(crate) fn do_create_space(
@@ -164,6 +167,7 @@ pub(crate) fn do_create_space(
 
 // ─── list ───────────────────────────────────────────────────────────────────
 
+#[tracing::instrument(skip(state))]
 #[tauri::command]
 pub fn list_spaces(state: State<'_, DbManager>) -> Result<Vec<SpaceSummary>, DbError> {
     do_list_spaces(&state)
@@ -184,6 +188,7 @@ pub(crate) fn do_list_spaces(mgr: &DbManager) -> Result<Vec<SpaceSummary>, DbErr
 
 // ─── get ────────────────────────────────────────────────────────────────────
 
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn get_space(id: String, state: State<'_, DbManager>) -> Result<SpaceSummary, DbError> {
     do_get_space(&state, &id)
@@ -210,6 +215,7 @@ fn do_get_space(mgr: &DbManager, id: &str) -> Result<SpaceSummary, DbError> {
 // the UNIQUE constraint), `None` leaves it unchanged. `password` is NOT
 // updatable here; use `set_space_password`.
 
+#[tracing::instrument(skip(state, input, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn update_space(
     id: String,
@@ -257,6 +263,7 @@ fn do_update_space(
 //      SpaceNotFound on every IPC after the meta row is gone
 //   6. remove_dir_all(`spaces/{id}/`)
 
+#[tracing::instrument(skip(state, password, app, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn delete_space(
     id: String,
@@ -346,6 +353,7 @@ fn do_delete_space(
 // an unprotected space" both surface as `SpaceWrongPassword` rather than a
 // dedicated code — the T5 error set is locked.
 
+#[tracing::instrument(skip(state, input, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn set_space_password(
     id: String,

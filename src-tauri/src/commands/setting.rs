@@ -6,6 +6,7 @@ use crate::models::setting::{AppSetting, Appearance};
 
 // ─── App Settings (meta.db settings table) ──────────────────────────────────
 
+#[tracing::instrument(skip(state))]
 #[tauri::command]
 pub fn get_app_setting(state: State<'_, DbManager>) -> Result<AppSetting, DbError> {
     state.with_meta(|conn| {
@@ -40,6 +41,7 @@ pub fn get_app_setting(state: State<'_, DbManager>) -> Result<AppSetting, DbErro
     })
 }
 
+#[tracing::instrument(skip(state, setting))]
 #[tauri::command]
 pub fn update_app_setting(
     setting: AppSetting,

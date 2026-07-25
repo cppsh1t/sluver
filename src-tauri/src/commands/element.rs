@@ -87,6 +87,7 @@ macro_rules! list_element {
 
 // ─── Location CRUD ───────────────────────────────────────────────────────────
 
+#[tracing::instrument(skip(state, input), fields(entity_id))]
 #[tauri::command]
 pub fn create_location(
     space_id: String,
@@ -95,6 +96,7 @@ pub fn create_location(
     state: State<'_, DbManager>,
 ) -> Result<Location, DbError> {
     let id = new_id();
+    tracing::Span::current().record("entity_id", id.as_str());
     let now = now_iso();
     let tags_json = serde_json::to_string(&input.tags)?;
 
@@ -116,6 +118,7 @@ pub fn create_location(
     })
 }
 
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn get_location(
     space_id: String,
@@ -128,6 +131,7 @@ pub fn get_location(
     })
 }
 
+#[tracing::instrument(skip(state))]
 #[tauri::command]
 pub fn list_locations(
     space_id: String,
@@ -139,6 +143,7 @@ pub fn list_locations(
     })
 }
 
+#[tracing::instrument(skip(state, input, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn update_location(
     space_id: String,
@@ -171,6 +176,7 @@ pub fn update_location(
     })
 }
 
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn delete_location(
     space_id: String,
@@ -189,6 +195,7 @@ pub fn delete_location(
 
 // ─── Item CRUD ────────────────────────────────────────────────────────────────
 
+#[tracing::instrument(skip(state, input), fields(entity_id))]
 #[tauri::command]
 pub fn create_item(
     space_id: String,
@@ -197,6 +204,7 @@ pub fn create_item(
     state: State<'_, DbManager>,
 ) -> Result<Item, DbError> {
     let id = new_id();
+    tracing::Span::current().record("entity_id", id.as_str());
     let now = now_iso();
     let tags_json = serde_json::to_string(&input.tags)?;
 
@@ -218,6 +226,7 @@ pub fn create_item(
     })
 }
 
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn get_item(
     space_id: String,
@@ -230,6 +239,7 @@ pub fn get_item(
     })
 }
 
+#[tracing::instrument(skip(state))]
 #[tauri::command]
 pub fn list_items(
     space_id: String,
@@ -241,6 +251,7 @@ pub fn list_items(
     })
 }
 
+#[tracing::instrument(skip(state, input, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn update_item(
     space_id: String,
@@ -273,6 +284,7 @@ pub fn update_item(
     })
 }
 
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn delete_item(
     space_id: String,
@@ -291,6 +303,7 @@ pub fn delete_item(
 
 // ─── Lore CRUD ────────────────────────────────────────────────────────────────
 
+#[tracing::instrument(skip(state, input), fields(entity_id))]
 #[tauri::command]
 pub fn create_lore(
     space_id: String,
@@ -299,6 +312,7 @@ pub fn create_lore(
     state: State<'_, DbManager>,
 ) -> Result<Lore, DbError> {
     let id = new_id();
+    tracing::Span::current().record("entity_id", id.as_str());
     let now = now_iso();
     let tags_json = serde_json::to_string(&input.tags)?;
 
@@ -320,6 +334,7 @@ pub fn create_lore(
     })
 }
 
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn get_lore(
     space_id: String,
@@ -332,6 +347,7 @@ pub fn get_lore(
     })
 }
 
+#[tracing::instrument(skip(state))]
 #[tauri::command]
 pub fn list_lores(
     space_id: String,
@@ -343,6 +359,7 @@ pub fn list_lores(
     })
 }
 
+#[tracing::instrument(skip(state, input, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn update_lore(
     space_id: String,
@@ -375,6 +392,7 @@ pub fn update_lore(
     })
 }
 
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn delete_lore(
     space_id: String,

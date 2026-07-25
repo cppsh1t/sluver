@@ -101,6 +101,7 @@ fn load_character(
 
 // ─── Character CRUD ─────────────────────────────────────────────────────────
 
+#[tracing::instrument(skip(state, input), fields(entity_id))]
 #[tauri::command]
 pub fn create_character(
     space_id: String,
@@ -109,6 +110,7 @@ pub fn create_character(
     state: State<'_, DbManager>,
 ) -> Result<Character, DbError> {
     let char_id = new_id();
+    tracing::Span::current().record("entity_id", char_id.as_str());
     let now = now_iso();
     let aliases_json = serde_json::to_string(&input.aliases)?;
     let tags_json = serde_json::to_string(&input.tags)?;
@@ -125,6 +127,7 @@ pub fn create_character(
 })
 }
 
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn get_character(
     space_id: String,
@@ -137,6 +140,7 @@ pub fn get_character(
     })
 }
 
+#[tracing::instrument(skip(state))]
 #[tauri::command]
 pub fn list_characters(
     space_id: String,
@@ -210,6 +214,7 @@ pub fn list_characters(
 })
 }
 
+#[tracing::instrument(skip(state, input, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn update_character(
     space_id: String,
@@ -244,6 +249,7 @@ pub fn update_character(
     })
 }
 
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn delete_character(
     space_id: String,
@@ -262,6 +268,7 @@ pub fn delete_character(
 
 // ─── Phase CRUD ─────────────────────────────────────────────────────────────
 
+#[tracing::instrument(skip(state, input), fields(entity_id))]
 #[tauri::command]
 pub fn add_phase(
     space_id: String,
@@ -271,6 +278,7 @@ pub fn add_phase(
     state: State<'_, DbManager>,
 ) -> Result<CharacterPhase, DbError> {
     let phase_id = new_id();
+    tracing::Span::current().record("entity_id", phase_id.as_str());
     let now = now_iso();
 
     state.with_world(&space_id, &world_id, |conn| {
@@ -326,6 +334,7 @@ pub fn add_phase(
 })
 }
 
+#[tracing::instrument(skip(state, input, phase_id), fields(entity_id = %phase_id))]
 #[tauri::command]
 pub fn update_phase(
     space_id: String,
@@ -371,6 +380,7 @@ pub fn update_phase(
 })
 }
 
+#[tracing::instrument(skip(state, phase_id), fields(entity_id = %phase_id))]
 #[tauri::command]
 pub fn delete_phase(
     space_id: String,
@@ -396,6 +406,7 @@ fn _ensure_character_ref_used(_: CharacterRef) {}
 
 // ─── Phase reorder ───────────────────────────────────────────────────────────
 
+#[tracing::instrument(skip(state, phase_ids))]
 #[tauri::command]
 pub fn reorder_phases(
     space_id: String,
