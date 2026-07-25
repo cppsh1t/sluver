@@ -30,5 +30,42 @@
   "toast": {
       "loadFailed": "加载设置失败",
     "saveFailed": "保存失败"
+  },
+  "diagnostics": {
+    "title": "诊断",
+    "verbosity": {
+      "label": "日志详细程度",
+      "standard": "标准",
+      "verbose": "详细",
+      "veryVerbose": "极详细",
+      "help": "排查问题时切到「详细」。仅开发者用「极详细」。"
+    },
+    "openFolder": "打开日志文件夹",
+    "openFolderFailed": "打开日志文件夹失败",
+    "export": {
+      "button": "导出日志…",
+      "dialogTitle": "导出日志",
+      "spaceScope": "Space 范围",
+      "allSpaces": "全部 Space",
+      "currentSpace": "仅当前 Space",
+      "dateRange": "时间范围",
+      "last14Days": "最近 14 天",
+      "last24Hours": "最近 24 小时",
+      "allDates": "全部",
+      "confirm": "导出",
+      "exporting": "导出中…",
+      "success": "日志已导出至 {{path}}",
+      "failed": "导出日志失败"
+    },
+    "clear": {
+      "button": "清空日志…",
+      "confirmTitle": "确认清空日志？",
+      "confirmDescription": "这将永久删除除今天以外的全部历史日志。此操作不可恢复。",
+      "confirm": "清空",
+      "clearing": "清空中…",
+      "success": "已删除 {{count}} 个日志文件",
+      "failed": "清空日志失败"
+    },
+    "loadFailed": "加载日志设置失败"
   }
 }

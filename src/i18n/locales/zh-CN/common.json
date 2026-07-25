@@ -11,6 +11,16 @@
     "moreActions": "更多操作"
   },
   "loading": "加载中…",
+  "errorBoundary": {
+    "title": "出错了",
+    "description": "Sluver 遇到了一个问题。你的最近编辑已自动保存。",
+    "reload": "重载窗口",
+    "exportLogs": "导出日志…",
+    "exporting": "导出中…",
+    "exportFailed": "导出日志失败",
+    "exportSuccess": "日志已导出至 {{path}}",
+    "errorIdLabel": "错误标识"
+  },
   "nav": {
     "primaryNav": "主导航",
     "worlds": "世界",

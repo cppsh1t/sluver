@@ -20,5 +20,6 @@ export * from './novel';
 export * from './space';
 export * from './session';
 export * from './ai';
+export * from './diagnostics';
 
 export type * from './types';

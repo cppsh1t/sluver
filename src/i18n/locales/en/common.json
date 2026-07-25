@@ -11,6 +11,16 @@
     "moreActions": "More actions"
   },
   "loading": "Loading…",
+  "errorBoundary": {
+    "title": "Something went wrong",
+    "description": "Sluver hit a problem. Your recent edits are auto-saved.",
+    "reload": "Reload window",
+    "exportLogs": "Export logs…",
+    "exporting": "Exporting…",
+    "exportFailed": "Failed to export logs",
+    "exportSuccess": "Logs exported to {{path}}",
+    "errorIdLabel": "Error ID"
+  },
   "nav": {
     "primaryNav": "Primary navigation",
     "worlds": "Worlds",

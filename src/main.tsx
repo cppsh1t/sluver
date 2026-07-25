@@ -14,6 +14,8 @@ import {
 } from "@/i18n";
 import i18n from "@/i18n";
 import { setDayjsLocale } from "@/lib/format";
+import { logger } from "@/lib/logger";
+import { flush as flushLogBuffer } from "@/lib/logger/buffer";
 
 import "./index.css";
 
@@ -67,6 +69,33 @@ async function resolveInitialLocale(): Promise<string> {
 }
 
 /**
+ * Global error listeners — installed synchronously at module load (BEFORE
+ * the bootstrap chain and the first React render) so they capture uncaught
+ * errors and unhandled promise rejections from the entire app lifecycle,
+ * including the bootstrap phase itself.
+ *
+ * Entries emitted before the Tauri IPC bridge is ready are buffered and
+ * flushed later by `flushLogBuffer()` once bootstrap succeeds.
+ *
+ * We deliberately do NOT call `event.preventDefault()`: we want BOTH the
+ * structured log entry AND the browser's default devtools warning, since
+ * the devtools trace is richer than anything we can reconstruct.
+ */
+window.addEventListener("unhandledrejection", (event) => {
+  logger.error("window.unhandledrejection", {
+    reason: String(event.reason),
+  });
+});
+window.addEventListener("error", (event) => {
+  logger.error("window.error", {
+    message: event.message,
+    filename: event.filename,
+    line: event.lineno,
+    col: event.colno,
+  });
+});
+
+/**
  * Initialize i18n + dayjs locale, then mount React.
  *
  * `i18n.changeLanguage` triggers the lazy namespace loaders in
@@ -75,9 +104,9 @@ async function resolveInitialLocale(): Promise<string> {
  * flash of fallback language. `setDayjsLocale` is called right after so
  * relative timestamps (e.g. "3 days ago") match the active language.
  *
- * Bootstrap failures (e.g. every namespace JSON missing) are swallowed
- * here: i18next falls back to `FALLBACK_LOCALE` internally and React
- * still mounts, so the user is never stuck on a blank window.
+ * Bootstrap failures (e.g. every namespace JSON missing) are logged but
+ * not surfaced: i18next falls back to `FALLBACK_LOCALE` internally and
+ * React still mounts, so the user is never stuck on a blank window.
  */
 resolveInitialLocale()
   .then(async (lng) => {
@@ -86,14 +115,27 @@ resolveInitialLocale()
     // Sync the tray menu labels to the resolved locale. Best-effort: a
     // failure leaves the tray on its English startup default, which is
     // preferable to blocking the render pipeline.
-    setTrayLocale(lng).catch(() => {});
+    setTrayLocale(lng).catch((e) =>
+      logger.warn("bootstrap.set_tray_locale.failed", {
+        locale: lng,
+        error: String(e),
+      }),
+    );
     // Warm the models.dev catalog cache (ADR-0012). Fire-and-forget: the
     // Space config page re-fetches via React Query if this hasn't landed
     // by the time the user navigates there, so a failure here is silent.
-    getModelsDevCatalog().catch(() => {});
+    getModelsDevCatalog().catch((e) =>
+      logger.warn("bootstrap.catalog_warm.failed", { error: String(e) }),
+    );
+    // Locale/theme setup succeeded and at least one Tauri IPC round-trip
+    // (getAppSetting in resolveInitialLocale) has completed — the bridge
+    // is alive. Drain any log entries that arrived before it came up.
+    void flushLogBuffer();
   })
-  .catch(() => {
-    // Swallow — render anyway with whatever i18next managed to load.
+  .catch((e) => {
+    // Render still proceeds via .finally() with whatever i18next managed
+    // to load; the error is logged for diagnostics but not surfaced.
+    logger.error("bootstrap.failed", { error: String(e) });
   })
   .finally(() => {
     createRoot(document.getElementById("root") as HTMLElement).render(

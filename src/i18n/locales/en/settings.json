@@ -30,5 +30,42 @@
   "toast": {
     "loadFailed": "Failed to load settings",
     "saveFailed": "Failed to save"
+  },
+  "diagnostics": {
+    "title": "Diagnostics",
+    "verbosity": {
+      "label": "Log verbosity",
+      "standard": "Standard",
+      "verbose": "Verbose",
+      "veryVerbose": "Very verbose",
+      "help": "Switch to Verbose when troubleshooting. Very verbose is for developers only."
+    },
+    "openFolder": "Open log folder",
+    "openFolderFailed": "Failed to open log folder",
+    "export": {
+      "button": "Export logs…",
+      "dialogTitle": "Export logs",
+      "spaceScope": "Space scope",
+      "allSpaces": "All Spaces",
+      "currentSpace": "Current Space only",
+      "dateRange": "Date range",
+      "last14Days": "Last 14 days",
+      "last24Hours": "Last 24 hours",
+      "allDates": "All",
+      "confirm": "Export",
+      "exporting": "Exporting…",
+      "success": "Logs exported to {{path}}",
+      "failed": "Failed to export logs"
+    },
+    "clear": {
+      "button": "Clear logs…",
+      "confirmTitle": "Clear all logs?",
+      "confirmDescription": "This permanently deletes every historical log file except today's. This cannot be undone.",
+      "confirm": "Clear",
+      "clearing": "Clearing…",
+      "success": "Deleted {{count}} log file(s)",
+      "failed": "Failed to clear logs"
+    },
+    "loadFailed": "Failed to load log settings"
   }
 }
