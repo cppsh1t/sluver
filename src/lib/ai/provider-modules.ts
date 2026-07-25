@@ -32,7 +32,6 @@ import * as deepInfra from "@ai-sdk/deepinfra";
 import * as deepSeek from "@ai-sdk/deepseek";
 import * as gateway from "@ai-sdk/gateway";
 import * as google from "@ai-sdk/google";
-import * as googleVertex from "@ai-sdk/google-vertex";
 import * as groq from "@ai-sdk/groq";
 import * as mistral from "@ai-sdk/mistral";
 import * as openai from "@ai-sdk/openai";
@@ -43,10 +42,8 @@ import * as vercel from "@ai-sdk/vercel";
 import * as xai from "@ai-sdk/xai";
 // ─── Community providers ────────────────────────────────────────────────
 import * as aihubmix from "@aihubmix/ai-sdk-provider";
-import * as gitLab from "gitlab-ai-provider";
 import * as mergeGateway from "merge-gateway-ai-sdk-provider";
 import * as openRouter from "@openrouter/ai-sdk-provider";
-import * as sapAI from "@jerome-benoit/sap-ai-provider-v2";
 import * as venice from "venice-ai-sdk-provider";
 
 /**
@@ -72,7 +69,7 @@ export const PROVIDER_MODULES: Readonly<Record<string, Record<string, unknown>>>
     "@ai-sdk/cerebras": cerebras as unknown as Record<string, unknown>,
     "@ai-sdk/deepinfra": deepInfra as unknown as Record<string, unknown>,
     "@ai-sdk/amazon-bedrock": amazonBedrock as unknown as Record<string, unknown>,
-    "@ai-sdk/google-vertex": googleVertex as unknown as Record<string, unknown>,
+
     "@ai-sdk/azure": azure as unknown as Record<string, unknown>,
     "@ai-sdk/gateway": gateway as unknown as Record<string, unknown>,
     "@ai-sdk/vercel": vercel as unknown as Record<string, unknown>,
@@ -81,8 +78,6 @@ export const PROVIDER_MODULES: Readonly<Record<string, Record<string, unknown>>>
     // ─── Community providers ───────────────────────────────────────────
     "@openrouter/ai-sdk-provider": openRouter as unknown as Record<string, unknown>,
     "@aihubmix/ai-sdk-provider": aihubmix as unknown as Record<string, unknown>,
-    "gitlab-ai-provider": gitLab as unknown as Record<string, unknown>,
     "merge-gateway-ai-sdk-provider": mergeGateway as unknown as Record<string, unknown>,
     "venice-ai-sdk-provider": venice as unknown as Record<string, unknown>,
-    "@jerome-benoit/sap-ai-provider-v2": sapAI as unknown as Record<string, unknown>,
   });
