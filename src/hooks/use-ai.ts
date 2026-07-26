@@ -172,7 +172,16 @@ export function useResolvedModelConfig(
       (p) => p.id === providerId,
     );
 
-    if (!credential || !catalogProvider?.npm) {
+    // `apiKey` MUST be a non-empty string — provider packages will accept an
+    // empty string at construction but fail with an opaque 401 mid-stream,
+    // which surfaces as a generic `status: "error"` with no diagnostic trail.
+    // Reject early here so the consumer sees `config: null` instead.
+    if (
+      !credential ||
+      !credential.apiKey ||
+      credential.apiKey.trim() === "" ||
+      !catalogProvider?.npm
+    ) {
       return { config: null, isLoading, error };
     }
 

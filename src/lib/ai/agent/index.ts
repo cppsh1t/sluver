@@ -12,5 +12,6 @@ export { addTool, testTools, timeTool } from "./tools";
 export {
   useConversation,
   type ConversationStatus,
+  type SendMessageResult,
   type UseConversationResult,
 } from "./use-conversation";
