@@ -1,27 +1,31 @@
 /**
- * AI provider factory module — "抹平 @ai-sdk/* 库依赖差异".
+ * AI module barrel — provider resolution + agent loop.
  *
- * Barrel export for the provider factory layer. See individual module
- * docstrings for details:
- *  - {@link "./provider-factory"} — `createLanguageModel()` + types + auto-discovery
- *  - {@link "./provider-modules"} — installed package map (synced with package.json)
- *  - {@link "./model-id"} — composite `"{providerId}/{modelId}"` utilities
+ * - {@link ./provider} — `ResolvedModelConfig → LanguageModel` (provider 抹平层)
+ * - {@link ./agent} — `ToolLoopAgent` factory + `useConversation` hook (循环层)
  *
  * ## Quick start
  *
  * ```ts
- * import { createLanguageModel } from "@/lib/ai";
- * import { generateText } from "ai";
+ * import { createAgent } from "@/lib/ai";
+ * import { useResolvedModelConfig } from "@/hooks/use-ai";
  *
- * const model = createLanguageModel(config);
- * const { text } = await generateText({ model, prompt: "Hello" });
+ * const { config } = useResolvedModelConfig(spaceId, "writer");
+ * if (!config) return;
+ * const agent = createAgent(config, { instructions: "You are a novelist." });
  * ```
  */
 
-export { composeModelId, parseModelId } from "./model-id";
 export {
+  composeModelId,
   createLanguageModel,
+  parseModelId,
   ProviderFactoryError,
+  PROVIDER_MODULES,
   type ResolvedModelConfig,
-} from "./provider-factory";
-export { PROVIDER_MODULES } from "./provider-modules";
+} from "./provider";
+export {
+  createAgent,
+  testTools,
+  useConversation,
+} from "./agent";

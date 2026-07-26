@@ -20,6 +20,7 @@ Tauri v2 desktop app for **worldbuilding & novel writing**. React 19 + TypeScrip
   - [ADR-0014](./docs/adr/0014-logging-tracing-stack.md) — Logging uses `tracing` stack + custom frontend bridge (not `tauri-plugin-log`)
   - [ADR-0015](./docs/adr/0015-unified-log-file-with-export-filter.md) — Unified log file with export-time Space filtering (not per-Space files)
   - [ADR-0016](./docs/adr/0016-snake-case-log-fields-across-stack.md) — `snake_case` log field names across Rust and TypeScript
+  - [ADR-0017](./docs/adr/0017-frontend-agent-loop.md) — Frontend agent loop with ToolLoopAgent + custom `useConversation` hook + UIMessage (no Rust loop, no `useChat`, no two-layer custom messages)
 
 ## Git commit style
 
