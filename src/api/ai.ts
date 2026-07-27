@@ -1,7 +1,7 @@
 /**
  * AI Config IPC API.
  *
- * Space-scoped provider credentials + agent model bindings (ADR-0012), plus
+ * Space-scoped provider credentials + agent config model bindings (ADR-0012), plus
  * the global models.dev catalog. All Space-scoped commands take `spaceId`
  * first, matching the convention used by the Space/World command surfaces.
  *
@@ -9,7 +9,7 @@
  * model accepts this because the Space is already behind an argon2id gate.
  */
 
-import type { Agent, ModelsDevCatalog, ProviderCredential } from "@/types";
+import type { AgentConfig, ModelsDevCatalog, ProviderCredential } from "@/types";
 import { call } from "./client";
 
 // ─── Provider credentials (Space-scoped) ────────────────────────────────────
@@ -35,28 +35,28 @@ export function setProviderCredential(
 
 /**
  * Delete a provider credential by its row id. Server-side this also cascades:
- * any agent whose `modelId` starts with `"{providerId}/"` is cleared.
+ * any agent config whose `modelId` starts with `"{providerId}/"` is cleared.
  */
 export function deleteProviderCredential(spaceId: string, id: string): Promise<void> {
   return call<void>("delete_provider_credential", { spaceId, id });
 }
 
-// ─── Agents (Space-scoped, read + update model only) ────────────────────────
+// ─── Agent configs (Space-scoped, read + update model only) ─────────────────
 
-export function listAgents(spaceId: string): Promise<Agent[]> {
-  return call<Agent[]>("list_agents", { spaceId });
+export function listAgentConfigs(spaceId: string): Promise<AgentConfig[]> {
+  return call<AgentConfig[]>("list_agent_configs", { spaceId });
 }
 
 /**
- * Bind (or clear) an agent's model. Pass `null` to unset.
- * Returns the updated agent.
+ * Bind (or clear) an agent config's model. Pass `null` to unset.
+ * Returns the updated agent config.
  */
-export function updateAgentModel(
+export function updateAgentConfigModel(
   spaceId: string,
   id: string,
   modelId: string | null,
-): Promise<Agent> {
-  return call<Agent>("update_agent_model", { spaceId, id, modelId });
+): Promise<AgentConfig> {
+  return call<AgentConfig>("update_agent_config_model", { spaceId, id, modelId });
 }
 
 // ─── Models.dev catalog (global, not Space-scoped) ──────────────────────────

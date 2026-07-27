@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/select";
 
 /**
- * The cascading provider → model selector used by the agent model picker.
+ * The cascading provider → model selector used by the agent config model picker.
  *
  * The provider list is pre-filtered to only those with a configured API key
  * (passed in via `availableProviderIds`). When a provider is selected, the
@@ -78,13 +78,13 @@ export function ModelCascadingSelect({
           className="w-36"
           disabled={disabled || !hasProviders}
         >
-          <SelectValue placeholder={t("ai:agents.providerPlaceholder")} />
+          <SelectValue placeholder={t("ai:agentConfigs.providerPlaceholder")} />
         </SelectTrigger>
         <SelectContent>
           <SelectList>
             {/* Explicit "None" item so the user can clear a selection. */}
             <SelectItem value={null}>
-              <SelectItemText>{t("ai:agents.nonePlaceholder")}</SelectItemText>
+              <SelectItemText>{t("ai:agentConfigs.nonePlaceholder")}</SelectItemText>
             </SelectItem>
             {providerOptions.map((p) => (
               <SelectItem key={p.id} value={p.id}>
@@ -106,13 +106,13 @@ export function ModelCascadingSelect({
           className="w-44"
           disabled={disabled || !hasProviders || !activeProvider}
         >
-          <SelectValue placeholder={t("ai:agents.modelPlaceholder")} />
+          <SelectValue placeholder={t("ai:agentConfigs.modelPlaceholder")} />
         </SelectTrigger>
         <SelectContent>
           {activeProvider && (
             <SelectList>
               <SelectItem value={null}>
-                <SelectItemText>{t("ai:agents.nonePlaceholder")}</SelectItemText>
+                <SelectItemText>{t("ai:agentConfigs.nonePlaceholder")}</SelectItemText>
               </SelectItem>
               {activeProvider.models.map((m) => (
                 <SelectItem key={m.id} value={m.id}>

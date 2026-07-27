@@ -24,7 +24,7 @@
  *
  * const model = createLanguageModel({
  *   npmPackage: "@ai-sdk/anthropic",   // from catalog's `npm` field
- *   modelId: "claude-sonnet-5",        // from agent's bound model
+ *   modelId: "claude-sonnet-5",        // from agent config's bound model
  *   apiKey: storedApiKey,              // from provider_credentials
  * });
  *
@@ -46,9 +46,10 @@ import { PROVIDER_MODULES } from "./provider-modules";
 
 /**
  * Everything needed to create a `LanguageModel`, resolved from the catalog
- * (`npmPackage`), the agent (`modelId`), and `provider_credentials` (`apiKey`).
+ * (`npmPackage`), the agent config (`modelId`), and `provider_credentials`
+ * (`apiKey`).
  *
- * Use {@link parseModelId} to split an agent's composite modelId
+ * Use {@link parseModelId} to split an agent config's composite modelId
  * (`"anthropic/claude-sonnet-5"`) into provider + model parts.
  */
 export interface ResolvedModelConfig {

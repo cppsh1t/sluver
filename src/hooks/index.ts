@@ -90,9 +90,9 @@ export {
   useProviderCredentials,
   useSetProviderCredential,
   useDeleteProviderCredential,
-  useAgents,
-  useUpdateAgentModel,
+  useAgentConfigs,
+  useUpdateAgentConfigModel,
   useModelsDevCatalog,
   useRefreshModelsDevCatalog,
   useResolvedModelConfig,
-} from "./use-ai";
+} from "./use-ai-config";

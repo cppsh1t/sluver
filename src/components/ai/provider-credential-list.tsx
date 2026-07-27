@@ -8,7 +8,7 @@ import i18n from "@/i18n";
 import { translateError } from "@/i18n/errors";
 import { toErrorPayload } from "@/api/client";
 import { useDeleteProviderCredential } from "@/hooks";
-import type { Agent, CatalogProvider, ProviderCredential } from "@/types";
+import type { AgentConfig, CatalogProvider, ProviderCredential } from "@/types";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -43,21 +43,22 @@ function providerName(
 /**
  * List of configured provider credentials with delete affordances.
  *
- * Deleting a provider cascades server-side: any agent whose `modelId` starts
- * with `"{providerId}/"` gets cleared. We compute the affected agent list
- * client-side from the current agent cache and show it in the confirm dialog
- * before the IPC call, so the user knows exactly what they're about to lose.
+ * Deleting a provider cascades server-side: any agent config whose `modelId`
+ * starts with `"{providerId}/"` gets cleared. We compute the affected agent
+ * config list client-side from the current agent config cache and show it in
+ * the confirm dialog before the IPC call, so the user knows exactly what
+ * they're about to lose.
  */
 export function ProviderCredentialList({
   spaceId,
   credentials,
   catalogProviders,
-  agents,
+  agentConfigs,
 }: {
   spaceId: Parameters<typeof useDeleteProviderCredential>[0];
   credentials: ProviderCredential[];
   catalogProviders: CatalogProvider[];
-  agents: Agent[];
+  agentConfigs: AgentConfig[];
 }) {
   const { t } = useTranslation(["ai", "common"]);
   const deleteMut = useDeleteProviderCredential(spaceId);
@@ -102,12 +103,12 @@ export function ProviderCredentialList({
     );
   }
 
-  // Agents affected by deleting `pendingDelete` — computed here so the
+  // Agent configs affected by deleting `pendingDelete` — computed here so the
   // confirmation dialog can list them.
-  const affectedAgents = pendingDelete
-    ? agents.filter(
-        (a) =>
-          a.modelId?.startsWith(`${pendingDelete.providerId}/`),
+  const affectedAgentConfigs = pendingDelete
+    ? agentConfigs.filter(
+        (ac) =>
+          ac.modelId?.startsWith(`${pendingDelete.providerId}/`),
       )
     : [];
 
@@ -176,16 +177,16 @@ export function ProviderCredentialList({
             </AlertDialogDescription>
           </AlertDialogHeader>
 
-          {affectedAgents.length > 0 && (
+          {affectedAgentConfigs.length > 0 && (
             <div className={cn("flex flex-col gap-1")}>
               <p className="text-xs/relaxed text-muted-foreground">
                 {t("ai:providers.delete.cascadeWarning")}
               </p>
               <ul className="ml-4 flex list-disc flex-col gap-0.5 text-xs/relaxed text-muted-foreground">
-                {affectedAgents.map((a) => (
-                  <li key={a.id}>
-                    {t(`ai:agents.name.${a.name}`, {
-                      defaultValue: a.name,
+                {affectedAgentConfigs.map((ac) => (
+                  <li key={ac.id}>
+                    {t(`ai:agentConfigs.name.${ac.name}`, {
+                      defaultValue: ac.name,
                     })}
                   </li>
                 ))}

@@ -1,4 +1,4 @@
-pub mod agent;
+pub mod agent_config;
 pub mod catalog;
 pub mod character;
 pub mod setting;

@@ -4,7 +4,7 @@ Tauri v2 desktop app for **worldbuilding & novel writing**. React 19 + TypeScrip
 
 ## Project Documentation
 
-- **[CONTEXT.md](./CONTEXT.md)** — Domain glossary. Single source of truth for ubiquitous language (World, Character, Phase, CharacterRef, Event, Location, Item, Lore, Novel, Chapter, Scene, Agent) plus cross-cutting conventions (name uniqueness, World isolation, position uniqueness).
+- **[CONTEXT.md](./CONTEXT.md)** — Domain glossary. Single source of truth for ubiquitous language (World, Character, Phase, CharacterRef, Event, Location, Item, Lore, Novel, Chapter, Scene, AgentConfig) plus cross-cutting conventions (name uniqueness, World isolation, position uniqueness).
 - **[docs/adr/](./docs/adr/)** — Architecture Decision Records. Read before questioning "why is X like this?":
   - [ADR-0001](./docs/adr/0001-two-database-design.md) — Two-database design (meta.db + per-World files)
   - [ADR-0002](./docs/adr/0002-character-ref-composite-pk.md) — CharacterRef composite PK includes phase_id
@@ -20,37 +20,36 @@ Tauri v2 desktop app for **worldbuilding & novel writing**. React 19 + TypeScrip
   - [ADR-0014](./docs/adr/0014-logging-tracing-stack.md) — Logging uses `tracing` stack + custom frontend bridge (not `tauri-plugin-log`)
   - [ADR-0015](./docs/adr/0015-unified-log-file-with-export-filter.md) — Unified log file with export-time Space filtering (not per-Space files)
   - [ADR-0016](./docs/adr/0016-snake-case-log-fields-across-stack.md) — `snake_case` log field names across Rust and TypeScript
-  - [ADR-0017](./docs/adr/0017-frontend-agent-loop.md) — Frontend agent loop with ToolLoopAgent + custom `useConversation` hook + UIMessage (no Rust loop, no `useChat`, no two-layer custom messages)
 
 ## Git commit style
 
 Conventional Commits: `type(scope): description`
 
-| Type | Usage |
-|---|---|
-| `feat` | New feature |
-| `fix` | Bug fix |
+| Type       | Usage                                   |
+| ---------- | --------------------------------------- |
+| `feat`     | New feature                             |
+| `fix`      | Bug fix                                 |
 | `refactor` | Code restructuring (no behavior change) |
-| `chore` | Tooling, config, deps, misc |
-| `docs` | Documentation |
-| `style` | Formatting, whitespace |
-| `ci` | CI/CD |
-| `test` | Tests |
-| `perf` | Performance |
+| `chore`    | Tooling, config, deps, misc             |
+| `docs`     | Documentation                           |
+| `style`    | Formatting, whitespace                  |
+| `ci`       | CI/CD                                   |
+| `test`     | Tests                                   |
+| `perf`     | Performance                             |
 
 Scope is optional but encouraged for clarity (e.g. `feat(tauri):`, `fix(ui):`, `chore(deps):`). All lowercase.
 
 ## Commands
 
-| Command | Purpose |
-|---|---|
-| `pnpm tauri dev` | Full app dev (Vite + Rust backend). Dev server on **port 1420** (strict). HMR on port 1421. |
-| `pnpm tauri build` | Production build (frontend + native binary). Runs `pnpm build` internally. |
-| `pnpm build` | Frontend-only build (`tsc && vite build`). Output to `dist/`. |
-| `pnpm dev` | Vite dev server only (no Rust backend). For frontend-only work. |
-| `pnpm type-check` | `tsc --noEmit`. Fast type validation. |
-| `pnpm lint` | oxlint (not eslint). Runs from repo root; ignores `dist/`, `src-tauri/`, `node_modules/`. |
-| `pnpm lint:fix` | oxlint with auto-fix. |
+| Command            | Purpose                                                                                     |
+| ------------------ | ------------------------------------------------------------------------------------------- |
+| `pnpm tauri dev`   | Full app dev (Vite + Rust backend). Dev server on **port 1420** (strict). HMR on port 1421. |
+| `pnpm tauri build` | Production build (frontend + native binary). Runs `pnpm build` internally.                  |
+| `pnpm build`       | Frontend-only build (`tsc && vite build`). Output to `dist/`.                               |
+| `pnpm dev`         | Vite dev server only (no Rust backend). For frontend-only work.                             |
+| `pnpm type-check`  | `tsc --noEmit`. Fast type validation.                                                       |
+| `pnpm lint`        | oxlint (not eslint). Runs from repo root; ignores `dist/`, `src-tauri/`, `node_modules/`.   |
+| `pnpm lint:fix`    | oxlint with auto-fix.                                                                       |
 
 ## Architecture
 
@@ -77,6 +76,7 @@ models/         # One file per entity: structs with #[serde(rename_all = "camelC
 ```
 
 **Command conventions:**
+
 - Signature: `fn create_x(world_id: String, input: CreateXInput, state: State<'_, DbManager>) -> Result<X, DbError>`. World-scoped commands take `world_id` first; world/config commands use `with_meta()` directly.
 - Updates are **full replacement** (not PATCH). Check `rows_affected == 0` → `NotFound`. Read back the entity after mutation.
 - Junction refs (Event `character_refs`, Scene `character_refs`/`item_ids`/`event_ids`) = delete-all + re-insert in a transaction.
@@ -84,6 +84,7 @@ models/         # One file per entity: structs with #[serde(rename_all = "camelC
 - `commands/element.rs` uses a `load_element!` macro — Location/Item/Lore share identical schema.
 
 **Rust gotchas:**
+
 - `Vec<String>` fields (`tags`, `aliases`) are stored as **JSON TEXT** in SQLite, deserialized via `serde_json::from_str().unwrap_or_default()`.
 - All connections enable `foreign_keys = ON` + `journal_mode = WAL`.
 - All IDs are **UUID v7** (time-sortable). No sequential IDs anywhere.
@@ -107,6 +108,7 @@ lib/utils.ts        # cn() = clsx + tailwind-merge
 ```
 
 **Frontend patterns:**
+
 - `types/element.ts` defines `elementBaseSchema` shared by Location/Item/Lore; each extends it with a branded ID.
 - App.tsx is boilerplate calling `invoke("greet")` — a command no longer registered in `lib.rs`. The real API surface lives in `src/api/` + `src/types/`. When building UI, import from `@/api` and `@/types`, do not extend App.tsx's demo code.
 - No router, no state management library, no `hooks/` dir, no tests yet.
@@ -126,12 +128,12 @@ lib/utils.ts        # cn() = clsx + tailwind-merge
 
 **Locale files** — `src/i18n/locales/{zh-CN,en}/{namespace}.json`:
 
-| Namespace | Use for |
-|---|---|
-| `common` | Shared UI atoms (actions.cancel/save/delete, nav labels, shared empty states) |
-| `world` | World hub page, world card, create/edit dialogs, world toasts |
-| `settings` | Settings page (theme/color/language options + toasts) |
-| `errors` | Error code translations + entity name map (Character→角色, Location→地点, etc.) |
+| Namespace  | Use for                                                                         |
+| ---------- | ------------------------------------------------------------------------------- |
+| `common`   | Shared UI atoms (actions.cancel/save/delete, nav labels, shared empty states)   |
+| `world`    | World hub page, world card, create/edit dialogs, world toasts                   |
+| `settings` | Settings page (theme/color/language options + toasts)                           |
+| `errors`   | Error code translations + entity name map (Character→角色, Location→地点, etc.) |
 
 Add a namespace when a new domain (e.g. `novel`, `character`) accumulates enough strings. Add a locale by creating a new `{locale}/` folder with all namespace JSONs AND appending the code to `SUPPORTED_LOCALES` in `src/i18n/index.ts`.
 
@@ -167,6 +169,7 @@ function MyComponent() {
 When adding a new `DbError` variant: if it's a business error, give it a stable code in `to_payload()` and add the translation key to BOTH `errors.json` files. If it's infrastructure, leave it as `INTERNAL_ERROR`.
 
 **Locale resolution chain** (at bootstrap in `src/main.tsx`, runs BEFORE React renders — no flash of fallback language):
+
 1. `AppConfig.locale` from `meta.db` (`"auto"` = follow OS, otherwise a BCP-47 tag)
 2. `@tauri-apps/plugin-os` `locale()` — respects Windows system language (unlike `navigator.language` which is hardcoded by Chromium WebView2, see tauri#2735)
 3. `"en"` fallback
@@ -176,6 +179,7 @@ When adding a new `DbError` variant: if it's a business error, give it a stable 
 **Language switching at runtime** — `i18n.changeLanguage(lng)` + `setDayjsLocale(lng)` (from `@/lib/format`) MUST be called together so dayjs relative times follow. See `handleChangeLanguage` in `src/routes/settings.tsx` for the optimistic-update-with-rollback pattern.
 
 **Adding a new user-facing string (checklist):**
+
 1. Pick the namespace + design a key path (e.g. `novel:editor.wordCount`).
 2. Add the key to BOTH `src/i18n/locales/zh-CN/{ns}.json` AND `src/i18n/locales/en/{ns}.json`. Missing either side → fallback shown to users.
 3. In the component: `const { t } = useTranslation(["{ns}", "common"]);` then `t("{ns}:your.key")`.
@@ -187,14 +191,14 @@ When adding a new `DbError` variant: if it's a business error, give it a stable 
 
 **Module map:**
 
-| Path | Role |
-|---|---|
-| `src-tauri/src/logging.rs` | Subscriber init, panic hook, retention cleanup, `LoggingState` (owns the `WorkerGuard` + `ReloadHandle`), canonical `tier_to_filter` mapping, `DEFAULT_FILTER` const |
-| `src-tauri/src/commands/diagnostics.rs` | 5 IPC commands: `frontend_log` (bridge ingress), `get_log_level` / `set_log_level` (persist + reload + emit `log-level-changed`), `get_logs_dir`, `export_logs` (zip + README), `clear_logs` |
-| `src-tauri/src/lib.rs` | `setup()` calls `logging::init` BEFORE `DbManager::new` (so db open + migration events get captured); `reapply_persisted_log_level` runs AFTER both are managed to restore the saved tier on startup |
-| `src/lib/logger/{index,bridge,buffer,level,window-label}.ts` | Frontend logger singleton. Buffer holds entries that arrive before IPC is ready; flushed from `main.tsx` bootstrap. Level state mirrors Rust via the `log-level-changed` Tauri event |
-| `src/api/diagnostics.ts` | Typed IPC wrappers (`getLogLevel` / `setLogLevel` / `getLogsDir` / `exportLogs` / `clearLogs` + `dateRange` constructors + `VerbosityTier` / `DateRange` types) |
-| `src/components/error-boundary.tsx` | Root-level React ErrorBoundary; fallback UI has Reload + Export-logs buttons + 8-char `error_id` for support correlation |
+| Path                                                         | Role                                                                                                                                                                                                 |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src-tauri/src/logging.rs`                                   | Subscriber init, panic hook, retention cleanup, `LoggingState` (owns the `WorkerGuard` + `ReloadHandle`), canonical `tier_to_filter` mapping, `DEFAULT_FILTER` const                                 |
+| `src-tauri/src/commands/diagnostics.rs`                      | 5 IPC commands: `frontend_log` (bridge ingress), `get_log_level` / `set_log_level` (persist + reload + emit `log-level-changed`), `get_logs_dir`, `export_logs` (zip + README), `clear_logs`         |
+| `src-tauri/src/lib.rs`                                       | `setup()` calls `logging::init` BEFORE `DbManager::new` (so db open + migration events get captured); `reapply_persisted_log_level` runs AFTER both are managed to restore the saved tier on startup |
+| `src/lib/logger/{index,bridge,buffer,level,window-label}.ts` | Frontend logger singleton. Buffer holds entries that arrive before IPC is ready; flushed from `main.tsx` bootstrap. Level state mirrors Rust via the `log-level-changed` Tauri event                 |
+| `src/api/diagnostics.ts`                                     | Typed IPC wrappers (`getLogLevel` / `setLogLevel` / `getLogsDir` / `exportLogs` / `clearLogs` + `dateRange` constructors + `VerbosityTier` / `DateRange` types)                                      |
+| `src/components/error-boundary.tsx`                          | Root-level React ErrorBoundary; fallback UI has Reload + Export-logs buttons + 8-char `error_id` for support correlation                                                                             |
 
 #### Field naming convention (CRITICAL — ADR-0016)
 
@@ -204,23 +208,23 @@ When adding a new `DbError` variant: if it's a business error, give it a stable 
 
 Strict metadata-only logging by default. Three tiers:
 
-| Tier | Examples | Rule |
-|---|---|---|
-| ✅ Always safe | command name, entity type/id, latency, error code+args (DbError args already use snake_case), `space_id`/`world_id`/`window_label`, counts ("updated 3 character refs") | Default INFO/DEBUG |
-| ⚠️ TRACE only (off by default) | entity `name`/`title` (creative work names may be sensitive), AI prompt length / response length / token counts / response first-80-chars | Must explicitly enable via Settings → Diagnostics → "Very verbose" or `RUST_LOG=sluver=trace` |
-| ❌ NEVER log | `Scene.content`, `Chapter.summary`, `Character.appearance`/`changes`, `Location/Item/Lore/Event` descriptions, AI prompt/response **full text**, API keys (plaintext per ADR-0013), Space password / argon2 hash, full filesystem paths (redact to `<app_data>/spaces/{id}/`) | Any level |
+| Tier                           | Examples                                                                                                                                                                                                                                                                      | Rule                                                                                          |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| ✅ Always safe                 | command name, entity type/id, latency, error code+args (DbError args already use snake_case), `space_id`/`world_id`/`window_label`, counts ("updated 3 character refs")                                                                                                       | Default INFO/DEBUG                                                                            |
+| ⚠️ TRACE only (off by default) | entity `name`/`title` (creative work names may be sensitive), AI prompt length / response length / token counts / response first-80-chars                                                                                                                                     | Must explicitly enable via Settings → Diagnostics → "Very verbose" or `RUST_LOG=sluver=trace` |
+| ❌ NEVER log                   | `Scene.content`, `Chapter.summary`, `Character.appearance`/`changes`, `Location/Item/Lore/Event` descriptions, AI prompt/response **full text**, API keys (plaintext per ADR-0013), Space password / argon2 hash, full filesystem paths (redact to `<app_data>/spaces/{id}/`) | Any level                                                                                     |
 
 The `Secret<T>` wrapper pattern (auto-redacting `Debug`/`Display`) is reserved for future use — current enforcement is via `#[tracing::instrument(skip(...))]` on the Rust side and code review on the TS side.
 
 #### Level taxonomy
 
-| Level | Use for | Examples |
-|---|---|---|
-| **ERROR** | Panics, render crashes, unhandled rejections, security-adjacent failures (e.g. `spaces-locked` listener setup), bootstrap failures | `panic captured`, `react.render_crash`, `window.unhandledrejection`, `bootstrap.failed` |
-| **WARN** | Business errors returned from commands (`NotFound`, `DuplicateName`), best-effort fire-and-forget failures (tray locale, catalog warm), retryable AI failures (future) | `db.entity.not_found`, `bootstrap.set_tray_locale.failed` |
-| **INFO** | App lifecycle (startup, version/OS), window created/destroyed/hidden, db open/close/migrate, tray menu refresh, Space unlock/lock, log-level change | `sluver starting`, `opened space.db`, `log level changed` |
-| **DEBUG** | Tauri command entry/exit (auto via `#[tracing::instrument]`), DbManager connection acquisition, frontend console forwarding | All `#[tracing::instrument]` spans |
-| **TRACE** | Entity name/title, AI prompt/response length + first-80-chars (future), window event micro-details | Off by default — requires explicit `RUST_LOG` or "Very verbose" tier |
+| Level     | Use for                                                                                                                                                                | Examples                                                                                |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| **ERROR** | Panics, render crashes, unhandled rejections, security-adjacent failures (e.g. `spaces-locked` listener setup), bootstrap failures                                     | `panic captured`, `react.render_crash`, `window.unhandledrejection`, `bootstrap.failed` |
+| **WARN**  | Business errors returned from commands (`NotFound`, `DuplicateName`), best-effort fire-and-forget failures (tray locale, catalog warm), retryable AI failures (future) | `db.entity.not_found`, `bootstrap.set_tray_locale.failed`                               |
+| **INFO**  | App lifecycle (startup, version/OS), window created/destroyed/hidden, db open/close/migrate, tray menu refresh, Space unlock/lock, log-level change                    | `sluver starting`, `opened space.db`, `log level changed`                               |
+| **DEBUG** | Tauri command entry/exit (auto via `#[tracing::instrument]`), DbManager connection acquisition, frontend console forwarding                                            | All `#[tracing::instrument]` spans                                                      |
+| **TRACE** | Entity name/title, AI prompt/response length + first-80-chars (future), window event micro-details                                                                     | Off by default — requires explicit `RUST_LOG` or "Very verbose" tier                    |
 
 #### Frontend usage
 
@@ -229,7 +233,10 @@ import { logger } from "@/lib/logger";
 
 // ✅ Correct: snake_case fields, message is a stable greppable string
 logger.info("character saved", { character_id: id, world_id: wid });
-logger.warn("ai.streaming.interrupted", { tokens_received: 42, latency_ms: 820 });
+logger.warn("ai.streaming.interrupted", {
+  tokens_received: 42,
+  latency_ms: 820,
+});
 
 // ❌ WRONG — camelCase fields violate ADR-0016
 logger.info("character saved", { characterId: id, worldId: wid });
@@ -283,11 +290,11 @@ For **lifecycle events not tied to a command**, emit explicit `tracing::info!` /
 
 The Settings Diagnostics panel exposes 3 abstract tiers (writers don't want to see `info,sluver=debug`). The canonical mapping lives in `src-tauri/src/logging.rs::tier_to_filter` — single source of truth used by both `set_log_level` (user change) and `reapply_persisted_log_level` (startup restore).
 
-| Tier label (UI) | Rust `EnvFilter` | Frontend `LogLevel` threshold |
-|---|---|---|
-| Standard | `info,sluver=debug` | `info` |
-| Verbose | `debug` | `debug` |
-| Very verbose | `trace,rusqlite=warn,reqwest=warn,hyper=warn,h2=warn` | `trace` |
+| Tier label (UI) | Rust `EnvFilter`                                      | Frontend `LogLevel` threshold |
+| --------------- | ----------------------------------------------------- | ----------------------------- |
+| Standard        | `info,sluver=debug`                                   | `info`                        |
+| Verbose         | `debug`                                               | `debug`                       |
+| Very verbose    | `trace,rusqlite=warn,reqwest=warn,hyper=warn,h2=warn` | `trace`                       |
 
 `RUST_LOG` env var always overrides the persisted tier at startup (`EnvFilter::try_from_default_env` runs first). Use this for ad-hoc per-module debugging: `RUST_LOG=sluver::commands::ai=trace pnpm tauri dev`.
 
@@ -315,15 +322,16 @@ The Settings Diagnostics panel exposes 3 abstract tiers (writers don't want to s
 
 Project skills live in `.opencode/skills/`. **Agents MUST assess the current task and auto-load the relevant skill** via `load_skills=[...]` (for `task()`) or the `skill` tool — do not wait to be told which skill to use.
 
-| Skill | Applies when | Notes |
-|---|---|---|
-| `shadcn` | Adding / searching / fixing / composing shadcn/ui components; touching `components.json`, presets, `--preset` codes | This project uses `base-mira` style (`@base-ui/react`, NOT Radix). Load for any `components/ui/` work. |
-| `frontend-design` | Building new UI, reshaping existing UI, making aesthetic / visual decisions (palette, typography, layout, motion) | Drives distinctive, opinionated design choices; avoids AI-templated defaults. Load alongside `shadcn` for page/feature-level UI. |
-| `vercel-ai-sdk` | Adding AI features (text generation, streaming, tool calling, agents, chat UI, embeddings); questions about the `ai` / `@ai-sdk/*` packages | Novel-writing app may integrate AI assistance. Load for anything AI-related. |
-| `skill-creator` | Designing, structuring, or packaging a new AgentSkill | Meta-tool. Load only when authoring/editing a skill. |
-| `skill-lookup` | Discovering, retrieving, or installing skills | Meta-tool. Load only when searching for / installing skills. |
+| Skill             | Applies when                                                                                                                                | Notes                                                                                                                            |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `shadcn`          | Adding / searching / fixing / composing shadcn/ui components; touching `components.json`, presets, `--preset` codes                         | This project uses `base-mira` style (`@base-ui/react`, NOT Radix). Load for any `components/ui/` work.                           |
+| `frontend-design` | Building new UI, reshaping existing UI, making aesthetic / visual decisions (palette, typography, layout, motion)                           | Drives distinctive, opinionated design choices; avoids AI-templated defaults. Load alongside `shadcn` for page/feature-level UI. |
+| `vercel-ai-sdk`   | Adding AI features (text generation, streaming, tool calling, agents, chat UI, embeddings); questions about the `ai` / `@ai-sdk/*` packages | Novel-writing app may integrate AI assistance. Load for anything AI-related.                                                     |
+| `skill-creator`   | Designing, structuring, or packaging a new AgentSkill                                                                                       | Meta-tool. Load only when authoring/editing a skill.                                                                             |
+| `skill-lookup`    | Discovering, retrieving, or installing skills                                                                                               | Meta-tool. Load only when searching for / installing skills.                                                                     |
 
 **Auto-load rules (judge by task, then act):**
+
 - Frontend / component work → always load `shadcn`; add `frontend-design` when visual design decisions are involved.
 - AI feature work → always load `vercel-ai-sdk`.
 - Skill authoring / installation → load `skill-creator` / `skill-lookup` respectively.
@@ -340,6 +348,7 @@ Project skills live in `.opencode/skills/`. **Agents MUST assess the current tas
 ## Verification
 
 Do NOT rely on LSP diagnostics for verification — unreliable. Use commands instead:
+
 - Frontend: `pnpm type-check`
 - Backend: `cargo check` (run from `src-tauri/`); `cargo clippy` for linting.
 
@@ -357,12 +366,12 @@ This applies to ALL agents and subagents (librarian, explore, oracle, task categ
 
 #### What to do INSTEAD:
 
-| ❌ Forbidden (rabbit hole) | ✅ Use instead (targeted) |
-|---|---|
+| ❌ Forbidden (rabbit hole)                         | ✅ Use instead (targeted)                                                       |
+| -------------------------------------------------- | ------------------------------------------------------------------------------- |
 | `git clone https://github.com/x/y` then read files | GitHub **code search API** (e.g. `grep_app_searchGitHub`) for specific snippets |
-| Clone a repo to "understand its schema" | Read **docs / README / published DDL** via `webfetch` / `websearch` |
-| Clone to find usage examples | `context7_query-docs` for official library docs |
-| Spawning subagent that clones repos | Direct `grep`/`glob` on **our own** codebase only |
+| Clone a repo to "understand its schema"            | Read **docs / README / published DDL** via `webfetch` / `websearch`             |
+| Clone to find usage examples                       | `context7_query-docs` for official library docs                                 |
+| Spawning subagent that clones repos                | Direct `grep`/`glob` on **our own** codebase only                               |
 
 #### If you (any agent) feel the urge to clone a repo:
 

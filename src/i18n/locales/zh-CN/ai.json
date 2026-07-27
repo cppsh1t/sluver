@@ -29,7 +29,7 @@
       "deleteFailed": "删除凭证失败"
     }
   },
-  "agents": {
+  "agentConfigs": {
     "title": "Agent 模型",
     "description": "为每个 Agent 选择模型。仅显示已配置密钥的服务商。",
     "providerPlaceholder": "选择服务商",

@@ -4,11 +4,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   deleteProviderCredential,
   getModelsDevCatalog,
-  listAgents,
+  listAgentConfigs,
   listProviderCredentials,
   refreshModelsDevCatalog,
   setProviderCredential,
-  updateAgentModel,
+  updateAgentConfigModel,
 } from "@/api";
 import { parseModelId, type ResolvedModelConfig } from "@/lib/ai";
 import type { ProviderCredentialId, SpaceId } from "@/types";
@@ -26,9 +26,9 @@ import type { ProviderCredentialId, SpaceId } from "@/types";
  * so cache invalidation can be scoped precisely. The catalog is global — it
  * has no `spaceId` dimension.
  */
-export const aiKeys = {
+export const aiConfigKeys = {
   providers: (spaceId: SpaceId) => ["ai", "providers", spaceId] as const,
-  agents: (spaceId: SpaceId) => ["ai", "agents", spaceId] as const,
+  agentConfigs: (spaceId: SpaceId) => ["ai", "agentConfigs", spaceId] as const,
   catalog: () => ["ai", "catalog"] as const,
 };
 
@@ -36,7 +36,7 @@ export const aiKeys = {
 
 export const useProviderCredentials = (spaceId: SpaceId) =>
   useQuery({
-    queryKey: aiKeys.providers(spaceId),
+    queryKey: aiConfigKeys.providers(spaceId),
     queryFn: () => listProviderCredentials(spaceId),
     enabled: !!spaceId,
   });
@@ -51,7 +51,7 @@ export const useSetProviderCredential = (spaceId: SpaceId) => {
       providerId: string;
       apiKey: string;
     }) => setProviderCredential(spaceId, providerId, apiKey),
-    onSuccess: () => qc.invalidateQueries({ queryKey: aiKeys.providers(spaceId) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: aiConfigKeys.providers(spaceId) }),
   });
 };
 
@@ -62,24 +62,24 @@ export const useDeleteProviderCredential = (spaceId: SpaceId) => {
       deleteProviderCredential(spaceId, id),
     onSuccess: () => {
       // Deleting a provider cascades server-side: agents bound to that
-      // provider's models get their `modelId` cleared, so the agent cache
-      // must be refreshed alongside the provider list.
-      qc.invalidateQueries({ queryKey: aiKeys.providers(spaceId) });
-      qc.invalidateQueries({ queryKey: aiKeys.agents(spaceId) });
+      // provider's models get their `modelId` cleared, so the agent config
+      // cache must be refreshed alongside the provider list.
+      qc.invalidateQueries({ queryKey: aiConfigKeys.providers(spaceId) });
+      qc.invalidateQueries({ queryKey: aiConfigKeys.agentConfigs(spaceId) });
     },
   });
 };
 
-// ─── Agents ──────────────────────────────────────────────────────────────────
+// ─── AgentConfigs ───────────────────────────────────────────────────────────
 
-export const useAgents = (spaceId: SpaceId) =>
+export const useAgentConfigs = (spaceId: SpaceId) =>
   useQuery({
-    queryKey: aiKeys.agents(spaceId),
-    queryFn: () => listAgents(spaceId),
+    queryKey: aiConfigKeys.agentConfigs(spaceId),
+    queryFn: () => listAgentConfigs(spaceId),
     enabled: !!spaceId,
   });
 
-export const useUpdateAgentModel = (spaceId: SpaceId) => {
+export const useUpdateAgentConfigModel = (spaceId: SpaceId) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({
@@ -88,8 +88,8 @@ export const useUpdateAgentModel = (spaceId: SpaceId) => {
     }: {
       id: string;
       modelId: string | null;
-    }) => updateAgentModel(spaceId, id, modelId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: aiKeys.agents(spaceId) }),
+    }) => updateAgentConfigModel(spaceId, id, modelId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: aiConfigKeys.agentConfigs(spaceId) }),
   });
 };
 
@@ -102,7 +102,7 @@ export const useUpdateAgentModel = (spaceId: SpaceId) => {
  */
 export const useModelsDevCatalog = () =>
   useQuery({
-    queryKey: aiKeys.catalog(),
+    queryKey: aiConfigKeys.catalog(),
     queryFn: getModelsDevCatalog,
     staleTime: Number.POSITIVE_INFINITY,
   });
@@ -111,23 +111,23 @@ export const useRefreshModelsDevCatalog = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: refreshModelsDevCatalog,
-    onSuccess: () => qc.invalidateQueries({ queryKey: aiKeys.catalog() }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: aiConfigKeys.catalog() }),
   });
 };
 
-// ─── Resolved model config (compose agent + credential + catalog) ───────────
+// ─── Resolved model config (compose agent config + credential + catalog) ────
 
 /**
  * Compose everything needed to call `createLanguageModel()` for a specific
- * agent, by joining three data sources:
+ * agent config, by joining three data sources:
  *
- * 1. **Agent** — its `modelId` (`"anthropic/claude-sonnet-5"`) gives us the
+ * 1. **AgentConfig** — its `modelId` (`"anthropic/claude-sonnet-5"`) gives us the
  *    provider id and model id via {@link parseModelId}.
  * 2. **Catalog** — the provider's `npm` field tells us which `@ai-sdk/*`
  *    package to load (e.g. `"@ai-sdk/anthropic"`).
  * 3. **Credential** — the stored `apiKey` for that provider.
  *
- * Returns `config: null` when any piece is missing (agent unbound, no
+ * Returns `config: null` when any piece is missing (agent config unbound, no
  * credential, provider not in catalog). The consumer should guard on `config`
  * before attempting to generate text.
  *
@@ -143,23 +143,23 @@ export const useRefreshModelsDevCatalog = () => {
  */
 export function useResolvedModelConfig(
   spaceId: SpaceId,
-  agentName: string,
+  agentConfigName: string,
 ): {
   config: ResolvedModelConfig | null;
   isLoading: boolean;
   error: Error | null;
 } {
-  const agents = useAgents(spaceId);
+  const agentConfigs = useAgentConfigs(spaceId);
   const credentials = useProviderCredentials(spaceId);
   const catalog = useModelsDevCatalog();
 
   return useMemo(() => {
     const isLoading =
-      agents.isLoading || credentials.isLoading || catalog.isLoading;
-    const error = agents.error ?? credentials.error ?? catalog.error;
+      agentConfigs.isLoading || credentials.isLoading || catalog.isLoading;
+    const error = agentConfigs.error ?? credentials.error ?? catalog.error;
 
-    const agent = agents.data?.find((a) => a.name === agentName);
-    const [providerId, modelId] = parseModelId(agent?.modelId ?? null);
+    const agentConfig = agentConfigs.data?.find((a) => a.name === agentConfigName);
+    const [providerId, modelId] = parseModelId(agentConfig?.modelId ?? null);
 
     if (!providerId || !modelId) {
       return { config: null, isLoading, error };
@@ -195,15 +195,15 @@ export function useResolvedModelConfig(
       error,
     };
   }, [
-    agents.data,
-    agents.isLoading,
-    agents.error,
+    agentConfigs.data,
+    agentConfigs.isLoading,
+    agentConfigs.error,
     credentials.data,
     credentials.isLoading,
     credentials.error,
     catalog.data,
     catalog.isLoading,
     catalog.error,
-    agentName,
+    agentConfigName,
   ]);
 }

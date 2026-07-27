@@ -16,7 +16,7 @@ export { loreIdSchema, type LoreId } from './lore';
 export { eventIdSchema, type EventId } from './event';
 export { novelIdSchema, type NovelId, chapterIdSchema, type ChapterId, sceneIdSchema, type SceneId } from './novel';
 export { spaceIdSchema, type SpaceId } from './space';
-export { providerCredentialIdSchema, type ProviderCredentialId, agentIdSchema, type AgentId } from './ai';
+export { providerCredentialIdSchema, type ProviderCredentialId, agentConfigIdSchema, type AgentConfigId } from './ai';
 
 // ─── Top-level ────────────────────────────────────────────────────────────
 export { worldSchema, type World } from './world';
@@ -39,8 +39,8 @@ export {
   type ProviderCredential,
   setProviderCredentialInputSchema,
   type SetProviderCredentialInput,
-  agentSchema,
-  type Agent,
+  agentConfigSchema,
+  type AgentConfig,
   catalogModelSchema,
   type CatalogModel,
   catalogProviderSchema,

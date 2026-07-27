@@ -125,21 +125,21 @@ pub(crate) fn do_create_space(
         return Err(DbError::Io(e));
     }
 
-    // 4. Seed the two AI agents (ADR-0012): `explorer` + `writer`, each with
-    //    model_id = NULL. `with_space` opens + caches the brand-new
-    //    `space.db` (running SPACE_MIGRATIONS, which creates the `agents`
-    //    table). The cached conn is reused by the frontend's first
-    //    `list_agents` call. The frontend looks these up by `name`, not by
-    //    the random UUID id, so the ids here are throwaway.
+    // 4. Seed the two AI agent configs (ADR-0012): `explorer` + `writer`,
+    //    each with model_id = NULL. `with_space` opens + caches the brand-new
+    //    `space.db` (running SPACE_MIGRATIONS, which creates the
+    //    `agent_configs` table). The cached conn is reused by the frontend's
+    //    first `list_agent_configs` call. The frontend looks these up by
+    //    `name`, not by the random UUID id, so the ids here are throwaway.
     //
     //    On failure, roll back the entire Space (meta row + directory) so we
-    //    don't leave a registered Space with a broken agent table — matching
-    //    the step-3 rollback pattern.
+    //    don't leave a registered Space with a broken agent_configs table —
+    //    matching the step-3 rollback pattern.
     if let Err(seed_err) = mgr.with_space(&id, |conn| {
         for name in ["explorer", "writer"] {
             let aid = new_id();
             conn.execute(
-                "INSERT INTO agents (id, name, model_id, created_at, updated_at)
+                "INSERT INTO agent_configs (id, name, model_id, created_at, updated_at)
                  VALUES (?1, ?2, NULL, ?3, ?3)",
                 params![aid, name, now],
             )?;

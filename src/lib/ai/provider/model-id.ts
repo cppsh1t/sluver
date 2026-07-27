@@ -1,20 +1,20 @@
 /**
  * Composite model-id utilities.
  *
- * Agent `modelId` follows the `"{providerId}/{modelId}"` convention (see
- * CONTEXT.md §Agent), e.g. `"anthropic/claude-sonnet-5"`. These helpers
+ * AgentConfig `modelId` follows the `"{providerId}/{modelId}"` convention (see
+ * CONTEXT.md §AgentConfig), e.g. `"anthropic/claude-sonnet-5"`. These helpers
  * split and rejoin the two parts, handling provider IDs that contain slashes
  * (e.g. `"openrouter/anthropic/claude-3.5-sonnet"` → provider `"openrouter"`,
  * model `"anthropic/claude-3.5-sonnet"`).
  *
- * Extracted from `agent-model-picker.tsx` so both the UI picker and the
+ * Extracted from `agent-config-model-picker.tsx` so both the UI picker and the
  * provider factory share one implementation.
  */
 
 /**
  * Split a composite `"{providerId}/{modelId}"` string into its parts.
  * Returns `[null, null]` when the value is null or doesn't contain a slash,
- * so an unbound or malformed agent renders as "no selection".
+ * so an unbound or malformed agent config renders as "no selection".
  *
  * Only the **first** slash is used as the delimiter — everything after it is
  * the model id, even if it contains additional slashes.

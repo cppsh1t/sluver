@@ -57,7 +57,7 @@ const SPACE_SQL: &str = r#"
     );
 "#;
 
-/// Migration 2 for `space.db`: AI provider credentials + agents tables
+/// Migration 2 for `space.db`: AI provider credentials + agent configs table
 /// (ADR-0012: Space-scoped AI config). Added as a separate migration so
 /// existing `space.db` files (created before this feature) get these tables
 /// via `rusqlite_migration`'s incremental migration tracking — modifying the
@@ -74,11 +74,11 @@ const SPACE_MIGRATION_002: &str = r#"
         updated_at  TEXT NOT NULL
     );
 
-    -- AI agents (ADR-0012). Seeded with 'explorer' + 'writer' on Space
+    -- AI agent configs (ADR-0012). Seeded with 'explorer' + 'writer' on Space
     -- creation. `model_id` is a composite '{provider_id}/{model_id}' or NULL.
-    -- Deleting a provider credential cascades a NULL-out of dependent agents
-    -- (app-layer cascade, see commands::ai::do_delete_provider_credential).
-    CREATE TABLE IF NOT EXISTS agents (
+    -- Deleting a provider credential cascades a NULL-out of dependent agent
+    -- configs (app-layer cascade, see commands::ai::do_delete_provider_credential).
+    CREATE TABLE IF NOT EXISTS agent_configs (
         id          TEXT PRIMARY KEY,
         name        TEXT NOT NULL UNIQUE,
         model_id    TEXT,

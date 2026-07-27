@@ -29,7 +29,7 @@
       "deleteFailed": "Failed to delete credential"
     }
   },
-  "agents": {
+  "agentConfigs": {
     "title": "Agent Models",
     "description": "Choose a model for each agent. Only providers with a configured key are shown.",
     "providerPlaceholder": "Select provider",

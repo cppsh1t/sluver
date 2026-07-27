@@ -1,6 +1,6 @@
 # AI provider configuration is Space-scoped, not global
 
-A Space's AI provider credentials (API keys) and Agent model preferences live in that Space's `space.db` (per ADR-0007 tier 2), in dedicated `provider_credentials` and `agents` tables. They are NOT global `Settings`.
+A Space's AI provider credentials (API keys) and AgentConfig model preferences live in that Space's `space.db` (per ADR-0007 tier 2), in dedicated `provider_credentials` and `agent_configs` tables. They are NOT global `Settings`.
 
 This diverges from an earlier plan recorded in `src/types/setting.ts` (v0.1.0 prototype comment): "model config (provider / modelName / apiKey / baseUrl) will migrate from `.env` to Setting later." We deliberately chose per-Space scope instead, for three reasons:
 

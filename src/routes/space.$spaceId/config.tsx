@@ -14,7 +14,7 @@ import {
   DeleteSpaceDialog,
   SpacePasswordDialog,
 } from "@/components/space-management";
-import { AgentModelPicker } from "@/components/ai/agent-model-picker";
+import { AgentConfigModelPicker } from "@/components/ai/agent-config-model-picker";
 import { CatalogStatusBanner } from "@/components/ai/catalog-status-banner";
 import { ProviderCombobox } from "@/components/ai/provider-combobox";
 import { ProviderCredentialList } from "@/components/ai/provider-credential-list";
@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
-  useAgents,
+  useAgentConfigs,
   useModelsDevCatalog,
   useProviderCredentials,
   useSpaces,
@@ -55,7 +55,7 @@ function SpaceConfigPage() {
   // same query is shared across Spaces and pre-warmed at bootstrap.
   const catalogQ = useModelsDevCatalog();
   const providersQ = useProviderCredentials(spaceId as SpaceId);
-  const agentsQ = useAgents(spaceId as SpaceId);
+  const agentConfigsQ = useAgentConfigs(spaceId as SpaceId);
 
   const space = spacesQ.data?.find((s) => s.id === (spaceId as SpaceId));
   const spaceName = space?.name;
@@ -239,26 +239,26 @@ function SpaceConfigPage() {
                 spaceId={spaceId as SpaceId}
                 credentials={providersQ.data ?? []}
                 catalogProviders={catalogProviders}
-                agents={agentsQ.data ?? []}
-              />
+                agentConfigs={agentConfigsQ.data ?? []}
+               />
             )}
           </section>
 
-          {/* ─── Agent Models ─────────────────────────────────────────── */}
+          {/* ─── AgentConfig Models ─────────────────────────────────── */}
           <section className="flex flex-col divide-y divide-border border-b border-border">
             <div className="flex flex-col gap-0.5 pb-3">
               <h2 className="font-heading text-sm font-medium tracking-tight">
-                {t("ai:agents.title")}
+                {t("ai:agentConfigs.title")}
               </h2>
               <p className="text-xs text-muted-foreground">
-                {t("ai:agents.description")}
+                {t("ai:agentConfigs.description")}
               </p>
             </div>
-            {(agentsQ.data ?? []).map((agent) => (
-              <AgentModelPicker
-                key={agent.id}
+            {(agentConfigsQ.data ?? []).map((agentConfig) => (
+              <AgentConfigModelPicker
+                key={agentConfig.id}
                 spaceId={spaceId as SpaceId}
-                agent={agent}
+                agentConfig={agentConfig}
                 providers={catalogProviders}
                 credentials={providersQ.data ?? []}
                 disabled={!catalogReady}

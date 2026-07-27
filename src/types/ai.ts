@@ -22,9 +22,9 @@ import { z } from "zod";
 export const providerCredentialIdSchema = z.string().brand<"ProviderCredentialId">();
 export type ProviderCredentialId = z.infer<typeof providerCredentialIdSchema>;
 
-/** Branded ID for an agent row. */
-export const agentIdSchema = z.string().brand<"AgentId">();
-export type AgentId = z.infer<typeof agentIdSchema>;
+/** Branded ID for an agent config row. */
+export const agentConfigIdSchema = z.string().brand<"AgentConfigId">();
+export type AgentConfigId = z.infer<typeof agentConfigIdSchema>;
 
 // ─── ProviderCredential ─────────────────────────────────────────────────────
 
@@ -55,17 +55,17 @@ export const setProviderCredentialInputSchema = z.object({
 
 export type SetProviderCredentialInput = z.infer<typeof setProviderCredentialInputSchema>;
 
-// ─── Agent ──────────────────────────────────────────────────────────────────
+// ─── AgentConfig ────────────────────────────────────────────────────────────
 
 /**
- * A built-in agent (`explorer` or `writer`). Seeded at Space creation; the
- * frontend never creates or deletes agents — only updates `modelId`.
+ * A built-in agent config (`explorer` or `writer`). Seeded at Space creation;
+ * the frontend never creates or deletes agent configs — only updates `modelId`.
  *
  * `modelId` follows the `"{providerId}/{modelId}"` convention (e.g.
  * `"anthropic/claude-sonnet-5"`), or `null` when unset.
  */
-export const agentSchema = z.object({
-  id: agentIdSchema,
+export const agentConfigSchema = z.object({
+  id: agentConfigIdSchema,
   /** Stable name: `"explorer"` or `"writer"`. */
   name: z.string(),
   /** `"{providerId}/{modelId}"`, or `null` when no model is chosen. */
@@ -74,7 +74,7 @@ export const agentSchema = z.object({
   updatedAt: z.iso.datetime(),
 });
 
-export type Agent = z.infer<typeof agentSchema>;
+export type AgentConfig = z.infer<typeof agentConfigSchema>;
 
 // ─── Models.dev catalog ─────────────────────────────────────────────────────
 

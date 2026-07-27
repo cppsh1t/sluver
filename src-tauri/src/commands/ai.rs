@@ -1,12 +1,12 @@
 // AI config commands (ADR-0012: Space-scoped AI provider config).
 //
 // Two concerns live here:
-//   1. `provider_credentials` + `agents` — Space-scoped CRUD against the
-//      `space.db` file (uses `DbManager::with_space` exactly like other
+//   1. `provider_credentials` + `agent_configs` — Space-scoped CRUD against
+//      the `space.db` file (uses `DbManager::with_space` exactly like other
 //      Space-scoped commands). Provider credentials are UPSERT-by-provider_id;
-//      deleting a provider cascades a NULL-out of any agent whose `model_id`
-//      is rooted at that provider (semantic cascade, NOT a SQL FK — the
-//      `model_id` column is a free-form composite string).
+//      deleting a provider cascades a NULL-out of any agent config whose
+//      `model_id` is rooted at that provider (semantic cascade, NOT a SQL FK
+//      — the `model_id` column is a free-form composite string).
 //   2. `catalog` — global (not Space-scoped) fetch of the models.dev catalog.
 //      These two commands are `async` because they drive `reqwest`. The
 //      fetched JSON is cached at `data_dir/models-dev.json` with a sibling
@@ -25,7 +25,7 @@ use rusqlite::params;
 use tauri::State;
 
 use crate::db::{DbError, DbManager};
-use crate::models::agent::Agent;
+use crate::models::agent_config::AgentConfig;
 use crate::models::catalog::{CatalogMeta, CatalogModel, CatalogProvider, ModelsDevCatalog, RawCatalog, RawModel, RawProvider};
 use crate::models::provider_credential::{ProviderCredential, SetProviderCredentialInput};
 use crate::util::{new_id, now_iso};
@@ -53,8 +53,8 @@ fn row_to_credential(row: &rusqlite::Row) -> rusqlite::Result<ProviderCredential
     })
 }
 
-fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
-    Ok(Agent {
+fn row_to_agent_config(row: &rusqlite::Row) -> rusqlite::Result<AgentConfig> {
+    Ok(AgentConfig {
         id: row.get("id")?,
         name: row.get("name")?,
         model_id: row.get("model_id")?,
@@ -150,9 +150,9 @@ pub(crate) fn do_delete_provider_credential(
     let now = now_iso();
     mgr.with_space(space_id, |conn| {
         // Single transaction: read provider_id → delete row → NULL-out
-        // dependent agents. Wrapping all three in one tx guarantees no
-        // window where the credential is gone but agents still reference
-        // its provider prefix.
+        // dependent agent configs. Wrapping all three in one tx guarantees
+        // no window where the credential is gone but agent configs still
+        // reference its provider prefix.
         let tx = conn.transaction()?;
         let provider_id: String = tx
             .query_row(
@@ -176,9 +176,10 @@ pub(crate) fn do_delete_provider_credential(
             // we surface the error so the UI refreshes from truth.
             return Err(DbError::ProviderCredentialNotFound(id.to_string()));
         }
-        // Cascade: clear any agent.model_id rooted at this provider. The
-        // pattern match (`provider_id/%`) is the contract's defined cascade
-        // semantic — see ADR-0006 for the analogous Phase/Character cascade.
+        // Cascade: clear any agent_config.model_id rooted at this provider.
+        // The pattern match (`provider_id/%`) is the contract's defined
+        // cascade semantic — see ADR-0006 for the analogous Phase/Character
+        // cascade.
         //
         // SQL LIKE wildcards `_` and `%` in the provider_id are escaped so
         // they match literally (ESCAPE '\'). Without this, a provider like
@@ -189,7 +190,7 @@ pub(crate) fn do_delete_provider_credential(
             .replace('_', "\\_");
         let pattern = format!("{escaped}/%");
         tx.execute(
-            "UPDATE agents SET model_id = NULL, updated_at = ?1
+            "UPDATE agent_configs SET model_id = NULL, updated_at = ?1
              WHERE model_id LIKE ?2 ESCAPE '\\'",
             params![now, pattern],
         )?;
@@ -199,67 +200,71 @@ pub(crate) fn do_delete_provider_credential(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// agents (read + update model only — creation is seed-only at Space create)
+// agent configs (read + update model only — creation is seed-only at Space create)
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[tracing::instrument(skip(state))]
 #[tauri::command]
-pub fn list_agents(
+pub fn list_agent_configs(
     space_id: String,
     state: State<'_, DbManager>,
-) -> Result<Vec<Agent>, DbError> {
-    do_list_agents(&state, &space_id)
+) -> Result<Vec<AgentConfig>, DbError> {
+    do_list_agent_configs(&state, &space_id)
 }
 
-pub(crate) fn do_list_agents(
+pub(crate) fn do_list_agent_configs(
     mgr: &DbManager,
     space_id: &str,
-) -> Result<Vec<Agent>, DbError> {
+) -> Result<Vec<AgentConfig>, DbError> {
     mgr.with_space(space_id, |conn| {
         let mut stmt = conn.prepare(
             "SELECT id, name, model_id, created_at, updated_at
-             FROM agents ORDER BY created_at",
+             FROM agent_configs ORDER BY created_at",
         )?;
-        let rows = stmt.query_map([], row_to_agent)?.collect::<Result<Vec<_>, _>>()?;
+        let rows = stmt
+            .query_map([], row_to_agent_config)?
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     })
 }
 
 #[tracing::instrument(skip(state, id), fields(entity_id = %id))]
 #[tauri::command]
-pub fn update_agent_model(
+pub fn update_agent_config_model(
     space_id: String,
     id: String,
     model_id: Option<String>,
     state: State<'_, DbManager>,
-) -> Result<Agent, DbError> {
-    do_update_agent_model(&state, &space_id, &id, model_id)
+) -> Result<AgentConfig, DbError> {
+    do_update_agent_config_model(&state, &space_id, &id, model_id)
 }
 
-pub(crate) fn do_update_agent_model(
+pub(crate) fn do_update_agent_config_model(
     mgr: &DbManager,
     space_id: &str,
     id: &str,
     model_id: Option<String>,
-) -> Result<Agent, DbError> {
+) -> Result<AgentConfig, DbError> {
     let now = now_iso();
     mgr.with_space(space_id, |conn| {
         let affected = conn.execute(
-            "UPDATE agents SET model_id = ?1, updated_at = ?2 WHERE id = ?3",
+            "UPDATE agent_configs SET model_id = ?1, updated_at = ?2 WHERE id = ?3",
             params![model_id, now, id],
         )?;
         if affected == 0 {
-            return Err(DbError::AgentNotFound(id.to_string()));
+            return Err(DbError::AgentConfigNotFound(id.to_string()));
         }
         // Read back the canonical row (AGENTS.md: read after mutation).
         conn.query_row(
             "SELECT id, name, model_id, created_at, updated_at
-             FROM agents WHERE id = ?1",
+             FROM agent_configs WHERE id = ?1",
             params![id],
-            row_to_agent,
+            row_to_agent_config,
         )
         .map_err(|e| match e {
-            rusqlite::Error::QueryReturnedNoRows => DbError::AgentNotFound(id.to_string()),
+            rusqlite::Error::QueryReturnedNoRows => {
+                DbError::AgentConfigNotFound(id.to_string())
+            }
             other => DbError::Sqlite(other),
         })
     })
@@ -490,7 +495,7 @@ mod tests {
     }
 
     /// Create a Space and return its id (the Space's `space.db` gets the
-    /// two seed agents per the contract).
+    /// two seed agent configs per the contract).
     fn make_space(mgr: &DbManager, name: &str) -> String {
         let s = do_create_space(
             mgr,
@@ -592,42 +597,49 @@ mod tests {
         }
     }
 
-    // ─── agent seed (proves do_create_space wires the seed correctly) ───────
+    // ─── agent_config seed (proves do_create_space wires the seed correctly) ─
 
     #[test]
-    fn list_agents_returns_seed_explorer_and_writer() {
+    fn list_agent_configs_returns_seed_explorer_and_writer() {
         let (_tmp, mgr) = make_manager();
         let sid = make_space(&mgr, "S");
 
-        let agents = do_list_agents(&mgr, &sid).expect("list agents");
-        let names: Vec<&str> = agents.iter().map(|a| a.name.as_str()).collect();
+        let agent_configs = do_list_agent_configs(&mgr, &sid).expect("list agent configs");
+        let names: Vec<&str> = agent_configs.iter().map(|a| a.name.as_str()).collect();
         assert!(
             names.contains(&"explorer"),
             "explorer seed missing: {names:?}"
         );
         assert!(names.contains(&"writer"), "writer seed missing: {names:?}");
-        assert_eq!(agents.len(), 2, "exactly two seed agents expected");
+        assert_eq!(
+            agent_configs.len(),
+            2,
+            "exactly two seed agent configs expected"
+        );
         // Seeds are created with model_id = NULL.
-        for a in &agents {
-            assert!(a.model_id.is_none(), "seed agent model_id must be NULL");
+        for a in &agent_configs {
+            assert!(
+                a.model_id.is_none(),
+                "seed agent config model_id must be NULL"
+            );
         }
     }
 
-    // ─── update_agent_model ────────────────────────────────────────────────
+    // ─── update_agent_config_model ──────────────────────────────────────────
 
     #[test]
-    fn update_agent_model_set_and_clear() {
+    fn update_agent_config_model_set_and_clear() {
         let (_tmp, mgr) = make_manager();
         let sid = make_space(&mgr, "S");
 
-        let explorer = do_list_agents(&mgr, &sid)
+        let explorer = do_list_agent_configs(&mgr, &sid)
             .expect("list")
             .into_iter()
             .find(|a| a.name == "explorer")
             .expect("explorer exists");
 
         // Set a model.
-        let updated = do_update_agent_model(
+        let updated = do_update_agent_config_model(
             &mgr,
             &sid,
             &explorer.id,
@@ -639,26 +651,27 @@ mod tests {
         assert!(updated.updated_at >= explorer.updated_at);
 
         // Clear it (None = no model selected).
-        let cleared = do_update_agent_model(&mgr, &sid, &explorer.id, None).expect("clear");
+        let cleared =
+            do_update_agent_config_model(&mgr, &sid, &explorer.id, None).expect("clear");
         assert!(cleared.model_id.is_none(), "model_id must be NULL after clear");
     }
 
     #[test]
-    fn update_agent_model_not_found() {
+    fn update_agent_config_model_not_found() {
         let (_tmp, mgr) = make_manager();
         let sid = make_space(&mgr, "S");
-        let err = do_update_agent_model(&mgr, &sid, "no-such-agent", Some("x/y".into()))
-            .expect_err("update missing agent");
+        let err = do_update_agent_config_model(&mgr, &sid, "no-such-agent", Some("x/y".into()))
+            .expect_err("update missing agent config");
         match err {
-            DbError::AgentNotFound(id) => assert_eq!(id, "no-such-agent"),
-            other => panic!("expected AgentNotFound, got {other:?}"),
+            DbError::AgentConfigNotFound(id) => assert_eq!(id, "no-such-agent"),
+            other => panic!("expected AgentConfigNotFound, got {other:?}"),
         }
     }
 
-    // ─── cascade: delete provider NULLs dependent agent.model_id ───────────
+    // ─── cascade: delete provider NULLs dependent agent_config.model_id ─────
 
     #[test]
-    fn delete_provider_cascades_agent_model_id_to_null() {
+    fn delete_provider_cascades_agent_config_model_id_to_null() {
         let (_tmp, mgr) = make_manager();
         let sid = make_space(&mgr, "S");
 
@@ -685,7 +698,7 @@ mod tests {
         // Point explorer at an anthropic model + writer at an openai model.
         let mut explorer = None;
         let mut writer = None;
-        for a in do_list_agents(&mgr, &sid).expect("list") {
+        for a in do_list_agent_configs(&mgr, &sid).expect("list") {
             if a.name == "explorer" {
                 explorer = Some(a);
             } else if a.name == "writer" {
@@ -694,14 +707,14 @@ mod tests {
         }
         let explorer = explorer.expect("explorer seeded");
         let writer = writer.expect("writer seeded");
-        do_update_agent_model(
+        do_update_agent_config_model(
             &mgr,
             &sid,
             &explorer.id,
             Some("anthropic/claude-sonnet-5".into()),
         )
         .expect("set explorer model");
-        do_update_agent_model(
+        do_update_agent_config_model(
             &mgr,
             &sid,
             &writer.id,
@@ -713,8 +726,8 @@ mod tests {
         do_delete_provider_credential(&mgr, &sid, &anthropic.id).expect("delete anthropic");
 
         // explorer's model_id (rooted at anthropic/) MUST be NULL now.
-        let agents_after = do_list_agents(&mgr, &sid).expect("list after");
-        let explorer_after = agents_after
+        let agent_configs_after = do_list_agent_configs(&mgr, &sid).expect("list after");
+        let explorer_after = agent_configs_after
             .iter()
             .find(|a| a.name == "explorer")
             .expect("explorer still exists");
@@ -724,7 +737,7 @@ mod tests {
         );
 
         // writer's model_id (rooted at openai/) MUST be untouched.
-        let writer_after = agents_after
+        let writer_after = agent_configs_after
             .iter()
             .find(|a| a.name == "writer")
             .expect("writer still exists");
@@ -744,11 +757,11 @@ mod tests {
 
         // Sanity: deleting openai too cascades the writer.
         do_delete_provider_credential(&mgr, &sid, &openai.id).expect("delete openai");
-        let final_agents = do_list_agents(&mgr, &sid).expect("final agents");
-        for a in &final_agents {
+        let final_agent_configs = do_list_agent_configs(&mgr, &sid).expect("final agent configs");
+        for a in &final_agent_configs {
             assert!(
                 a.model_id.is_none(),
-                "all agent model_ids must be NULL after both providers deleted: {:?}",
+                "all agent config model_ids must be NULL after both providers deleted: {:?}",
                 a.name
             );
         }
@@ -924,10 +937,10 @@ mod tests {
         assert!(!json.contains("provider_id"), "snake_case leak: {json}");
     }
 
-    /// Agent serialization shape (camelCase).
+    /// AgentConfig serialization shape (camelCase).
     #[test]
-    fn agent_serialization_shape() {
-        let a = Agent {
+    fn agent_config_serialization_shape() {
+        let a = AgentConfig {
             id: "x".into(),
             name: "explorer".into(),
             model_id: Some("anthropic/claude-sonnet-5".into()),

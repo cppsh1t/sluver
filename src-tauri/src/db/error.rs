@@ -50,10 +50,10 @@ pub enum DbError {
     #[error("Provider credential not found: {0}")]
     ProviderCredentialNotFound(String),
 
-    /// AI agent row not found (update on a missing agent id).
-    /// Surfaces as `AGENT_NOT_FOUND` with `{ id }`.
-    #[error("Agent not found: {0}")]
-    AgentNotFound(String),
+    /// AI agent config row not found (update on a missing agent config id).
+    /// Surfaces as `AGENT_CONFIG_NOT_FOUND` with `{ id }`.
+    #[error("AgentConfig not found: {0}")]
+    AgentConfigNotFound(String),
 
     /// models.dev catalog fetch failed AND no local fallback copy exists.
     /// Surfaces as `CATALOG_FETCH_FAILED` (no args). When a stale local copy
@@ -160,8 +160,8 @@ impl DbError {
                 "PROVIDER_CREDENTIAL_NOT_FOUND",
                 HashMap::from([("id".to_string(), id.clone())]),
             ),
-            DbError::AgentNotFound(id) => (
-                "AGENT_NOT_FOUND",
+            DbError::AgentConfigNotFound(id) => (
+                "AGENT_CONFIG_NOT_FOUND",
                 HashMap::from([("id".to_string(), id.clone())]),
             ),
             DbError::CatalogFetchFailed => {
