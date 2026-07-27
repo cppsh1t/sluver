@@ -72,8 +72,12 @@ _Avoid_: Config, Preferences, Options
 A Space's own control surface — its identity, access control, AI provider credentials, AgentConfig model preferences, and lifecycle management (rename, password, deletion) — as distinct from global `Settings`. The term `config` is reserved for this Space-level use; do not use it for global `Settings`.
 _Avoid_: Space settings, Space preferences
 
+**Agent**:
+The runtime executor that runs a single tool-calling loop over a supplied message list, given a bound model and a behavior bundle (system prompt, tools, parameters). Stateless across runs — a single-run executor with no conversation memory; multi-turn dialogue is owned by a future wrapper layer, not the Agent. Constructed in code from an `AgentOptions` bag; the runtime counterpart to the persistent `AgentConfig`.
+_Avoid_: Assistant, Bot, Runner, Executor, Session
+
 **AgentConfig**:
-A named AI configuration slot within a Space. Each AgentConfig binds exactly one AI model chosen from the Space's configured providers; future versions will extend an AgentConfig with behavior (system prompt, tools, parameters). Two AgentConfigs are predefined per Space — **Explorer** and **Writer** — both seeded into `space.db` on Space creation; users pick a model for each but cannot create or delete AgentConfigs in v1.
+A named AI configuration slot within a Space — the persistent definition of an Agent's model and behavior. Carries both the bound model (chosen from the Space's configured providers) and, eventually, the behavior bundle (system prompt, tools, parameters); in v1 only the model binding is persisted, with behavior hardcoded in code via `AgentOptions`. Two AgentConfigs are predefined per Space — **Explorer** and **Writer** — both seeded into `space.db` on Space creation; users pick a model for each but cannot create or delete AgentConfigs in v1.
 _Avoid_: Assistant, Persona, Bot, Role
 
 **Launcher**:
