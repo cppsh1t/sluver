@@ -73,16 +73,26 @@ A Space's own control surface — its identity, access control, AI provider cred
 _Avoid_: Space settings, Space preferences
 
 **Agent**:
-The runtime executor that runs a single tool-calling loop over a supplied message list, given a bound model and a behavior bundle (system prompt, tools, parameters). Stateless across runs — a single-run executor with no conversation memory; multi-turn dialogue is owned by a future wrapper layer, not the Agent. Constructed in code from an `AgentOptions` bag; the runtime counterpart to the persistent `AgentConfig`.
-_Avoid_: Assistant, Bot, Runner, Executor, Session
+The stateful, consumer-facing AI conversational wrapper — the runtime that owns conversation memory, drives an `AgentLoop` per turn, and auto-persists message deltas via an injected `SessionStore`. One `Agent` instance is bound to one session for its lifetime (identity = `sessionId`). Constructed via the async factory `Agent.open({ loop, store, sessionId })`, which loads history from the store. Each `agent.run(text)` appends a user message, drives the loop, and persists the response delta. Stateless across sessions — switching conversations means constructing a new `Agent`.
+_Avoid_: Assistant, Bot, Runner, Executor, Conversation, Chat
+
+**AgentLoop**:
+The pure stateless single-run tool-calling executor — a manually-driven step loop over the AI SDK v7 `streamText` (ADR-0017). Constructed from an `AgentLoopOptions` bag (model, system prompt, tools, step budget, sampling params). One `.run()` call = one complete tool-calling loop (possibly multi-step). No conversation memory — the caller supplies the full message thread each call and receives the accumulated result. The stateless primitive that `Agent` wraps; also usable standalone for one-shot execution (summarization, batch generation). All terminations resolve (ADR-0018, revised) — `handle.result` never rejects.
+_Avoid_: Agent, Loop, Runner, StepDriver
 
 **AgentConfig**:
-A named AI configuration slot within a Space — the persistent definition of an Agent's model and behavior. Carries both the bound model (chosen from the Space's configured providers) and, eventually, the behavior bundle (system prompt, tools, parameters); in v1 only the model binding is persisted, with behavior hardcoded in code via `AgentOptions`. Two AgentConfigs are predefined per Space — **Explorer** and **Writer** — both seeded into `space.db` on Space creation; users pick a model for each but cannot create or delete AgentConfigs in v1.
+A named AI configuration slot within a Space — the persistent definition of an AgentLoop's model and behavior. Carries both the bound model (chosen from the Space's configured providers) and, eventually, the behavior bundle (system prompt, tools, parameters); in v1 only the model binding is persisted, with behavior hardcoded in code via `AgentLoopOptions`. Two AgentConfigs are predefined per Space — **Explorer** and **Writer** — both seeded into `space.db` on Space creation; users pick a model for each but cannot create or delete AgentConfigs in v1.
 _Avoid_: Assistant, Persona, Bot, Role
 
 **Launcher**:
 The app's anchor window outside any Space — the OS window whose label is the statically configured `"main"` (`tauri.conf.json`), rendering the Space picker / landing UI where Spaces are selected and created. Distinct from Space windows in two ways: it hides to tray on close (keeping the process alive) rather than being destroyed, and closing all Space windows does NOT auto-show it — the user returns to it via the tray menu or by relaunching the app (which auto-reopens `lastOpenedSpaceId`). Identity is its fixed label `"main"` (single instance).
 _Avoid_: Dashboard, Home, Welcome screen, Hub, Shell
+
+### AI Runtime
+
+**SessionMessage**:
+A persisted conversation message — a `ModelMessage` enriched with identity (`id`, UUID v7), session binding (`sessionId`), and timestamp (`createdAt`). The atomic unit of conversation history. The session layer converts freely between `SessionMessage` (persisted, UI-ready) and `ModelMessage` (SDK-internal) by adding or stripping the three metadata fields.
+_Avoid_: ChatMessage, StoredMessage, MessageRecord
 
 ## Conventions
 
