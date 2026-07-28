@@ -6,7 +6,7 @@ import { WorldSidebar } from "@/components/world-sidebar";
 function WorldLayout() {
   const location = useLocation();
   // Hide the global WorldSidebar inside the Novel workspace to give the
-  // three-column writing surface maximum width (ADR-0007). The workspace
+  // three-column writing surface maximum width (ADR-0021). The workspace
   // has its own chapter sidebar with a back button for world navigation.
   const isNovelWorkspace = /\/space\/[^/]+\/world\/[^/]+\/novels\/[^/]+/.test(
     location.pathname,

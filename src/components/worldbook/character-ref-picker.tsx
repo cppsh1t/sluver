@@ -38,8 +38,6 @@ function pairKey(characterId: string, phaseId: string): string {
  *   switches (only the right-panel view changes).
  * Footer — Cancel (discard local edits) / Commit (send the full list via
  *   `onCommit`). The dialog is a sibling of the trigger button, not a child.
- *
- * See ADR-0007 for the two-panel picker layout rationale.
  */
 function CharacterRefPicker({
   spaceId,

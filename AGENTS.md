@@ -14,12 +14,19 @@ Tauri v2 desktop app for **worldbuilding & novel writing**. React 19 + TypeScrip
   - [ADR-0006](./docs/adr/0006-deletion-cascade-to-character-refs.md) — Phase/Character deletion cascades to CharacterRefs, with pre-delete disclosure
   - [ADR-0007](./docs/adr/0007-three-database-design.md) — Three-database design (meta.db + per-Space space.db + per-World files)
   - [ADR-0008](./docs/adr/0008-space-password-is-auth-gate.md) — Space password is an auth gate (argon2id hash), not at-rest encryption
+  - [ADR-0009](./docs/adr/0009-workspace-shell-three-tier-and-titlebar-tabs.md) — Workspace shell three-tier (app/space/world) layout with titlebar tabs
+  - [ADR-0010](./docs/adr/0010-tab-state-keepalive.md) — Tab state preservation via in-app DOM keep-alive (superseded by ADR-0011)
   - [ADR-0011](./docs/adr/0011-one-space-per-window.md) — One Space per OS window
   - [ADR-0012](./docs/adr/0012-space-scoped-ai-config.md) — AI provider configuration is Space-scoped, not global Setting
   - [ADR-0013](./docs/adr/0013-api-key-plaintext-storage.md) — API keys stored as plaintext in space.db (threat model + upgrade path)
   - [ADR-0014](./docs/adr/0014-logging-tracing-stack.md) — Logging uses `tracing` stack + custom frontend bridge (not `tauri-plugin-log`)
   - [ADR-0015](./docs/adr/0015-unified-log-file-with-export-filter.md) — Unified log file with export-time Space filtering (not per-Space files)
   - [ADR-0016](./docs/adr/0016-snake-case-log-fields-across-stack.md) — `snake_case` log field names across Rust and TypeScript
+  - [ADR-0017](./docs/adr/0017-agent-manual-step-loop.md) — Agent drives a manual step loop over AI SDK's `streamText` (one LLM step per iteration)
+  - [ADR-0018](./docs/adr/0018-abort-resolves-not-rejects.md) — All `AgentLoop.run()` terminations resolve; errors surface via `result.error`, the promise never rejects
+  - [ADR-0019](./docs/adr/0019-ai-agent-library-purity-boundary.md) — AI agent runtime library stays free of all application concerns (no React, no IPC, no logger)
+  - [ADR-0020](./docs/adr/0020-session-layer.md) — Stateful `Agent` + `SessionStore` wrap the stateless `AgentLoop` for conversation memory and persistence
+  - [ADR-0021](./docs/adr/0021-novel-scene-autosave-and-routing.md) — Novel Scenes are not deep-linkable; full-replacement `update_scene` mandates single-source-of-truth auto-save
 
 ## Git commit style
 
