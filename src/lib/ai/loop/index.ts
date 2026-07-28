@@ -1,28 +1,28 @@
 /**
- * Agent runtime library — framework-agnostic AI agent execution.
+ * AgentLoop runtime library — framework-agnostic AI agent execution.
  *
  * Public surface:
- * - {@link ./agent}        — the `Agent` class + `AgentRunHandle` (the loop).
- * - {@link ./types}        — `AgentOptions`, `AgentRunInput`, `AgentRunResult`, `AgentFinishReason`.
+ * - {@link ./loop}         — the `AgentLoop` class + `AgentRunHandle` (the loop).
+ * - {@link ./types}        — `AgentLoopOptions`, `AgentLoopRunInput`, `AgentLoopRunResult`, `AgentFinishReason`.
  * - {@link ./events}       — `AgentEvent` discriminated union + `AgentEmitter`.
  * - {@link ./errors}       — `AgentError` taxonomy + `classifyFromSdkError`.
  * - {@link ./define-tool}  — `defineTool` convention enforcer.
  *
  * The library re-exports a handful of SDK types so consumers can import
- * everything from `@/lib/ai/agent` instead of reaching into `"ai"` directly.
+ * everything from `@/lib/ai/loop` instead of reaching into `"ai"` directly.
  *
  * Related: ADR-0019 (library purity boundary).
  */
 
 // Runtime + handle
-export { Agent, type AgentRunHandle } from "./agent";
+export { AgentLoop, type AgentRunHandle } from "./loop";
 
 // Contracts
 export type {
   AgentFinishReason,
-  AgentOptions,
-  AgentRunInput,
-  AgentRunResult,
+  AgentLoopOptions,
+  AgentLoopRunInput,
+  AgentLoopRunResult,
   ProviderOptions,
 } from "./types";
 

@@ -1,6 +1,6 @@
 /**
- * Agent runtime — a manual, single-step-at-a-time tool-calling loop over the
- * Vercel AI SDK v7 {@link streamText}.
+ * AgentLoop runtime — a manual, single-step-at-a-time tool-calling loop over
+ * the Vercel AI SDK v7 {@link streamText}.
  *
  * ## Why a manual loop?
  *
@@ -14,18 +14,20 @@
  *
  * ## Lifecycle
  *
- * An {@link Agent} is constructed once from an {@link AgentOptions} bag and may
- * be **sequentially** reused (`await run(); run();`). It CANNOT run
+ * An {@link AgentLoop} is constructed once from an {@link AgentLoopOptions} bag
+ * and may be **sequentially** reused (`await run(); run();`). It CANNOT run
  * concurrently: a second `.run()` while one is active throws `ConfigError`.
  * Each `.run()` returns an {@link AgentRunHandle} that owns its own subscriber
  * set; the loop begins on the *next* microtask so a caller that subscribes
  * synchronously is guaranteed to see `run_start`.
  *
- * ## Abort resolves (does not reject)
+ * ## Every termination resolves (never rejects)
  *
- * Aborting a run — via the input `abortSignal` or `handle.abort()` — resolves
- * `handle.result` with `{ finishReason: 'aborted', ... }`. Only a
- * stream-terminating *error* rejects the promise. See ADR-0018.
+ * Every run termination — success, abort, error, max-steps — resolves
+ * `handle.result` with the matching `finishReason`. A stream-terminating
+ * *error* no longer rejects; instead the result carries `finishReason: 'error'`
+ * and an `error` field. Partial `responseMessages` accumulated before the
+ * error are best-effort salvaged into `result.messages`. See ADR-0018.
  *
  * ## Purity
  *
@@ -54,16 +56,16 @@ import {
 import { AgentEmitter, type AgentEvent } from "./events";
 import type {
   AgentFinishReason,
-  AgentOptions,
-  AgentRunInput,
-  AgentRunResult,
+  AgentLoopOptions,
+  AgentLoopRunInput,
+  AgentLoopRunResult,
 } from "./types";
 
 // ─── Public handle ───────────────────────────────────────────────────────
 
 /**
- * Per-run handle returned by {@link Agent.run}. Owns its own subscriber set and
- * the run's result promise. `runId` is an ephemeral UUID v4 (not persisted).
+ * Per-run handle returned by {@link AgentLoop.run}. Owns its own subscriber set
+ * and the run's result promise. `runId` is an ephemeral UUID v4 (not persisted).
  */
 export interface AgentRunHandle {
   /** Ephemeral UUID v4 identifying this run. */
@@ -77,13 +79,14 @@ export interface AgentRunHandle {
    */
   abort(reason?: string): void;
   /**
-   * Resolves with the final {@link AgentRunResult} (including for abort).
-   * Rejects **only** when `finishReason === 'error'`.
+   * Resolves with the final {@link AgentLoopRunResult} for EVERY termination
+   * outcome (success, abort, error, max-steps). Never rejects — check
+   * `result.finishReason` and `result.error` to discriminate outcomes.
    */
-  readonly result: Promise<AgentRunResult>;
+  readonly result: Promise<AgentLoopRunResult>;
 }
 
-// ─── Agent ───────────────────────────────────────────────────────────────
+// ─── AgentLoop ───────────────────────────────────────────────────────────
 
 /**
  * A single-run tool-calling executor. Construct once, reuse sequentially.
@@ -92,20 +95,20 @@ export interface AgentRunHandle {
  * abort controller) but **stateless across runs** — no conversation memory.
  * Multi-turn dialogue is a future wrapper layer's responsibility, not ours.
  */
-export class Agent {
-  readonly #options: AgentOptions;
+export class AgentLoop {
+  readonly #options: AgentLoopOptions;
   #running = false;
 
   /**
    * @throws {ConfigError} if `maxSteps` is less than 1.
    */
-  constructor(options: AgentOptions) {
+  constructor(options: AgentLoopOptions) {
     if (
       !Number.isInteger(options.maxSteps) ||
       options.maxSteps < 1
     ) {
       throw new ConfigError(
-        `AgentOptions.maxSteps must be a positive integer (got ${options.maxSteps}).`,
+        `AgentLoopOptions.maxSteps must be a positive integer (got ${options.maxSteps}).`,
       );
     }
     this.#options = options;
@@ -117,10 +120,10 @@ export class Agent {
    *
    * @throws {ConfigError} if a run is already active on this instance.
    */
-  run(input: AgentRunInput): AgentRunHandle {
+  run(input: AgentLoopRunInput): AgentRunHandle {
     if (this.#running) {
       throw new ConfigError(
-        "Agent already running — await the prior run's result before calling run() again.",
+        "AgentLoop already running — await the prior run's result before calling run() again.",
       );
     }
     this.#running = true;
@@ -137,7 +140,7 @@ export class Agent {
     // The result promise is resolved/rejected by the loop. The loop runs on the
     // next microtask (queueMicrotask) so `handle.subscribe()` below can attach
     // before `run_start` is emitted.
-    const result: Promise<AgentRunResult> = new Promise<AgentRunResult>(
+    const result: Promise<AgentLoopRunResult> = new Promise<AgentLoopRunResult>(
       (resolve, reject) => {
         queueMicrotask(() => {
           this.#runLoop(
@@ -184,16 +187,18 @@ export class Agent {
   }
 
   /**
-   * The step loop. Returns the final result on success / abort / max-steps;
-   * throws an {@link AgentError} only when `finishReason === 'error'`.
+   * The step loop. Returns the final result on EVERY termination path
+   * (success / abort / max-steps / error). Never throws — error terminations
+   * are surfaced via `finishReason: 'error'` and the `error` field on the
+   * resolved result.
    */
   async #runLoop(
-    input: AgentRunInput,
+    input: AgentLoopRunInput,
     runId: string,
     internalController: AbortController,
     emitter: AgentEmitter,
     cleanupExternalAbort: (() => void) | undefined,
-  ): Promise<AgentRunResult> {
+  ): Promise<AgentLoopRunResult> {
     // Defensive copy — the caller's array (and its elements) are never mutated.
     const messages: ModelMessage[] = [...input.messages];
     const steps: StepResult<ToolSet>[] = [];
@@ -237,6 +242,11 @@ export class Agent {
         if (outcome.kind === "errored") {
           finishReason = "error";
           runError = outcome.error;
+          // Best-effort: keep any partial response messages the model produced
+          // before the stream errored, so callers retain conversational state.
+          if (outcome.partialMessages && outcome.partialMessages.length > 0) {
+            messages.push(...outcome.partialMessages);
+          }
           emitter.emit({
             type: "error",
             runId,
@@ -303,7 +313,8 @@ export class Agent {
   /**
    * Run a single `streamText` call (one model turn), drain its stream into
    * events, and return a discriminated outcome. Never throws — stream-terminating
-   * errors become `{ kind: 'errored' }`.
+   * errors become `{ kind: 'errored' }`, with best-effort partial
+   * `responseMessages` attached when recoverable.
    */
   async #executeStep(
     messages: ModelMessage[],
@@ -314,9 +325,12 @@ export class Agent {
   ): Promise<StepOutcome> {
     let stepError: AgentError | undefined;
     let abortedDuringStream = false;
+    // Declared outside `try` so the catch block can salvage partial
+    // `responseMessages` from a result whose stream errored mid-flight.
+    let result: ReturnType<typeof streamText<ToolSet>> | undefined;
 
     try {
-      const result = streamText({
+      result = streamText({
         model: this.#options.model,
         system: this.#options.systemPrompt,
         messages,
@@ -407,7 +421,8 @@ export class Agent {
         return { kind: "aborted" };
       }
       if (stepError) {
-        return { kind: "errored", error: stepError };
+        const partialMessages = await tryGetResponseMessages(result);
+        return { kind: "errored", error: stepError, partialMessages };
       }
 
       // Success path: these PromiseLikes resolve immediately once the stream is
@@ -422,16 +437,25 @@ export class Agent {
       };
     } catch (value) {
       // streamText threw synchronously, the stream threw mid-iteration, or an
-      // awaited PromiseLike rejected — classify uniformly.
-      return { kind: "errored", error: classifyFromSdkError(value) };
+      // awaited PromiseLike rejected — classify uniformly and best-effort
+      // salvage whatever response messages the result already accumulated.
+      const partialMessages = result
+        ? await tryGetResponseMessages(result)
+        : undefined;
+      return {
+        kind: "errored",
+        error: classifyFromSdkError(value),
+        partialMessages,
+      };
     }
   }
 
   /**
    * Assemble, freeze, and announce the final result. The `messages` argument is
    * the loop's working array (= `[...inputCopy, ...allResponses]`); we freeze a
-   * fresh copy so the returned snapshot cannot be mutated by the caller. Throws
-   * on error finish so `handle.result` rejects.
+   * fresh copy so the returned snapshot cannot be mutated by the caller. The
+   * `error` field is populated when `finishReason === 'error'`; the result is
+   * **always returned**, never thrown, so `handle.result` always resolves.
    */
   #buildResult(
     messages: readonly ModelMessage[],
@@ -440,7 +464,7 @@ export class Agent {
     finishReason: AgentFinishReason,
     runError: AgentError | undefined,
     emitter: AgentEmitter,
-  ): AgentRunResult {
+  ): AgentLoopRunResult {
     // Fresh frozen snapshot: `[...input, ...allResponses]` (the working array
     // already holds exactly that). The freeze is shallow — nested message and
     // step objects remain technically mutable — but it catches accidental
@@ -454,7 +478,7 @@ export class Agent {
       .map((s) => s.usage)
       .reduce(sumUsage, zeroUsage());
 
-    const result: AgentRunResult = {
+    const result: AgentLoopRunResult = {
       runId,
       finishReason,
       messages: frozenMessages,
@@ -469,9 +493,6 @@ export class Agent {
 
     emitter.emit({ type: "run_end", runId, finishReason });
 
-    if (finishReason === "error" && runError !== undefined) {
-      throw runError;
-    }
     return result;
   }
 }
@@ -481,9 +502,25 @@ export class Agent {
 type StepOutcome =
   | { kind: "continue"; finalStep: StepResult<ToolSet>; responseMessages: ModelMessage[]; usage: LanguageModelUsage }
   | { kind: "aborted" }
-  | { kind: "errored"; error: AgentError };
+  | { kind: "errored"; error: AgentError; partialMessages?: ModelMessage[] };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
+
+/**
+ * Best-effort salvage of `responseMessages` from a `streamText` result that may
+ * be in an error state. The stream is fully drained by the time this is called.
+ * Returns `undefined` if the messages can't be recovered (e.g. the result itself
+ * rejected, or `streamText` threw synchronously before producing a result).
+ */
+async function tryGetResponseMessages(
+  result: ReturnType<typeof streamText<ToolSet>>,
+): Promise<ModelMessage[] | undefined> {
+  try {
+    return await result.responseMessages;
+  } catch {
+    return undefined;
+  }
+}
 
 /** Map an SDK per-step `FinishReason` onto the runtime's `AgentFinishReason`. */
 function mapStepFinishReason(reason: FinishReason): AgentFinishReason {

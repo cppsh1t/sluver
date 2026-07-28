@@ -3,7 +3,7 @@
  * runtime library.
  *
  * This module lives **outside** the library purity boundary (ADR-0019): the
- * library itself (`src/lib/ai/agent/`) has zero logging code and never imports
+ * library itself (`src/lib/ai/loop/`) has zero logging code and never imports
  * `@/lib/logger`. Instead, an application wires an {@link AgentEvent} listener
  * that forwards the events it cares about into the project's `tracing`-backed
  * logger.
@@ -27,7 +27,7 @@
 
 import { logger } from "@/lib/logger";
 
-import type { AgentEvent } from "@/lib/ai/agent";
+import type { AgentEvent } from "@/lib/ai/loop";
 
 /**
  * Create a subscriber that logs agent run lifecycle events under the given

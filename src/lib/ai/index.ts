@@ -2,7 +2,7 @@
  * AI module barrel — provider resolution + agent runtime.
  *
  * - {@link ./provider} — `ResolvedModelConfig → LanguageModel` (provider 抹平层)
- * - {@link ./agent}    — framework-agnostic tool-calling loop over `streamText`
+ * - {@link ./loop}     — `AgentLoop`: stateless single-run tool-calling loop over `streamText`
  */
 
 // ─── Provider ────────────────────────────────────────────────────────────
@@ -16,10 +16,10 @@ export {
   type ResolvedModelConfig,
 } from "./provider";
 
-// ─── Agent ───────────────────────────────────────────────────────────────
+// ─── Loop (stateless executor) ───────────────────────────────────────────
 
 export {
-  Agent,
+  AgentLoop,
   AgentEmitter,
   AgentError,
   classifyFromSdkError,
@@ -33,10 +33,10 @@ export {
   type AgentEvent,
   type AgentEventListener,
   type AgentFinishReason,
-  type AgentOptions,
+  type AgentLoopOptions,
+  type AgentLoopRunInput,
+  type AgentLoopRunResult,
   type AgentRunHandle,
-  type AgentRunInput,
-  type AgentRunResult,
   type LanguageModel,
   type LanguageModelUsage,
   type ModelMessage,
@@ -44,5 +44,4 @@ export {
   type StepResult,
   type Tool,
   type ToolSet,
-} from "./agent";
-
+} from "./loop";

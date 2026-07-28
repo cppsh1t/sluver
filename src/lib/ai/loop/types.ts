@@ -1,16 +1,17 @@
 /**
- * Type surface for the Agent runtime library.
+ * Type surface for the AgentLoop runtime library.
  *
  * This is a **framework-agnostic** AI agent execution layer built on the
  * Vercel AI SDK v7. It has zero React / app dependencies — it is a pure
  * transform over {@link ModelMessage} threads, driving the SDK's
  * {@link streamText} one step at a time and exposing a typed result + event
- * stream. See the sibling `agent.ts` for the runtime; this module holds the
+ * stream. See the sibling `loop.ts` for the runtime; this module holds the
  * contracts only.
  *
  * The library is the runtime counterpart to the persisted `AgentConfig`
- * (CONTEXT.md): an `Agent` is constructed in code from an {@link AgentOptions}
- * bag and runs a single tool-calling loop per `.run()` call.
+ * (CONTEXT.md): an `AgentLoop` is constructed in code from an
+ * {@link AgentLoopOptions} bag and runs a single tool-calling loop per
+ * `.run()` call.
  *
  * Related: ADR-0019 (library purity boundary).
  */
@@ -52,7 +53,7 @@ export type ProviderOptions = NonNullable<
  * the pass-through cases (`stop`, `length`, `content-filter`, `other`) and
  * adds three loop-controlled outcomes:
  *
- * - `error`     — a stream-terminating error occurred (see {@link AgentRunResult.error}).
+ * - `error`     — a stream-terminating error occurred (see {@link AgentLoopRunResult["error"]}).
  * - `aborted`   — the run was aborted (via the input signal or `handle.abort()`).
  * - `max-steps` — the configured step budget was exhausted while the model was
  *                 still requesting tool calls.
@@ -69,14 +70,14 @@ export type AgentFinishReason =
 // ─── Options ─────────────────────────────────────────────────────────────
 
 /**
- * The full behavior bundle used to construct an {@link Agent}. A code-only
+ * The full behavior bundle used to construct an {@link AgentLoop}. A code-only
  * type — no glossary entry; the persisted counterpart is `AgentConfig`.
  *
  * `maxSteps` is **required** (no default): the loop must know its budget up
  * front. `tools` is always passed through (pass `{}` explicitly when no tools
  * are needed). Sampling/transport fields map 1:1 onto `streamText` options.
  */
-export interface AgentOptions {
+export interface AgentLoopOptions {
   /** The bound language model (from the provider factory). */
   model: LanguageModel;
   /** System prompt sent on every step; NOT a `SystemModelMessage` in the input. */
@@ -102,13 +103,13 @@ export interface AgentOptions {
 // ─── Run input ───────────────────────────────────────────────────────────
 
 /**
- * Input to a single {@link Agent.run} call.
+ * Input to a single {@link AgentLoop.run} call.
  *
  * `messages` is the conversation thread **without** a `SystemModelMessage` —
- * the system prompt lives on {@link AgentOptions.systemPrompt}. The array is
- * defensively copied on entry and never mutated.
+ * the system prompt lives on {@link AgentLoopOptions.systemPrompt}. The array
+ * is defensively copied on entry and never mutated.
  */
-export interface AgentRunInput {
+export interface AgentLoopRunInput {
   /** Conversation thread (no system message). Never mutated by the agent. */
   messages: ModelMessage[];
   /** Optional external abort signal; forwarded to the internal controller. */
@@ -124,7 +125,7 @@ export interface AgentRunInput {
  * `steps` is the raw SDK {@link StepResult} list, re-exported verbatim — no
  * project-specific wrapping. `error` is present **iff** `finishReason === 'error'`.
  */
-export interface AgentRunResult {
+export interface AgentLoopRunResult {
   /** Ephemeral UUID v4 identifying this run (not persisted). */
   runId: string;
   /** Why the run terminated. */
