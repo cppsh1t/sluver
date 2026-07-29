@@ -32,8 +32,8 @@ Rather than continue fighting TanStack Router's singleton architecture, we elimi
 
 - **Window close behavior**:
   - Launcher window → hide to tray (prevent close), lock all protected Spaces.
-  - Space window → close normally (drop DB connections, refresh tray). `lastOpenedSpaceId` is NOT cleared (user's decision: close window ≠ close session).
-  - Closing the **last** remaining Space window does NOT auto-show the launcher. The process stays dormant in the tray (launcher hidden, `lastOpenedSpaceId` preserved); the user returns via the tray menu's "Open Launcher" or by relaunching the app (which reopens `lastOpenedSpaceId`). An earlier implementation re-added `main.show()` on last-Space-close — that was a bug, since reverted.
+  - Space window → **hide to tray (prevent close)**, keeping the renderer (and any in-flight AI conversations) alive. DB connections are retained. `lastOpenedSpaceId` is NOT cleared. *(Amended 2026-07-29: was "close normally (drop DB connections, refresh tray)" — changed so in-flight AI conversations keep running when the window is closed; see ADR-0024. Always on, no user toggle.)*
+  - Closing the **last** remaining Space window does NOT auto-show the launcher. The process stays dormant in the tray (launcher hidden, `lastOpenedSpaceId` preserved); the user returns via the tray menu (which lists every still-hidden Space window) or by relaunching the app (which reopens `lastOpenedSpaceId`). An earlier implementation re-added `main.show()` on last-Space-close — that was a bug, since reverted.
 
 - **Cross-window communication**: none. Each window queries the backend independently (decision 6B). SQLite consistency handles concurrent access. No Tauri event broadcasting for state sync between Space windows. The `spaces-locked` event (backend → all windows) is kept — it's a backend instruction, not window-to-window sync.
 
@@ -49,11 +49,11 @@ Rather than continue fighting TanStack Router's singleton architecture, we elimi
 
 - **`lock_all_protected_spaces` widened scope.** Pre-ADR-0011 it locked only the *open & protected* Spaces (`protected ∩ openSpaceIds`). Post-ADR-0011 it locks *every* protected Space in `meta.db` (`all_protected_ids`). Reasoning: with no `openSpaceIds` list to intersect against, and the "lock down everything before the process goes dormant" intent unchanged, the superset is the correct semantic. A user with N protected Spaces who has never opened most of them will see all N in `locked_space_ids` after the first hide-to-tray. On next launch, opening any of those Spaces via the picker follows the "unlock attempt" path (`was_locked == true`) instead of the "fresh-open" path — the end state is functionally equivalent (Space locked, gate shown).
 
-- **Resource cost**: each `WebviewWindow` is a separate renderer process (~50–120 MB on Windows WebView2, ~30–80 MB on macOS WKWebView). For 3–5 open Spaces this is acceptable. No mitigation implemented; if needed, hide (don't destroy) idle Space windows.
+- **Resource cost**: each `WebviewWindow` is a separate renderer process (~50–120 MB on Windows WebView2, ~30–80 MB on macOS WKWebView). For 3–5 open Spaces this is acceptable. *(Amended 2026-07-29: the "if needed, hide (don't destroy) idle Space windows" mitigation is now the default — close → hide-to-tray — so every "closed" Space window keeps its ~50–120 MB alive until the user explicitly exits from the tray or quits the app. This is the accepted trade-off for letting in-flight AI conversations survive window close; see ADR-0024.)*
 
 - **Window title** is `Sluver — {SpaceName}`, managed by Rust at window creation time. The in-app title bar shows a generic "Sluver" label (not the Space name — the OS title bar already has it).
 
-- **Per-pathname route state is naturally preserved** within each window. Switching OS windows (via tray or taskbar) does not unmount any React tree. AI streams (future) will survive window switches as long as the window stays open.
+- **Per-pathname route state is naturally preserved** within each window. Switching OS windows (via tray or taskbar) does not unmount any React tree. *(Amended 2026-07-29: AI conversations now survive not only window switches but also window **close** — the window hides, renderer alive — and every kind of in-app navigation, ending only on explicit tray-exit or app quit; see ADR-0024.)*
 
 - **No `useSearch()` staleness issue** (ADR-0010 consequence). Each window has its own live router — no frozen context, no stale hooks.
 
