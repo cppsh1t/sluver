@@ -51,8 +51,6 @@ interface ChapterSidebarProps {
   novel: Novel | undefined;
   chapters: Chapter[];
   activeChapterId: ChapterId | null;
-  mode: WorkspaceMode;
-  onModeChange: (mode: WorkspaceMode) => void;
   onEditNovel: () => void;
   onAddChapter: () => void;
   onDeleteChapter: (chapter: Chapter) => void;
@@ -166,8 +164,6 @@ function ChapterSidebar({
   novel,
   chapters,
   activeChapterId,
-  mode,
-  onModeChange,
   onEditNovel,
   onAddChapter,
   onDeleteChapter,
@@ -270,7 +266,7 @@ function ChapterSidebar({
         </DndContext>
       </div>
 
-      {/* Bottom: add + mode toggle */}
+      {/* Bottom: add chapter */}
       <div className="flex flex-col gap-3 border-t p-3">
         <Button
           variant="outline"
@@ -285,25 +281,6 @@ function ChapterSidebar({
           />
           {t("novel:chapter.add")}
         </Button>
-
-        <div className="flex rounded-md bg-muted p-0.5" role="group">
-          {(["edit", "read"] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              aria-pressed={mode === m}
-              onClick={() => onModeChange(m)}
-              className={cn(
-                "flex-1 rounded-sm px-3 py-1 text-xs font-medium transition-colors outline-none",
-                mode === m
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {t(`novel:workspace.mode.${m}`)}
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* Delete confirmation (shared) */}

@@ -33,6 +33,7 @@ import type { SaveStatus, ScenePatch } from "@/components/worldbook/scene-card";
 import { SceneRefSidebar } from "@/components/worldbook/scene-ref-sidebar";
 import { toErrorPayload } from "@/api/client";
 import { translateError } from "@/i18n/errors";
+import { cn } from "@/lib/utils";
 import {
   useChapters,
   useScenes,
@@ -48,9 +49,10 @@ import {
 } from "@/hooks";
 import type {
   ChapterId,
-  EventId,
-  ItemId,
-  LocationId,
+  Character,
+  Event as EventType,
+  Item,
+  Location,
   NovelId,
   Scene as SceneType,
   SceneId,
@@ -65,6 +67,12 @@ interface SortableSceneProps {
   scene: SceneType;
   isActive: boolean;
   saveStatus: SaveStatus;
+  spaceId: string;
+  worldId: WorldId;
+  characters: Character[];
+  locations: Location[];
+  items: Item[];
+  events: EventType[];
   onFieldChange: (patch: ScenePatch) => void;
   onActiveFocus: () => void;
   onDelete: () => void;
@@ -74,6 +82,12 @@ function SortableScene({
   scene,
   isActive,
   saveStatus,
+  spaceId,
+  worldId,
+  characters,
+  locations,
+  items,
+  events,
   onFieldChange,
   onActiveFocus,
   onDelete,
@@ -96,6 +110,12 @@ function SortableScene({
         saveStatus={saveStatus}
         isDragging={isDragging}
         dragHandleProps={{ ...attributes, ...listeners }}
+        spaceId={spaceId}
+        worldId={worldId}
+        characters={characters}
+        locations={locations}
+        items={items}
+        events={events}
         onFieldChange={onFieldChange}
         onActiveFocus={onActiveFocus}
         onDelete={onDelete}
@@ -114,7 +134,7 @@ function ChapterWorkspacePage() {
   const wid = worldId as WorldId;
   const nid = novelId as NovelId;
   const cid = chapterId as ChapterId;
-  const mode = useWorkspaceMode();
+  const { mode, setMode } = useWorkspaceMode();
 
   // ─── Data ────────────────────────────────────────────────────────────────
   const { data: chapters = [] } = useChapters(spaceId, wid, nid);
@@ -204,14 +224,6 @@ function ChapterWorkspacePage() {
     }, AUTOSAVE_DEBOUNCE_MS);
   }
 
-  // Also handle ref changes (from right sidebar)
-  function handleActiveScenePatch(
-    patch: Partial<Pick<SceneType, "characterRefs" | "locationId" | "itemIds" | "eventIds">>,
-  ) {
-    if (!activeSceneId) return;
-    handleSceneFieldChange(activeSceneId, patch);
-  }
-
   // ─── Flush pending saves on chapter switch / unmount ─────────────────────
   useEffect(() => {
     return () => {
@@ -283,7 +295,7 @@ function ChapterWorkspacePage() {
   // ─── Chapter title/summary editing ───────────────────────────────────────
   const [chTitleDraft, setChTitleDraft] = useState("");
   const [chTitleEditing, setChTitleEditing] = useState(false);
-  const [chSummaryOpen, setChSummaryOpen] = useState(false);
+  const [chSummaryOpen, setChSummaryOpen] = useState(true);
 
   async function commitChapterTitle() {
     const trimmed = chTitleDraft.trim();
@@ -322,11 +334,6 @@ function ChapterWorkspacePage() {
   // ─── Right sidebar collapse ──────────────────────────────────────────────
   const [rightCollapsed, setRightCollapsed] = useState(false);
 
-  const activeScene = useMemo(
-    () => displayScenes.find((s) => s.id === activeSceneId) ?? null,
-    [displayScenes, activeSceneId],
-  );
-
   // ─── Loading ─────────────────────────────────────────────────────────────
   if (!chapter) {
     return (
@@ -339,145 +346,169 @@ function ChapterWorkspacePage() {
   return (
     <div className="flex flex-1 overflow-hidden">
       {/* ─── Center area ─────────────────────────────────────────────────── */}
-      <div className="flex flex-1 flex-col overflow-y-auto">
-        <div className="mx-auto w-full max-w-3xl px-4 py-6">
-          {/* Chapter header */}
-          {chTitleEditing ? (
-            <Input
-              value={chTitleDraft}
-              onChange={(e) => setChTitleDraft(e.currentTarget.value)}
-              onBlur={commitChapterTitle}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") { e.preventDefault(); commitChapterTitle(); }
-                if (e.key === "Escape") setChTitleEditing(false);
-              }}
-              className="text-xl font-semibold"
-              autoFocus
-            />
-          ) : (
-            <h1
-              className={`font-heading text-xl font-semibold ${mode === "edit" ? "cursor-text" : ""}`}
-              onClick={() => {
-                if (mode === "edit") {
-                  setChTitleDraft(chapter.title);
-                  setChTitleEditing(true);
-                }
-              }}
-            >
-              {chapter.title}
-            </h1>
-          )}
-
-          {/* Collapsible summary (edit mode only) */}
-          {mode === "edit" && (
-            <div className="mt-2">
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Top toolbar: mode toggle */}
+        <div className="flex justify-end border-b px-4 py-2">
+          <div className="flex rounded-md bg-muted p-0.5" role="group">
+            {(["edit", "read"] as const).map((m) => (
               <button
+                key={m}
                 type="button"
-                onClick={() => setChSummaryOpen((v) => !v)}
-                className="flex items-center gap-1 text-xs text-muted-foreground/70 hover:text-muted-foreground"
+                aria-pressed={mode === m}
+                onClick={() => setMode(m)}
+                className={cn(
+                  "flex-1 rounded-sm px-3 py-1 text-xs font-medium transition-colors outline-none",
+                  mode === m
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
               >
-                <HugeiconsIcon icon={PencilEdit01Icon} strokeWidth={2} className="size-3.5" />
-                {chSummaryOpen ? t("novel:chapter.summaryHide") : t("novel:chapter.summaryShow")}
+                {t(`novel:workspace.mode.${m}`)}
               </button>
-              {chSummaryOpen && (
-                <Textarea
-                  defaultValue={chapter.summary}
-                  placeholder={t("novel:chapter.summaryPlaceholder")}
-                  className="mt-1 text-sm"
-                  rows={2}
-                  onBlur={(e) => commitChapterSummary(e.currentTarget.value)}
-                />
-              )}
-            </div>
-          )}
-
-          <Separator className="my-4" />
-
-          {/* ─── Edit mode: scene cards ──────────────────────────────────── */}
-          {mode === "edit" ? (
-            displayScenes.length === 0 ? (
-              <div className="flex flex-col items-center gap-3 py-12 text-center">
-                <p className="text-sm text-muted-foreground">
-                  {t("novel:scene.empty.description")}
-                </p>
-                <Button onClick={handleCreateScene}>
-                  <HugeiconsIcon icon={Add01Icon} strokeWidth={2} data-icon="inline-start" />
-                  {t("novel:scene.add")}
-                </Button>
-              </div>
+            ))}
+          </div>
+        </div>
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-3xl px-4 py-6">
+            {/* Chapter header */}
+            {chTitleEditing ? (
+              <Input
+                value={chTitleDraft}
+                onChange={(e) => setChTitleDraft(e.currentTarget.value)}
+                onBlur={commitChapterTitle}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); commitChapterTitle(); }
+                  if (e.key === "Escape") setChTitleEditing(false);
+                }}
+                className="text-xl font-semibold"
+                autoFocus
+              />
             ) : (
-              <>
-                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                  <SortableContext
-                    items={displayScenes.map((s) => s.id)}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    <div className="flex flex-col gap-4">
-                      {displayScenes.map((scene) => (
-                        <SortableScene
-                          key={scene.id}
-                          scene={scene}
-                          isActive={scene.id === activeSceneId}
-                          saveStatus={saveStatuses[scene.id] ?? "idle"}
-                          onFieldChange={(patch) => handleSceneFieldChange(scene.id, patch)}
-                          onActiveFocus={() => setActiveSceneId(scene.id)}
-                          onDelete={() => handleDeleteScene(scene.id)}
-                        />
-                      ))}
-                    </div>
-                  </SortableContext>
-                </DndContext>
+              <h1
+                className={`font-heading text-xl font-semibold ${mode === "edit" ? "cursor-text" : ""}`}
+                onClick={() => {
+                  if (mode === "edit") {
+                    setChTitleDraft(chapter.title);
+                    setChTitleEditing(true);
+                  }
+                }}
+              >
+                {chapter.title}
+              </h1>
+            )}
 
-                <Button
-                  variant="outline"
-                  className="mt-4 w-full"
-                  onClick={handleCreateScene}
+            {/* Collapsible summary (edit mode only) */}
+            {mode === "edit" && (
+              <div className="mt-2">
+                <button
+                  type="button"
+                  onClick={() => setChSummaryOpen((v) => !v)}
+                  className="flex items-center gap-1 text-xs text-muted-foreground/70 hover:text-muted-foreground"
                 >
-                  <HugeiconsIcon icon={Add01Icon} strokeWidth={2} data-icon="inline-start" />
-                  {t("novel:scene.add")}
-                </Button>
-              </>
-            )
-          ) : (
-            /* ─── Reading mode: concatenated content ────────────────────── */
-            <div className="prose prose-sm max-w-none">
-              {displayScenes.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  {t("novel:scene.empty.description")}
-                </p>
+                  <HugeiconsIcon icon={PencilEdit01Icon} strokeWidth={2} className="size-3.5" />
+                  {chSummaryOpen ? t("novel:chapter.summaryHide") : t("novel:chapter.summaryShow")}
+                </button>
+                {chSummaryOpen && (
+                  <Textarea
+                    defaultValue={chapter.summary}
+                    placeholder={t("novel:chapter.summaryPlaceholder")}
+                    className="mt-1 text-sm"
+                    rows={2}
+                    onBlur={(e) => commitChapterSummary(e.currentTarget.value)}
+                  />
+                )}
+              </div>
+            )}
+
+            <Separator className="my-4" />
+
+            {/* ─── Edit mode: scene cards ──────────────────────────────────── */}
+            {mode === "edit" ? (
+              displayScenes.length === 0 ? (
+                <div className="flex flex-col items-center gap-3 py-12 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    {t("novel:scene.empty.description")}
+                  </p>
+                  <Button onClick={handleCreateScene}>
+                    <HugeiconsIcon icon={Add01Icon} strokeWidth={2} data-icon="inline-start" />
+                    {t("novel:scene.add")}
+                  </Button>
+                </div>
               ) : (
-                displayScenes.map((scene, i) => (
-                  <div key={scene.id}>
-                    {i > 0 && <div className="h-6" />}
-                    <p className="whitespace-pre-wrap text-base leading-loose">
-                      {scene.content}
-                    </p>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
+                <>
+                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                    <SortableContext
+                      items={displayScenes.map((s) => s.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="flex flex-col gap-4">
+                        {displayScenes.map((scene) => (
+                          <SortableScene
+                            key={scene.id}
+                            scene={scene}
+                            isActive={scene.id === activeSceneId}
+                            saveStatus={saveStatuses[scene.id] ?? "idle"}
+                            spaceId={spaceId}
+                            worldId={wid}
+                            characters={characters}
+                            locations={locations}
+                            items={items}
+                            events={events}
+                            onFieldChange={(patch) => handleSceneFieldChange(scene.id, patch)}
+                            onActiveFocus={() => setActiveSceneId(scene.id)}
+                            onDelete={() => handleDeleteScene(scene.id)}
+                          />
+                        ))}
+                      </div>
+                    </SortableContext>
+                  </DndContext>
+
+                  <Button
+                    variant="outline"
+                    className="mt-4 w-full"
+                    onClick={handleCreateScene}
+                  >
+                    <HugeiconsIcon icon={Add01Icon} strokeWidth={2} data-icon="inline-start" />
+                    {t("novel:scene.add")}
+                  </Button>
+                </>
+              )
+            ) : (
+              /* ─── Reading mode: concatenated content ────────────────────── */
+              <div className="prose prose-sm max-w-none">
+                {displayScenes.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    {t("novel:scene.empty.description")}
+                  </p>
+                ) : (
+                  displayScenes.map((scene, i) => (
+                    <div key={scene.id}>
+                      {i > 0 && <div className="h-6" />}
+                      <p className="whitespace-pre-wrap text-base leading-loose">
+                        {scene.content}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* ─── Right sidebar ──────────────────────────────────────────────── */}
-      <SceneRefSidebar
-        mode={mode}
-        spaceId={spaceId}
-        worldId={wid}
-        activeScene={activeScene}
-        allScenes={displayScenes}
-        characters={characters}
-        locations={locations}
-        items={items}
-        events={events}
-        collapsed={rightCollapsed}
-        onToggleCollapsed={() => setRightCollapsed((v) => !v)}
-        onCharacterRefsChange={(refs) => handleActiveScenePatch({ characterRefs: refs })}
-        onLocationIdChange={(id) => handleActiveScenePatch({ locationId: id as LocationId | null })}
-        onItemIdsChange={(ids) => handleActiveScenePatch({ itemIds: ids as ItemId[] })}
-        onEventIdsChange={(ids) => handleActiveScenePatch({ eventIds: ids as EventId[] })}
-      />
+      {/* ─── Right sidebar (read mode only) ──────────────────────────────── */}
+      {mode === "read" && (
+        <SceneRefSidebar
+          allScenes={displayScenes}
+          characters={characters}
+          locations={locations}
+          items={items}
+          events={events}
+          collapsed={rightCollapsed}
+          onToggleCollapsed={() => setRightCollapsed((v) => !v)}
+        />
+      )}
     </div>
   );
 }

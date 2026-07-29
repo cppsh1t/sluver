@@ -1,15 +1,10 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Button } from "@/components/ui/button";
 import { EntityCard } from "@/components/worldbook/entity-card";
 import { ParticipantCard } from "@/components/worldbook/participant-card";
-import { CharacterRefPicker } from "@/components/worldbook/character-ref-picker";
-import { LocationRefPicker } from "@/components/worldbook/location-ref-picker";
-import { ItemMultiPicker } from "@/components/worldbook/item-multi-picker";
-import { EventMultiPicker } from "@/components/worldbook/event-multi-picker";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Add01Icon, Calendar03Icon } from "@hugeicons/core-free-icons";
+import { Calendar03Icon } from "@hugeicons/core-free-icons";
 import type {
   Character,
   CharacterRef,
@@ -17,16 +12,11 @@ import type {
   Item,
   Location,
   Scene,
-  WorldId,
 } from "@/types";
 
 export type WorkspaceMode = "edit" | "read";
 
 interface SceneRefSidebarProps {
-  mode: WorkspaceMode;
-  spaceId: string;
-  worldId: WorldId;
-  activeScene: Scene | null;
   allScenes: Scene[];
   characters: Character[];
   locations: Location[];
@@ -34,17 +24,9 @@ interface SceneRefSidebarProps {
   events: EventType[];
   collapsed: boolean;
   onToggleCollapsed: () => void;
-  onCharacterRefsChange: (refs: CharacterRef[]) => void;
-  onLocationIdChange: (locationId: string | null) => void;
-  onItemIdsChange: (ids: string[]) => void;
-  onEventIdsChange: (ids: string[]) => void;
 }
 
 function SceneRefSidebar({
-  mode,
-  spaceId,
-  worldId,
-  activeScene,
   allScenes,
   characters,
   locations,
@@ -52,14 +34,8 @@ function SceneRefSidebar({
   events,
   collapsed,
   onToggleCollapsed,
-  onCharacterRefsChange,
-  onLocationIdChange,
-  onItemIdsChange,
-  onEventIdsChange,
 }: SceneRefSidebarProps) {
   const { t } = useTranslation(["novel", "common", "event"]);
-  const [itemPickerOpen, setItemPickerOpen] = useState(false);
-  const [eventPickerOpen, setEventPickerOpen] = useState(false);
 
   const charMap = useMemo(() => {
     const m = new Map<string, Character>();
@@ -85,7 +61,7 @@ function SceneRefSidebar({
     return m;
   }, [events]);
 
-  // ─── Reading mode: aggregate all scenes' refs (deduplicated) ───────────
+  // ─── Aggregate all scenes' refs (deduplicated) ────────────────────────
 
   const aggregate = useMemo(() => {
     const charRefSet = new Set<string>();
@@ -140,17 +116,6 @@ function SceneRefSidebar({
     );
   }
 
-  // ─── Edit mode: active scene's refs ────────────────────────────────────
-
-  const sceneRefs = mode === "edit" ? activeScene : null;
-  const displayCharRefs = mode === "edit" ? (activeScene?.characterRefs ?? []) : aggregate.charRefs;
-  const displayLocationId = mode === "edit" ? (activeScene?.locationId ?? null) : aggregate.locIds[0] ?? null;
-  const displayAllLocationIds = mode === "read" ? aggregate.locIds : [];
-  const displayItemIds = mode === "edit" ? (activeScene?.itemIds ?? []) : aggregate.itemIds;
-  const displayEventIds = mode === "edit" ? (activeScene?.eventIds ?? []) : aggregate.eventIds;
-
-  const isReadonly = mode === "read";
-
   return (
     <div className="flex w-64 shrink-0 flex-col overflow-y-auto border-l bg-background">
       {/* Collapse button */}
@@ -164,37 +129,24 @@ function SceneRefSidebar({
         </button>
       </div>
 
-      {mode === "read" && (
-        <div className="border-b px-3 py-2">
-          <p className="text-xs font-medium text-muted-foreground">
-            {t("novel:refs.chapterOverview")}
-          </p>
-        </div>
-      )}
+      <div className="border-b px-3 py-2">
+        <p className="text-xs font-medium text-muted-foreground">
+          {t("novel:refs.chapterOverview")}
+        </p>
+      </div>
 
       {/* Characters */}
       <div className="flex flex-col gap-2 border-b px-3 py-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium">
-            {t("novel:refs.characters.title")}
-          </h3>
-          {!isReadonly && sceneRefs && (
-            <CharacterRefPicker
-              spaceId={spaceId}
-              worldId={worldId}
-              selectedRefs={sceneRefs.characterRefs}
-              characters={characters}
-              onCommit={onCharacterRefsChange}
-            />
-          )}
-        </div>
-        {displayCharRefs.length === 0 ? (
+        <h3 className="text-sm font-medium">
+          {t("novel:refs.characters.title")}
+        </h3>
+        {aggregate.charRefs.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             {t("novel:refs.characters.empty")}
           </p>
         ) : (
           <div className="flex flex-col gap-2">
-            {displayCharRefs.map((ref) => {
+            {aggregate.charRefs.map((ref) => {
               const c = charMap.get(ref.characterId);
               const p = c?.phases.find((ph) => ph.id === ref.phaseId);
               if (!c || !p) return null;
@@ -206,20 +158,6 @@ function SceneRefSidebar({
                   phaseName={p.name}
                   phaseAppearance={p.appearance}
                   phaseChanges={p.changes}
-                  onRemove={
-                    isReadonly
-                      ? undefined
-                      : () =>
-                          onCharacterRefsChange(
-                            displayCharRefs.filter(
-                              (r) =>
-                                !(
-                                  r.characterId === ref.characterId &&
-                                  r.phaseId === ref.phaseId
-                                ),
-                            ),
-                          )
-                  }
                 />
               );
             })}
@@ -229,85 +167,45 @@ function SceneRefSidebar({
 
       {/* Location */}
       <div className="flex flex-col gap-2 border-b px-3 py-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium">
-            {t("novel:refs.location.title")}
-          </h3>
-          {!isReadonly && sceneRefs && (
-            <LocationRefPicker
-              locations={locations}
-              selectedLocationId={sceneRefs.locationId}
-              onSelect={onLocationIdChange}
-            />
-          )}
-        </div>
-        {mode === "read" ? (
-          displayAllLocationIds.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              {t("novel:refs.location.none")}
-            </p>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {displayAllLocationIds.map((id) => {
-                const loc = locMap.get(id);
-                if (!loc) return null;
-                return (
-                  <EntityCard
-                    key={id}
-                    name={loc.name}
-                    description={loc.description}
-                    tags={loc.tags}
-                    updatedAt={loc.updatedAt}
-                    entityType="location"
-                  />
-                );
-              })}
-            </div>
-          )
-        ) : displayLocationId ? (
-          (() => {
-            const loc = locMap.get(displayLocationId);
-            if (!loc) return <p className="text-xs text-muted-foreground">{t("novel:refs.location.none")}</p>;
-            return (
-              <EntityCard
-                name={loc.name}
-                description={loc.description}
-                tags={loc.tags}
-                updatedAt={loc.updatedAt}
-                entityType="location"
-                selectable
-                selected
-                onRemove={() => onLocationIdChange(null)}
-              />
-            );
-          })()
-        ) : (
+        <h3 className="text-sm font-medium">
+          {t("novel:refs.location.title")}
+        </h3>
+        {aggregate.locIds.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             {t("novel:refs.location.none")}
           </p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {aggregate.locIds.map((id) => {
+              const loc = locMap.get(id);
+              if (!loc) return null;
+              return (
+                <EntityCard
+                  key={id}
+                  name={loc.name}
+                  description={loc.description}
+                  tags={loc.tags}
+                  updatedAt={loc.updatedAt}
+                  entityType="location"
+                />
+              );
+            })}
+          </div>
         )}
       </div>
 
       {/* Items */}
       <div className="flex flex-col gap-2 border-b px-3 py-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium">
-            {t("novel:refs.items.title")}
-          </h3>
-          {!isReadonly && sceneRefs && (
-            <Button variant="outline" size="sm" onClick={() => setItemPickerOpen(true)}>
-              <HugeiconsIcon icon={Add01Icon} strokeWidth={2} className="size-3.5" />
-              {t("novel:refs.items.add")}
-            </Button>
-          )}
-        </div>
-        {displayItemIds.length === 0 ? (
+        <h3 className="text-sm font-medium">
+          {t("novel:refs.items.title")}
+        </h3>
+        {aggregate.itemIds.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             {t("novel:refs.items.empty")}
           </p>
         ) : (
           <div className="flex flex-col gap-2">
-            {displayItemIds.map((id) => {
+            {aggregate.itemIds.map((id) => {
               const item = itemMap.get(id);
               if (!item) return null;
               return (
@@ -318,16 +216,6 @@ function SceneRefSidebar({
                   tags={item.tags}
                   updatedAt={item.updatedAt}
                   entityType="item"
-                  selectable
-                  selected
-                  onRemove={
-                    isReadonly
-                      ? undefined
-                      : () =>
-                          onItemIdsChange(
-                            displayItemIds.filter((i) => i !== id),
-                          )
-                  }
                 />
               );
             })}
@@ -337,24 +225,16 @@ function SceneRefSidebar({
 
       {/* Events */}
       <div className="flex flex-col gap-2 px-3 py-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium">
-            {t("novel:refs.events.title")}
-          </h3>
-          {!isReadonly && sceneRefs && (
-            <Button variant="outline" size="sm" onClick={() => setEventPickerOpen(true)}>
-              <HugeiconsIcon icon={Add01Icon} strokeWidth={2} className="size-3.5" />
-              {t("novel:refs.events.add")}
-            </Button>
-          )}
-        </div>
-        {displayEventIds.length === 0 ? (
+        <h3 className="text-sm font-medium">
+          {t("novel:refs.events.title")}
+        </h3>
+        {aggregate.eventIds.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             {t("novel:refs.events.empty")}
           </p>
         ) : (
           <div className="flex flex-col gap-2">
-            {displayEventIds.map((id) => {
+            {aggregate.eventIds.map((id) => {
               const evt = eventMap.get(id);
               if (!evt) return null;
               return (
@@ -372,27 +252,6 @@ function SceneRefSidebar({
           </div>
         )}
       </div>
-
-      {/* Picker dialogs */}
-      {sceneRefs && (
-        <>
-          <ItemMultiPicker
-            open={itemPickerOpen}
-            onOpenChange={setItemPickerOpen}
-            items={items}
-            selectedIds={sceneRefs.itemIds}
-            onCommit={onItemIdsChange}
-          />
-          <EventMultiPicker
-            spaceId={spaceId}
-            open={eventPickerOpen}
-            onOpenChange={setEventPickerOpen}
-            events={events}
-            selectedIds={sceneRefs.eventIds}
-            onCommit={onEventIdsChange}
-          />
-        </>
-      )}
     </div>
   );
 }

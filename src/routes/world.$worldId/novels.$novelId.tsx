@@ -31,9 +31,13 @@ export type WorkspaceMode = SidebarMode;
 
 interface WorkspaceCtx {
   mode: WorkspaceMode;
+  setMode: (m: WorkspaceMode) => void;
 }
 
-const WorkspaceContext = createContext<WorkspaceCtx>({ mode: "edit" });
+const WorkspaceContext = createContext<WorkspaceCtx>({
+  mode: "read",
+  setMode: () => {},
+});
 
 function NovelWorkspaceLayout() {
   const { t } = useTranslation(["novel", "common"]);
@@ -52,7 +56,7 @@ function NovelWorkspaceLayout() {
   const reorderMut = useReorderChapters(spaceId, wid, nid);
   const updateNovelMut = useUpdateNovel(spaceId, wid);
 
-  const [mode, setMode] = useState<WorkspaceMode>("edit");
+  const [mode, setMode] = useState<WorkspaceMode>("read");
   const [editNovelOpen, setEditNovelOpen] = useState(false);
 
   // Derive active chapter from URL (layout route doesn't have chapterId param).
@@ -127,22 +131,22 @@ function NovelWorkspaceLayout() {
   }
 
   return (
-    <WorkspaceContext.Provider value={{ mode }}>
+    <WorkspaceContext.Provider value={{ mode, setMode }}>
       <div className="flex flex-1 overflow-hidden">
-        <ChapterSidebar
-          spaceId={spaceId}
-          worldId={wid}
-          novelId={nid}
-          novel={novel}
-          chapters={chapters}
-          activeChapterId={activeChapterId}
-          mode={mode}
-          onModeChange={setMode}
-          onEditNovel={() => setEditNovelOpen(true)}
-          onAddChapter={handleAddChapter}
-          onDeleteChapter={handleDeleteChapter}
-          onReorderChapters={handleReorderChapters}
-        />
+        {mode === "read" && (
+          <ChapterSidebar
+            spaceId={spaceId}
+            worldId={wid}
+            novelId={nid}
+            novel={novel}
+            chapters={chapters}
+            activeChapterId={activeChapterId}
+            onEditNovel={() => setEditNovelOpen(true)}
+            onAddChapter={handleAddChapter}
+            onDeleteChapter={handleDeleteChapter}
+            onReorderChapters={handleReorderChapters}
+          />
+        )}
         <Outlet />
       </div>
 
@@ -164,8 +168,8 @@ function NovelWorkspaceLayout() {
   );
 }
 
-export function useWorkspaceMode(): WorkspaceMode {
-  return useContext(WorkspaceContext).mode;
+export function useWorkspaceMode(): WorkspaceCtx {
+  return useContext(WorkspaceContext);
 }
 
 export const novelWorkspaceRoute = createRoute({

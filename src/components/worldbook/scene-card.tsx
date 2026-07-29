@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import dayjs from "dayjs";
 
@@ -26,16 +26,34 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { EntityCard } from "@/components/worldbook/entity-card";
+import { ParticipantCard } from "@/components/worldbook/participant-card";
+import { CharacterRefPicker } from "@/components/worldbook/character-ref-picker";
+import { LocationRefPicker } from "@/components/worldbook/location-ref-picker";
+import { ItemMultiPicker } from "@/components/worldbook/item-multi-picker";
+import { EventMultiPicker } from "@/components/worldbook/event-multi-picker";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
+  Add01Icon,
   Calendar03Icon,
   Delete02Icon,
   GripVerticalIcon,
+  Link02Icon,
   MoreHorizontalIcon,
   PencilEdit01Icon,
 } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
-import type { Scene } from "@/types";
+import type {
+  Character,
+  Event as EventType,
+  EventId,
+  Item,
+  ItemId,
+  Location,
+  LocationId,
+  Scene,
+  WorldId,
+} from "@/types";
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
@@ -60,6 +78,12 @@ interface SceneCardProps {
   saveStatus: SaveStatus;
   isDragging?: boolean;
   dragHandleProps?: Record<string, unknown>;
+  spaceId: string;
+  worldId: WorldId;
+  characters: Character[];
+  locations: Location[];
+  items: Item[];
+  events: EventType[];
   onFieldChange: (patch: ScenePatch) => void;
   onActiveFocus: () => void;
   onDelete: () => void;
@@ -86,6 +110,12 @@ function SceneCard({
   saveStatus,
   isDragging,
   dragHandleProps,
+  spaceId,
+  worldId,
+  characters,
+  locations,
+  items,
+  events,
   onFieldChange,
   onActiveFocus,
   onDelete,
@@ -93,8 +123,35 @@ function SceneCard({
   const { t, i18n } = useTranslation(["novel", "common"]);
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(scene.title);
-  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(true);
+  const [refsOpen, setRefsOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [itemPickerOpen, setItemPickerOpen] = useState(false);
+  const [eventPickerOpen, setEventPickerOpen] = useState(false);
+
+  const charMap = useMemo(() => {
+    const m = new Map<string, Character>();
+    for (const c of characters) m.set(c.id, c);
+    return m;
+  }, [characters]);
+
+  const locMap = useMemo(() => {
+    const m = new Map<string, Location>();
+    for (const l of locations) m.set(l.id, l);
+    return m;
+  }, [locations]);
+
+  const itemMap = useMemo(() => {
+    const m = new Map<string, Item>();
+    for (const i of items) m.set(i.id, i);
+    return m;
+  }, [items]);
+
+  const eventMap = useMemo(() => {
+    const m = new Map<string, EventType>();
+    for (const e of events) m.set(e.id, e);
+    return m;
+  }, [events]);
 
   const contentRef = useRef<HTMLTextAreaElement>(null);
 
@@ -307,6 +364,237 @@ function SceneCard({
           }}
         />
       </div>
+
+      {/* Collapsible references (关联) section */}
+      <div className="border-t px-4 py-3">
+        <button
+          type="button"
+          onClick={() => setRefsOpen((v) => !v)}
+          className="flex items-center gap-1 text-xs text-muted-foreground/70 hover:text-muted-foreground"
+        >
+          <HugeiconsIcon icon={Link02Icon} strokeWidth={2} className="size-3.5" />
+          {refsOpen ? t("novel:scene.refsHide") : t("novel:scene.refsShow")}
+        </button>
+        {refsOpen && (
+          <div className="mt-3 flex flex-col gap-4">
+            {/* Characters */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-medium">
+                  {t("novel:refs.characters.title")}
+                </h4>
+                <CharacterRefPicker
+                  spaceId={spaceId}
+                  worldId={worldId}
+                  selectedRefs={scene.characterRefs}
+                  characters={characters}
+                  onCommit={(refs) => onFieldChange({ characterRefs: refs })}
+                />
+              </div>
+              {scene.characterRefs.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  {t("novel:refs.characters.empty")}
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {scene.characterRefs.map((ref) => {
+                    const c = charMap.get(ref.characterId);
+                    const p = c?.phases.find((ph) => ph.id === ref.phaseId);
+                    if (!c || !p) return null;
+                    return (
+                      <ParticipantCard
+                        key={`${ref.characterId}-${ref.phaseId}`}
+                        characterName={c.name}
+                        characterAliases={c.aliases}
+                        phaseName={p.name}
+                        phaseAppearance={p.appearance}
+                        phaseChanges={p.changes}
+                        onRemove={() =>
+                          onFieldChange({
+                            characterRefs: scene.characterRefs.filter(
+                              (r) =>
+                                !(
+                                  r.characterId === ref.characterId &&
+                                  r.phaseId === ref.phaseId
+                                ),
+                            ),
+                          })
+                        }
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Location */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-medium">
+                  {t("novel:refs.location.title")}
+                </h4>
+                <LocationRefPicker
+                  locations={locations}
+                  selectedLocationId={scene.locationId}
+                  onSelect={(id) =>
+                    onFieldChange({ locationId: id as LocationId | null })
+                  }
+                />
+              </div>
+              {scene.locationId ? (
+                (() => {
+                  const loc = locMap.get(scene.locationId);
+                  if (!loc) {
+                    return (
+                      <p className="text-xs text-muted-foreground">
+                        {t("novel:refs.location.none")}
+                      </p>
+                    );
+                  }
+                  return (
+                    <EntityCard
+                      name={loc.name}
+                      description={loc.description}
+                      tags={loc.tags}
+                      updatedAt={loc.updatedAt}
+                      entityType="location"
+                      selectable
+                      selected
+                      onRemove={() => onFieldChange({ locationId: null })}
+                    />
+                  );
+                })()
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  {t("novel:refs.location.none")}
+                </p>
+              )}
+            </div>
+
+            {/* Items */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-medium">
+                  {t("novel:refs.items.title")}
+                </h4>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setItemPickerOpen(true)}
+                >
+                  <HugeiconsIcon
+                    icon={Add01Icon}
+                    strokeWidth={2}
+                    className="size-3.5"
+                  />
+                  {t("novel:refs.items.add")}
+                </Button>
+              </div>
+              {scene.itemIds.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  {t("novel:refs.items.empty")}
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {scene.itemIds.map((id) => {
+                    const item = itemMap.get(id);
+                    if (!item) return null;
+                    return (
+                      <EntityCard
+                        key={id}
+                        name={item.name}
+                        description={item.description}
+                        tags={item.tags}
+                        updatedAt={item.updatedAt}
+                        entityType="item"
+                        selectable
+                        selected
+                        onRemove={() =>
+                          onFieldChange({
+                            itemIds: scene.itemIds.filter((i) => i !== id),
+                          })
+                        }
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Events */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-medium">
+                  {t("novel:refs.events.title")}
+                </h4>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setEventPickerOpen(true)}
+                >
+                  <HugeiconsIcon
+                    icon={Add01Icon}
+                    strokeWidth={2}
+                    className="size-3.5"
+                  />
+                  {t("novel:refs.events.add")}
+                </Button>
+              </div>
+              {scene.eventIds.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  {t("novel:refs.events.empty")}
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {scene.eventIds.map((id) => {
+                    const evt = eventMap.get(id);
+                    if (!evt) return null;
+                    return (
+                      <div
+                        key={id}
+                        className="flex items-center gap-2 rounded-md border px-3 py-2"
+                      >
+                        <HugeiconsIcon
+                          icon={Calendar03Icon}
+                          strokeWidth={2}
+                          className="size-4 shrink-0 text-muted-foreground"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">
+                            {evt.name}
+                          </p>
+                          {evt.description && (
+                            <p className="truncate text-xs text-muted-foreground">
+                              {evt.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Picker dialogs */}
+      <ItemMultiPicker
+        open={itemPickerOpen}
+        onOpenChange={setItemPickerOpen}
+        items={items}
+        selectedIds={scene.itemIds}
+        onCommit={(ids) => onFieldChange({ itemIds: ids as ItemId[] })}
+      />
+      <EventMultiPicker
+        spaceId={spaceId}
+        open={eventPickerOpen}
+        onOpenChange={setEventPickerOpen}
+        events={events}
+        selectedIds={scene.eventIds}
+        onCommit={(ids) => onFieldChange({ eventIds: ids as EventId[] })}
+      />
 
       {/* Footer: word count */}
       {wordCount > 0 && (
