@@ -84,6 +84,14 @@ _Avoid_: Agent, Loop, Runner, StepDriver
 A named AI configuration slot within a Space — the persistent definition of an AgentLoop's model and behavior. Carries both the bound model (chosen from the Space's configured providers) and, eventually, the behavior bundle (system prompt, tools, parameters); in v1 only the model binding is persisted, with behavior hardcoded in code via `AgentLoopOptions`. Two AgentConfigs are predefined per Space — **Explorer** and **Writer** — both seeded into `space.db` on Space creation; users pick a model for each but cannot create or delete AgentConfigs in v1.
 _Avoid_: Assistant, Persona, Bot, Role
 
+**Conversation**:
+A persisted, World-scoped multi-turn chat history between the user and an Agent (bound to an AgentConfig). The user-facing, typed counterpart of the library's `SessionRecord` (ADR-0020) — the pure library is domain-agnostic and calls it a "Session"; the app layer wraps and types it as a Conversation. Contains an ordered list of **Messages**. World-scoped per ADR-0022 — a Conversation belongs to exactly one World and is physically invisible to other Worlds (it lives in that World's `world.db`). Conversations come in two scopes, distinguished by `meta.kind`: **World-level** (`kind: "world"`, listed in the World's Chat page) and **chapter-scoped** (`kind: "chapter"` with a `chapterId`, shown inside that chapter's editor). Both scopes are one-to-many — a World holds many World-level Conversations, and a Chapter holds many chapter-scoped Conversations. The UI feature label is "Chat" — "Chat" is a UI affordance over Conversations, not a domain term.
+_Avoid_: Chat, Thread, Session, Dialogue
+
+**Message**:
+A single turn within a Conversation — the app-layer, typed counterpart of the library's `SessionMessage` (ADR-0020). Carries role (user / assistant / tool), content, identity (`id`), and timestamp. The atomic unit of a Conversation's history.
+_Avoid_: ChatMessage, StoredMessage, MessageRecord
+
 **Launcher**:
 The app's anchor window outside any Space — the OS window whose label is the statically configured `"main"` (`tauri.conf.json`), rendering the Space picker / landing UI where Spaces are selected and created. Distinct from Space windows in two ways: it hides to tray on close (keeping the process alive) rather than being destroyed, and closing all Space windows does NOT auto-show it — the user returns to it via the tray menu or by relaunching the app (which auto-reopens `lastOpenedSpaceId`). Identity is its fixed label `"main"` (single instance).
 _Avoid_: Dashboard, Home, Welcome screen, Hub, Shell
