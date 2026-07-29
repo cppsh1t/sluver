@@ -140,27 +140,23 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| {
             let id: &str = event.id().as_ref();
-            // Diagnostic: confirms the handler fires. If you see this line in
-            // the `pnpm tauri dev` terminal after clicking a menu item, the
-            // tray plumbing is healthy — look elsewhere (usually the action).
-            eprintln!("[tray] menu event: {id}");
             if let Some(space_id) = id.strip_prefix("focus-space:") {
                 // Focus the corresponding Space window.
                 let label = crate::window_manager::space_window_label(space_id);
                 match app.get_webview_window(&label) {
                     Some(w) => {
                         if let Err(e) = w.unminimize() {
-                            eprintln!("[tray] focus-space unminimize failed: {e}");
+                            tracing::warn!(window_label = %label, error = %e, "window.unminimize_failed");
                         }
                         if let Err(e) = w.show() {
-                            eprintln!("[tray] focus-space show failed: {e}");
+                            tracing::warn!(window_label = %label, error = %e, "window.show_failed");
                         }
                         if let Err(e) = w.set_focus() {
-                            eprintln!("[tray] focus-space set_focus failed: {e}");
+                            tracing::warn!(window_label = %label, error = %e, "window.set_focus_failed");
                         }
                     }
                     None => {
-                        eprintln!("[tray] space window not found: {label}");
+                        tracing::error!(window_label = %label, "window.not_found");
                     }
                 }
             } else {
@@ -178,7 +174,6 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
                 ..
             } = event
             {
-                eprintln!("[tray] left-click → focus_launcher");
                 crate::window_manager::focus_launcher(tray.app_handle());
             }
         })

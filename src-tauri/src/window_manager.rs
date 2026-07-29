@@ -78,25 +78,22 @@ fn tauri_err(e: tauri::Error) -> DbError {
 /// creation failures are infrastructure (no business semantics to translate).
 pub fn ensure_space_window(app: &AppHandle, space_id: &str) -> Result<(), DbError> {
     let label = space_window_label(space_id);
-    eprintln!("[ensure_space_window] called: space_id={space_id}, label={label}");
 
     // Single-instance: focus existing window.
     if let Some(window) = app.get_webview_window(&label) {
-        eprintln!("[ensure_space_window] window exists — focusing");
         if let Err(e) = window.unminimize() {
-            eprintln!("[ensure_space_window] unminimize failed: {e}");
+            tracing::warn!(window_label = %label, error = %e, "window.unminimize_failed");
         }
         if let Err(e) = window.show() {
-            eprintln!("[ensure_space_window] show failed: {e}");
+            tracing::warn!(window_label = %label, error = %e, "window.show_failed");
         }
         if let Err(e) = window.set_focus() {
-            eprintln!("[ensure_space_window] set_focus failed: {e}");
+            tracing::warn!(window_label = %label, error = %e, "window.set_focus_failed");
         }
         return Ok(());
     }
 
     let space_name = space_name(app, space_id);
-    eprintln!("[ensure_space_window] creating new window: title=Sluver — {space_name}");
 
     // Create new window. URL path `/space/{id}` lets the frontend router
     // identify which Space this window is for.
@@ -113,12 +110,10 @@ pub fn ensure_space_window(app: &AppHandle, space_id: &str) -> Result<(), DbErro
     .visible(false)
     .build()
     .map_err(tauri_err)?;
-    eprintln!("[ensure_space_window] window built: {label}");
 
     // Apply decorum overlay for frameless caption controls (same treatment
     // as the launcher window — see `lib.rs` setup).
     window.create_overlay_titlebar().map_err(tauri_err)?;
-    eprintln!("[ensure_space_window] overlay titlebar created");
 
     #[cfg(target_os = "macos")]
     window
@@ -128,33 +123,30 @@ pub fn ensure_space_window(app: &AppHandle, space_id: &str) -> Result<(), DbErro
     // Show after the overlay is wired up.
     window.show().map_err(tauri_err)?;
     window.set_focus().map_err(tauri_err)?;
-    eprintln!("[ensure_space_window] window shown + focused");
 
     // Refresh tray menu so the new window appears in the list.
     crate::tray::refresh(app);
-    eprintln!("[ensure_space_window] tray refreshed — done");
 
     Ok(())
 }
 
 /// Focus the launcher (main) window. Used by the tray menu and left-click.
 ///
-/// Logs (via `eprintln!`) when the window can't be found or an operation
-/// fails — these failures were previously swallowed by `let _ =`, which made
-/// tray-click "nothing happens" symptoms impossible to distinguish from a
-/// broken event handler. The `eprintln!` output appears in the `pnpm tauri
-/// dev` terminal.
+/// Failures are logged via `tracing::warn!` (and `tracing::error!` if the
+/// main window is somehow gone) — these were previously swallowed by
+/// `let _ =`, which made tray-click "nothing happens" symptoms impossible to
+/// distinguish from a broken event handler.
 pub fn focus_launcher(app: &AppHandle) {
     match app.get_webview_window("main") {
         Some(w) => {
             if let Err(e) = w.unminimize() {
-                eprintln!("[focus_launcher] unminimize failed: {e}");
+                tracing::warn!(error = %e, "launcher.unminimize_failed");
             }
             if let Err(e) = w.show() {
-                eprintln!("[focus_launcher] show failed: {e}");
+                tracing::warn!(error = %e, "launcher.show_failed");
             }
             if let Err(e) = w.set_focus() {
-                eprintln!("[focus_launcher] set_focus failed: {e}");
+                tracing::warn!(error = %e, "launcher.set_focus_failed");
             }
         }
         None => {
@@ -162,7 +154,7 @@ pub fn focus_launcher(app: &AppHandle) {
             // and protected from destruction by `prevent_close` in the
             // CloseRequested handler (see lib.rs). If it's somehow gone,
             // that's a real bug — log it loudly.
-            eprintln!("[focus_launcher] main window not found — cannot focus launcher");
+            tracing::error!("launcher.window_not_found");
         }
     }
 }
