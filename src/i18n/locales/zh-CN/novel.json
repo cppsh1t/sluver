@@ -79,6 +79,8 @@
     "summaryPlaceholder": "这个场景发生了什么...",
     "summaryShow": "显示梗概",
     "summaryHide": "隐藏梗概",
+    "refsShow": "显示关联",
+    "refsHide": "隐藏关联",
     "timeSet": "设置时间",
     "timeUnspecified": "未设置时间",
     "deleteAction": "删除",

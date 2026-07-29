@@ -79,6 +79,8 @@
     "summaryPlaceholder": "What happens in this scene...",
     "summaryShow": "Show summary",
     "summaryHide": "Hide summary",
+    "refsShow": "Show references",
+    "refsHide": "Hide references",
     "timeSet": "Set time",
     "timeUnspecified": "No time set",
     "deleteAction": "Delete",
