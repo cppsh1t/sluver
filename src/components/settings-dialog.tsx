@@ -4,6 +4,7 @@ import { useRouterState } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { locale as detectOsLocale } from "@tauri-apps/plugin-os";
 import { openPath } from "@tauri-apps/plugin-opener";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { downloadDir, join } from "@tauri-apps/api/path";
 import dayjs from "dayjs";
 
@@ -346,15 +347,29 @@ function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   }
 
   async function handleConfirmExport() {
+    // Pop a native directory picker so the user chooses the destination,
+    // instead of silently dumping into the downloads folder. Default the
+    // picker to the downloads folder as a sensible starting point.
+    let defaultPath: string;
+    try {
+      defaultPath = await downloadDir();
+    } catch {
+      defaultPath = "";
+    }
+    const picked = await openDialog({ directory: true, defaultPath });
+    // `null` = dismissed; an array only happens with `multiple: true` (not
+    // set). Either way, anything that isn't a single string path = cancel:
+    // keep the options sub-dialog open (no error toast) so the user can retry.
+    if (typeof picked !== "string") return;
+
     setExporting(true);
     try {
-      const dir = await downloadDir();
       // Include HH-mm so same-day exports don't silently overwrite. Two
       // exports within the same minute are still treated as the same file
       // (intentional — avoids clutter from rapid double-clicks).
       const stamp = dayjs().format("YYYY-MM-DD_HH-mm");
       const filename = `sluver-logs-${stamp}.zip`;
-      const outputPath = await join(dir, filename);
+      const outputPath = await join(picked, filename);
       const range: DateRange =
         exportDateRange === "last14"
           ? dateRange.lastNDays(14)

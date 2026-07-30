@@ -2,6 +2,7 @@ import { Component, useState, type ErrorInfo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { downloadDir, join } from "@tauri-apps/api/path";
+import { open } from "@tauri-apps/plugin-dialog";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert02Icon } from "@hugeicons/core-free-icons";
 
@@ -109,12 +110,27 @@ function ErrorFallback({ errorId }: ErrorFallbackProps) {
 
   async function handleExportLogs(): Promise<void> {
     if (isExporting) return;
+    // Native directory picker — let the user choose where the zip lands,
+    // instead of silently dumping into the downloads folder. Default the
+    // picker to the downloads folder as a sensible starting point. The
+    // picker is a modal OS dialog so a second click can't race it.
+    let defaultPath: string;
+    try {
+      defaultPath = await downloadDir();
+    } catch {
+      defaultPath = "";
+    }
+    const picked = await open({ directory: true, defaultPath });
+    // `null` = dismissed; an array only happens with `multiple: true` (not
+    // set). Treat anything that isn't a single string path as a silent cancel
+    // — the crash screen shouldn't toast an error for a user-initiated cancel.
+    if (typeof picked !== "string") return;
+
     setIsExporting(true);
     try {
       // No Space filter from the crash UI — we don't know which Space the
       // user was in (the crash may have happened in the launcher), so send
       // the whole unified log file. ADR-0015 documents this trade-off.
-      const dir = await downloadDir();
       // Local date so the filename matches the user's wall clock; UTC would
       // drift by a day for evening exporters west of GMT.
       const now = new Date();
@@ -122,7 +138,7 @@ function ErrorFallback({ errorId }: ErrorFallbackProps) {
       const mm = String(now.getMonth() + 1).padStart(2, "0");
       const dd = String(now.getDate()).padStart(2, "0");
       const fileName = `sluver-logs-${yyyy}-${mm}-${dd}.zip`;
-      const outputPath = await join(dir, fileName);
+      const outputPath = await join(picked, fileName);
       await exportLogs({ outputPath, dateRange: dateRange.all() });
       toast.success(t("exportSuccess", { path: outputPath }));
     } catch (e) {
