@@ -9,6 +9,7 @@ import {
   Package02Icon,
   Calendar03Icon,
   UserMultiple02Icon,
+  AiChat02Icon,
 } from "@hugeicons/core-free-icons";
 
 import { cn } from "@/lib/utils";
@@ -68,6 +69,17 @@ function WorldSidebar() {
           to: "/space/$spaceId/world/$worldId/novels" as const,
           icon: Book02Icon,
           match: "/space/$spaceId/world/$worldId/novels",
+        },
+      ],
+    },
+    {
+      label: t("nav.assistant"),
+      items: [
+        {
+          label: t("nav.chat"),
+          to: "/space/$spaceId/world/$worldId/chat" as const,
+          icon: AiChat02Icon,
+          match: "/space/$spaceId/world/$worldId/chat",
         },
       ],
     },

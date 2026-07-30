@@ -2,6 +2,7 @@ import { createRoute, Outlet, useParams } from "@tanstack/react-router";
 
 import { rootRoute } from "../__root";
 import { SpacePasswordGate } from "@/components/space-password-gate";
+import { ConversationRuntimeProvider } from "@/lib/conversation-runtime";
 import { useSpaces, useSession } from "@/hooks";
 import type { SpaceId } from "@/types";
 
@@ -38,7 +39,17 @@ function SpaceLayout() {
 
   return (
     <div className="relative flex flex-1 overflow-hidden">
-      <Outlet />
+      {/*
+        ConversationRuntimeProvider owns the AI-chat runtime store for the
+        lifetime of this Space window (ADR-0011/0024). Mounted here — above the
+        world/chapter routes — so every world's conversations share one store
+        and in-flight runs survive navigation between them. Hiding the window to
+        the tray does not unmount this provider; only destroying the window
+        tears the runtime down.
+      */}
+      <ConversationRuntimeProvider spaceId={spaceIdBranded}>
+        <Outlet />
+      </ConversationRuntimeProvider>
       {isLocked && (
         <SpacePasswordGate spaceId={spaceIdBranded} spaceName={spaceName} />
       )}
