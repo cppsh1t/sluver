@@ -96,3 +96,10 @@ export {
   useRefreshModelsDevCatalog,
   useResolvedModelConfig,
 } from "./use-ai-config";
+
+export {
+  conversationKeys,
+  useConversations,
+  useCreateConversation,
+  useDeleteConversation,
+} from "./use-conversations";
