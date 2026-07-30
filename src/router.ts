@@ -9,6 +9,7 @@ import { spaceConfigRoute } from "./routes/space.$spaceId/config";
 import { spaceLibraryRoute } from "./routes/space.$spaceId/library";
 import { worldLayoutRoute } from "./routes/world.$worldId/_world";
 import { worldIndexRoute } from "./routes/world.$worldId/index";
+import { chatRoute } from "./routes/world.$worldId/chat";
 import { charactersRoute } from "./routes/world.$worldId/characters";
 import { characterDetailRoute } from "./routes/world.$worldId/characters.$characterId";
 import { eventsRoute } from "./routes/world.$worldId/events";
@@ -44,6 +45,7 @@ const routeTree = rootRoute.addChildren([
       loreRoute,
       novelsRoute,
       novelWorkspaceRoute.addChildren([novelIndexRoute, chapterWorkspaceRoute]),
+      chatRoute,
     ]),
   ]),
 ]);
