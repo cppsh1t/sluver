@@ -26,6 +26,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { Conversation, WorldId } from "@/types";
 
+import { Markdown } from "./markdown";
 import { buildBlocks, type RenderBlock } from "./message-render";
 import { ToolCard } from "./tool-card";
 
@@ -126,10 +127,8 @@ function renderBlock(block: RenderBlock): ReactNode {
     case "assistant-text":
       return (
         <div key={block.id} className="flex flex-col gap-1">
-          <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-            {block.text}
-            {block.streaming && <StreamingCursor />}
-          </div>
+          <Markdown content={block.text} />
+          {block.streaming && <StreamingCursor />}
         </div>
       );
     case "reasoning":

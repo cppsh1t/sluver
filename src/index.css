@@ -214,3 +214,68 @@ button#decorum-tb-close:hover {
   background-color: var(--destructive);
   color: white;
 }
+
+/* ── Syntax highlighting (rehype-highlight `hljs` token classes) ──────────
+   rehype-highlight emits `hljs-*` classes but ships no CSS. Code blocks are
+   always rendered on a dark surface (`bg-zinc-900` / `bg-zinc-950/80` via the
+   `Markdown` `pre` override), so token colors are tuned for dark-background
+   readability in BOTH light and dark app mode — they deliberately do NOT use
+   `var(--foreground)` (which is near-black in light mode and unreadable here).
+   Colors are hand-written in the project's oklch design language rather than
+   imported from a highlight.js theme. */
+.hljs {
+  color: oklch(0.92 0 0);
+  background: transparent;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-name,
+.hljs-type,
+.hljs-tag {
+  color: oklch(0.66 0.18 263);
+}
+.hljs-string,
+.hljs-attr,
+.hljs-attribute,
+.hljs-meta-string,
+.hljs-regexp,
+.hljs-template-tag,
+.hljs-addition {
+  color: oklch(0.74 0.15 145);
+}
+.hljs-number,
+.hljs-literal,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-link {
+  color: oklch(0.78 0.15 70);
+}
+.hljs-title,
+.hljs-title.function_,
+.hljs-section {
+  color: oklch(0.75 0.13 195);
+}
+.hljs-variable,
+.hljs-template-variable,
+.hljs-params {
+  color: oklch(0.88 0.02 280);
+}
+.hljs-comment,
+.hljs-quote {
+  color: oklch(0.62 0.02 260);
+  font-style: italic;
+}
+.hljs-meta,
+.hljs-meta .hljs-keyword {
+  color: oklch(0.64 0.03 260);
+}
+.hljs-deletion {
+  color: oklch(0.72 0.19 22);
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 600;
+}
