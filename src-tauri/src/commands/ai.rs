@@ -439,6 +439,7 @@ fn parse_catalog(json: &str) -> Result<ModelsDevCatalog, DbError> {
             let RawProvider {
                 name,
                 npm,
+                api,
                 icon_url,
                 models,
             } = p;
@@ -457,6 +458,7 @@ fn parse_catalog(json: &str) -> Result<ModelsDevCatalog, DbError> {
                 id: pid.clone(),
                 name: name.unwrap_or(pid),
                 npm,
+                api_base_url: api,
                 icon_url,
                 models,
             }

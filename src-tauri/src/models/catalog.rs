@@ -27,6 +27,11 @@ pub struct CatalogProvider {
     pub name: String,
     /// npm package for the AI SDK integration, e.g. `"@ai-sdk/anthropic"`.
     pub npm: Option<String>,
+    /// API base URL, e.g. `"https://api.deepseek.com"`. The upstream field
+    /// is `api`. Mapped to `apiBaseUrl` in camelCase for the frontend.
+    /// Required for `@ai-sdk/openai-compatible` providers (which have no
+    /// baked-in default); ignored by providers that hardcode their endpoint.
+    pub api_base_url: Option<String>,
     /// Icon URL (relative or absolute, as upstream provides).
     pub icon_url: Option<String>,
     pub models: Vec<CatalogModel>,
@@ -61,6 +66,9 @@ pub(crate) struct RawProvider {
     pub(crate) name: Option<String>,
     #[serde(default)]
     pub(crate) npm: Option<String>,
+    /// Upstream field `api` — the provider's API base URL.
+    #[serde(default)]
+    pub(crate) api: Option<String>,
     #[serde(default)]
     pub(crate) icon_url: Option<String>,
     #[serde(default)]
