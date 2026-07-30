@@ -191,6 +191,12 @@ pub fn run() {
             commands::novel::update_scene,
             commands::novel::delete_scene,
             commands::novel::reorder_scenes,
+            // Conversation (world-scoped chat — ADR-0022)
+            commands::conversation::list_conversations,
+            commands::conversation::create_conversation,
+            commands::conversation::delete_conversation,
+            commands::conversation::load_messages,
+            commands::conversation::append_messages,
             // Tray
             commands::tray::set_tray_locale,
             // AI config (space.db)

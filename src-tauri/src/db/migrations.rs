@@ -273,9 +273,39 @@ const WORLD_MIGRATION_003: &str = r#"
     ALTER TABLE character_phases ADD COLUMN name TEXT NOT NULL DEFAULT '';
 "#;
 
+const WORLD_MIGRATION_004: &str = r#"
+    -- AI conversations + messages (ADR-0022: World-scoped chat history).
+    -- Mirrors the pure library's SessionStore interface (ADR-0020):
+    --   conversations  -> SessionRecord  (create/list/delete)
+    --   messages       -> SessionMessage  (load/append)
+    --
+    -- id strategy split is DELIBERATE (documented in the plan):
+    --   conversations.id = UUID v7 (Rust new_id()); time-sortable for listSessions.
+    --   messages.id = UUID v4 (crypto.randomUUID() from the pure lib's toSessionMessage);
+    --     stored verbatim — messages sort by created_at, never by id, and forcing
+    --     v7 would require changing SessionStore.appendMessages' signature.
+    CREATE TABLE IF NOT EXISTS conversations (
+        id                 TEXT PRIMARY KEY,
+        agent_config_name  TEXT NOT NULL,
+        title              TEXT,
+        meta               TEXT NOT NULL,
+        created_at         TEXT NOT NULL,
+        updated_at         TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS messages (
+        id               TEXT PRIMARY KEY,
+        conversation_id  TEXT NOT NULL
+                         REFERENCES conversations(id) ON DELETE CASCADE,
+        body             TEXT NOT NULL,
+        created_at       TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
+"#;
+
 const WORLD_SLICE: &[M] = &[
     M::up(WORLD_SQL),
     M::up(WORLD_MIGRATION_002),
     M::up(WORLD_MIGRATION_003),
+    M::up(WORLD_MIGRATION_004),
 ];
 pub const WORLD_MIGRATIONS: Migrations = Migrations::from_slice(WORLD_SLICE);

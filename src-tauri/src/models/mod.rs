@@ -1,6 +1,7 @@
 pub mod agent_config;
 pub mod catalog;
 pub mod character;
+pub mod conversation;
 pub mod setting;
 pub mod event;
 pub mod item;

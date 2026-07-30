@@ -1,5 +1,6 @@
 pub mod ai;
 pub mod character;
+pub mod conversation;
 pub mod diagnostics;
 pub mod element;
 pub mod event;
