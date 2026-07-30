@@ -190,6 +190,9 @@ export function useResolvedModelConfig(
         npmPackage: catalogProvider.npm,
         modelId,
         apiKey: credential.apiKey,
+        ...(catalogProvider.apiBaseUrl
+          ? { baseURL: catalogProvider.apiBaseUrl }
+          : {}),
       },
       isLoading,
       error,

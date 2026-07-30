@@ -63,6 +63,12 @@ export interface ResolvedModelConfig {
   modelId: string;
   /** Plaintext API key from `provider_credentials` (ADR-0013). */
   apiKey: string;
+  /**
+   * API base URL from the catalog's upstream `api` field. Required for
+   * `@ai-sdk/openai-compatible` providers (which have no default endpoint);
+   * ignored by providers that hardcode their URL (e.g. `@ai-sdk/anthropic`).
+   */
+  baseURL?: string;
 }
 
 // ─── Error ──────────────────────────────────────────────────────────────
@@ -84,9 +90,10 @@ export class ProviderFactoryError extends Error {
 
 // ─── Factory discovery ──────────────────────────────────────────────────
 
-/** A normalised factory: `{ apiKey }` → callable provider → `LanguageModel`. */
+/** A normalised factory: `{ apiKey, baseURL? }` → callable provider → `LanguageModel`. */
 type AnyProviderFactory = (options: {
   apiKey: string;
+  baseURL?: string;
 }) => (modelId: string) => LanguageModel;
 
 /**
@@ -146,6 +153,9 @@ export function createLanguageModel(config: ResolvedModelConfig): LanguageModel 
   }
 
   const factory = findFactory(mod, config.npmPackage);
-  const provider = factory({ apiKey: config.apiKey });
+  const provider = factory({
+    apiKey: config.apiKey,
+    ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+  });
   return provider(config.modelId);
 }

@@ -98,6 +98,8 @@ export const catalogProviderSchema = z.object({
   id: z.string(),
   name: z.string(),
   npm: z.string().nullable().optional(),
+  /** Provider API base URL (upstream `api` field). Required for openai-compatible providers. */
+  apiBaseUrl: z.string().nullable().optional(),
   iconUrl: z.string().nullable().optional(),
   models: z.array(catalogModelSchema),
 });
