@@ -33,6 +33,7 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
@@ -139,20 +140,22 @@ export function ConversationList({
             }
           />
           <DropdownMenuContent align="end" className="min-w-44">
-            <DropdownMenuLabel>{t("chat:role.pickerLabel")}</DropdownMenuLabel>
-            {ROLES.map((role) => (
-              <DropdownMenuItem
-                key={role}
-                onClick={() => handleCreate(role)}
-                disabled={createMut.isPending}
-              >
-                <HugeiconsIcon
-                  icon={role === "explorer" ? Compass01Icon : Edit02Icon}
-                  strokeWidth={2}
-                />
-                {t(`chat:role.${role}`)}
-              </DropdownMenuItem>
-            ))}
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>{t("chat:role.pickerLabel")}</DropdownMenuLabel>
+              {ROLES.map((role) => (
+                <DropdownMenuItem
+                  key={role}
+                  onClick={() => handleCreate(role)}
+                  disabled={createMut.isPending}
+                >
+                  <HugeiconsIcon
+                    icon={role === "explorer" ? Compass01Icon : Edit02Icon}
+                    strokeWidth={2}
+                  />
+                  {t(`chat:role.${role}`)}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
