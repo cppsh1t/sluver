@@ -1,0 +1,35 @@
+{
+  "title": "对话",
+  "role": {
+    "explorer": "探索者",
+    "writer": "写手",
+    "pickerLabel": "角色"
+  },
+  "list": {
+    "empty": "还没有对话",
+    "new": "新对话",
+    "deleteConfirm": "确定删除这条对话吗？",
+    "untitled": "未命名"
+  },
+  "composer": {
+    "placeholder": "输入消息…",
+    "send": "发送",
+    "stop": "停止"
+  },
+  "tool": {
+    "running": "运行中",
+    "done": "完成",
+    "error": "错误",
+    "input": "输入",
+    "output": "输出"
+  },
+  "step": "第 {{n}} 步",
+  "error": {
+    "modelNotConfigured": "该角色未配置模型，请在设置中绑定。",
+    "sendFailed": "发送消息失败"
+  },
+  "view": {
+    "empty": "发送一条消息开始对话。"
+  },
+  "stopped": "已停止"
+}

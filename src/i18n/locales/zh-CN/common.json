@@ -37,7 +37,9 @@
     "worldbook.locations": "地点",
     "worldbook.items": "物品",
     "worldbook.lore": "设定",
-    "writing.novels": "小说"
+    "writing.novels": "小说",
+    "chat": "对话",
+    "assistant": "助手"
   },
   "status": {
     "worldWorkspaceComingSoon": "世界工作区即将推出",

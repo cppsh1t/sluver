@@ -1,0 +1,35 @@
+{
+  "title": "Chat",
+  "role": {
+    "explorer": "Explorer",
+    "writer": "Writer",
+    "pickerLabel": "Role"
+  },
+  "list": {
+    "empty": "No conversations yet",
+    "new": "New conversation",
+    "deleteConfirm": "Delete this conversation?",
+    "untitled": "Untitled"
+  },
+  "composer": {
+    "placeholder": "Type a message…",
+    "send": "Send",
+    "stop": "Stop"
+  },
+  "tool": {
+    "running": "Running",
+    "done": "Done",
+    "error": "Error",
+    "input": "Input",
+    "output": "Output"
+  },
+  "step": "Step {{n}}",
+  "error": {
+    "modelNotConfigured": "No model configured for this role. Bind a model in Settings.",
+    "sendFailed": "Failed to send message"
+  },
+  "view": {
+    "empty": "Send a message to begin."
+  },
+  "stopped": "Stopped"
+}
