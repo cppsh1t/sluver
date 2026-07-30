@@ -79,3 +79,20 @@ export type UpdateChapterInput = ChapterFields;
 
 export type CreateSceneInput = CreateInput<SceneFields, 'title'>;
 export type UpdateSceneInput = SceneFields;
+
+// ─── Conversation ───────────────────────────────────────────────────────────
+//
+// Declared directly (not via `CreateInput`) because the union `kind`
+// discriminator plus conditional `chapterId` do not map cleanly onto an
+// entity `Pick`. Mirrors the Rust `CreateConversationInput` struct
+// (camelCase deserialized): `chapterId` is required only when
+// `kind === "chapter"`, but kept optional here so the shape is permissive.
+
+type ConversationCreateFields = {
+  agentConfigName: string;
+  kind: "world" | "chapter";
+  chapterId?: string;
+  title?: string;
+};
+
+export type CreateConversationInput = ConversationCreateFields;
