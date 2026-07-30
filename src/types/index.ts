@@ -15,6 +15,7 @@ export { itemIdSchema, type ItemId } from './item';
 export { loreIdSchema, type LoreId } from './lore';
 export { eventIdSchema, type EventId } from './event';
 export { novelIdSchema, type NovelId, chapterIdSchema, type ChapterId, sceneIdSchema, type SceneId } from './novel';
+export { conversationIdSchema, type ConversationId } from './conversation';
 export { spaceIdSchema, type SpaceId } from './space';
 export { providerCredentialIdSchema, type ProviderCredentialId, agentConfigIdSchema, type AgentConfigId } from './ai';
 
@@ -58,3 +59,13 @@ export { eventSchema, type Event } from './event';
 
 // ─── Novel structure ──────────────────────────────────────────────────────
 export { novelSchema, type Novel, chapterSchema, type Chapter, sceneSchema, type Scene } from './novel';
+
+// ─── Conversation (AI chat) ────────────────────────────────────────────────
+export {
+  conversationSchema,
+  type Conversation,
+  conversationMetaSchema,
+  type ConversationMeta,
+  messageSchema,
+  type Message,
+} from './conversation';
