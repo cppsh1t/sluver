@@ -206,6 +206,7 @@ pub fn run() {
             commands::ai::delete_provider_credential,
             commands::ai::list_agent_configs,
             commands::ai::update_agent_config_model,
+            commands::ai::update_agent_config_auto_execute,
             commands::ai::get_models_dev_catalog,
             commands::ai::refresh_models_dev_catalog,
             // Diagnostics (logging — ADR-0014 / ADR-0015)

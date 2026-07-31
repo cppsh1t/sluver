@@ -16,6 +16,10 @@ pub struct AgentConfig {
     pub id: String,
     pub name: String,
     pub model_id: Option<String>,
+    /// Whether the agent may execute "dangerous" tools without user approval.
+    /// Stored as INTEGER (0/1) in SQLite; defaults to false (off) on seed and
+    /// on migration of pre-existing rows.
+    pub auto_execute_dangerous_tools: bool,
     pub created_at: String,
     pub updated_at: String,
 }

@@ -87,6 +87,16 @@ const SPACE_MIGRATION_002: &str = r#"
     );
 "#;
 
+/// Migration 3 for `space.db`: add `auto_execute_dangerous_tools` column to
+/// `agent_configs`. Stored as INTEGER (0/1) per SQLite's boolean convention.
+/// Existing rows pick up DEFAULT 0 (auto-execute off — safest default). Added
+/// as a separate migration so existing `space.db` files get the new column via
+/// `rusqlite_migration`'s incremental tracking — modifying `SPACE_SQL` or
+/// `SPACE_MIGRATION_002` would NOT re-run for already-migrated databases.
+const SPACE_MIGRATION_003: &str = r#"
+    ALTER TABLE agent_configs ADD COLUMN auto_execute_dangerous_tools INTEGER NOT NULL DEFAULT 0;
+"#;
+
 // ─── world DB schema ────────────────────────────────────────────────────────
 // Tier 3 of the three-database design (ADR-0007). One file per World at
 // `spaces/{spaceId}/worlds/{worldId}.db`. Schema is byte-for-byte identical
@@ -241,7 +251,7 @@ const META_SLICE: &[M] = &[M::up(META_SQL)];
 pub const META_MIGRATIONS: Migrations = Migrations::from_slice(META_SLICE);
 
 /// Migrations for each `space.db` (that Space's world registry + config).
-const SPACE_SLICE: &[M] = &[M::up(SPACE_SQL), M::up(SPACE_MIGRATION_002)];
+const SPACE_SLICE: &[M] = &[M::up(SPACE_SQL), M::up(SPACE_MIGRATION_002), M::up(SPACE_MIGRATION_003)];
 pub const SPACE_MIGRATIONS: Migrations = Migrations::from_slice(SPACE_SLICE);
 
 /// Migrations for each world DB file (all world-scoped tables).
