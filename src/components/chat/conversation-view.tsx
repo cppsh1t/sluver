@@ -109,7 +109,11 @@ function StoppedMarker() {
   );
 }
 
-function renderBlock(block: RenderBlock): ReactNode {
+function renderBlock(
+  block: RenderBlock,
+  worldId: WorldId,
+  conversationId: Conversation["id"],
+): ReactNode {
   switch (block.kind) {
     case "user":
       return (
@@ -136,7 +140,7 @@ function renderBlock(block: RenderBlock): ReactNode {
         <ReasoningBlock key={block.id} text={block.text} live={block.live} />
       );
     case "tool":
-      return <ToolCard key={block.id} tool={block.tool} />;
+      return <ToolCard key={block.id} tool={block.tool} worldId={worldId} conversationId={conversationId} />;
     case "step":
       return <StepDivider key={block.id} n={block.n} />;
     case "stopped":
@@ -241,7 +245,7 @@ export function ConversationView({
               </p>
             </div>
           ) : (
-            blocks.map(renderBlock)
+            blocks.map((b) => renderBlock(b, worldId, conversation.id))
           )}
 
           {errorMessage && (

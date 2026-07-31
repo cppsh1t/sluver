@@ -23,8 +23,11 @@ import {
   Cancel01Icon,
   CheckmarkCircle02Icon,
   ChevronDownIcon,
+  ShieldAlert,
 } from "@hugeicons/core-free-icons";
 
+import { useResolveApproval } from "@/lib/conversation-runtime";
+import type { ConversationId, WorldId } from "@/types";
 import { cn } from "@/lib/utils";
 import {
   formatToolInput,
@@ -34,6 +37,8 @@ import {
 
 interface ToolCardProps {
   readonly tool: ToolBlockData;
+  readonly worldId: WorldId;
+  readonly conversationId: ConversationId;
 }
 
 /** Status dot + label + spinner — the left-edge status indicator. */
@@ -119,11 +124,14 @@ function PayloadBlock({
   );
 }
 
-export function ToolCard({ tool }: ToolCardProps) {
+export function ToolCard({ tool, worldId, conversationId }: ToolCardProps) {
   const { t } = useTranslation("chat");
   const [open, setOpen] = useState(tool.status === "running");
+  const resolveApproval = useResolveApproval(worldId);
 
-  const statusKey = statusTextKey(tool.status);
+  const isPending = !!tool.pendingApproval;
+
+  const statusKey = isPending ? "chat:tool.pendingApproval" : statusTextKey(tool.status);
   const labelText = t(statusKey);
 
   const inputText = formatToolInput(tool.input);
@@ -150,11 +158,19 @@ export function ToolCard({ tool }: ToolCardProps) {
           !hasDetails && "cursor-default",
         )}
       >
-        <StatusIndicator status={tool.status} label={labelText} />
+        {isPending ? (
+          <HugeiconsIcon
+            icon={ShieldAlert}
+            strokeWidth={2}
+            className="size-3.5 text-amber-500"
+          />
+        ) : (
+          <StatusIndicator status={tool.status} label={labelText} />
+        )}
         <code className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[0.6875rem] font-medium text-secondary-foreground">
           {tool.toolName || "tool"}
         </code>
-        <span className={cn("text-[0.6875rem]", statusLabelClass(tool.status))}>
+        <span className={cn("text-[0.6875rem]", isPending ? "text-amber-600 dark:text-amber-500" : statusLabelClass(tool.status))}>
           {labelText}
         </span>
         {hasDetails && (
@@ -168,6 +184,26 @@ export function ToolCard({ tool }: ToolCardProps) {
           />
         )}
       </button>
+
+      {/* Approve / Deny buttons when pending user consent */}
+      {isPending && (
+        <div className="flex items-center gap-2 border-t border-border/60 px-2.5 py-1.5">
+          <button
+            type="button"
+            onClick={() => resolveApproval(conversationId, tool.toolCallId, true)}
+            className="rounded-md bg-primary px-3 py-1 text-[0.6875rem] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            {t("chat:consent.approve")}
+          </button>
+          <button
+            type="button"
+            onClick={() => resolveApproval(conversationId, tool.toolCallId, false)}
+            className="rounded-md border border-border bg-background px-3 py-1 text-[0.6875rem] font-medium text-foreground transition-colors hover:bg-muted"
+          >
+            {t("chat:consent.deny")}
+          </button>
+        </div>
+      )}
 
       {open && hasDetails && (
         <div className="flex flex-col gap-2 border-t border-border/60 px-2.5 py-2">

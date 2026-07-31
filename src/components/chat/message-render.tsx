@@ -26,7 +26,7 @@
  * back gracefully on unrecognized shapes.
  */
 
-import type { StreamState, ToolCallView } from "@/lib/conversation-runtime";
+import type { PendingApproval, StreamState, ToolCallView } from "@/lib/conversation-runtime";
 import type { ModelMessage, SessionMessage } from "@/lib/ai";
 
 // ─── Block model ──────────────────────────────────────────────────────────
@@ -40,6 +40,8 @@ export interface ToolBlockData {
   readonly status: "running" | "done" | "error";
   readonly output: unknown;
   readonly error: { code: string; message: string } | null;
+  /** Present when this tool call is awaiting user approval. */
+  readonly pendingApproval?: PendingApproval;
 }
 
 /**
@@ -251,7 +253,10 @@ function blocksForMessages(messages: readonly SessionMessage[]): RenderBlock[] {
 }
 
 /** Convert a live {@link ToolCallView} into a {@link ToolBlockData}. */
-function toolBlockFromLive(tc: ToolCallView): ToolBlockData {
+function toolBlockFromLive(
+  tc: ToolCallView,
+  pendingApproval?: PendingApproval,
+): ToolBlockData {
   return {
     toolCallId: tc.toolCallId,
     toolName: tc.toolName,
@@ -260,6 +265,7 @@ function toolBlockFromLive(tc: ToolCallView): ToolBlockData {
     status: tc.status,
     output: tc.output,
     error: tc.error,
+    pendingApproval,
   };
 }
 
@@ -319,7 +325,7 @@ export function buildBlocks(
       blocks.push({
         kind: "tool",
         id: `__live_tool_${tc.toolCallId}__`,
-        tool: toolBlockFromLive(tc),
+        tool: toolBlockFromLive(tc, stream.pendingApprovals[tc.toolCallId]),
       });
     }
 
