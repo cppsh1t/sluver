@@ -42,6 +42,7 @@ export {
   type ConversationView,
   type ModelResolver,
   type PersistErrorHandler,
+  type ResolvedModel,
   type StreamState,
   type ToolCallView,
 } from "./store";

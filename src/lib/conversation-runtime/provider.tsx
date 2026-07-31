@@ -41,6 +41,7 @@ import {
   type ConversationView,
   type ModelResolver,
   type PersistErrorHandler,
+  type ResolvedModel,
 } from "./store";
 
 import type { Conversation, ConversationId, SpaceId } from "@/types";
@@ -105,11 +106,21 @@ export function ConversationRuntimeProvider({
   const writerConfig = useResolvedModelConfig(spaceId, "writer");
 
   const modelResolver = useMemo<ModelResolver>(() => {
-    return (role: string) => {
-      const config = role === "writer" ? writerConfig.config : explorerConfig.config;
-      if (!config) return null;
+    return (role: string): ResolvedModel => {
+      const cfg = role === "writer" ? writerConfig : explorerConfig;
+      // While the Space-scoped AI config is still loading, the role's
+      // configured-ness is UNKNOWN. Returning "loading" (not "unconfigured")
+      // prevents `resolveAgent` from flashing a spurious MODEL_NOT_CONFIGURED
+      // before the queries resolve. Both whole config objects (carrying
+      // `isLoading` + `config`) are in the deps below so this builder — and
+      // thus the `useEnsureRuntime` effect — re-runs the moment config lands,
+      // retrying resolution. They are themselves referentially stable
+      // (`useResolvedModelConfig` memoizes), so this recomputes only on real
+      // value changes, not every render.
+      if (cfg.isLoading) return { status: "loading" };
+      if (!cfg.config) return { status: "unconfigured" };
       try {
-        return createLanguageModel(config);
+        return { status: "ready", model: createLanguageModel(cfg.config) };
       } catch (e) {
         // Provider package not installed / factory mismatch — surface as
         // "unconfigured" rather than crashing the turn.
@@ -117,10 +128,10 @@ export function ConversationRuntimeProvider({
           role,
           error: String(e),
         });
-        return null;
+        return { status: "unconfigured" };
       }
     };
-  }, [explorerConfig.config, writerConfig.config]);
+  }, [explorerConfig, writerConfig]);
 
   const onPersistError = useCallback<PersistErrorHandler>((e) => {
     logger.error("conversation.persist_failed", { error: String(e) });

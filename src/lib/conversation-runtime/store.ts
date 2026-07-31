@@ -45,11 +45,25 @@ import type { Conversation, SpaceId } from "@/types";
 // ─── Public types ─────────────────────────────────────────────────────────
 
 /**
- * Resolves a bound {@link LanguageModel} for a role name (`"explorer"` /
- * `"writer"`), or returns `null` when the role has no model configured. Built
+ * Outcome of resolving a role's bound model. Three states so consumers
+ * (notably `resolveAgent`) never confuse "still loading" with "genuinely
+ * unconfigured" — collapsing both into a single `null` caused a transient
+ * `MODEL_NOT_CONFIGURED` flash on chat-view mount, because the Space-scoped
+ * AI config queries had not resolved yet.
+ *
+ * Built by the Provider from `useResolvedModelConfig`; read at Agent
+ * construction time.
+ */
+export type ResolvedModel =
+  | { readonly status: "ready"; readonly model: LanguageModel }
+  | { readonly status: "loading" }
+  | { readonly status: "unconfigured" };
+
+/**
+ * Resolves the bound model for a role name (`"explorer"` / `"writer"`). Built
  * by the Provider from `useResolvedModelConfig`; passed into store actions.
  */
-export type ModelResolver = (role: string) => LanguageModel | null;
+export type ModelResolver = (role: string) => ResolvedModel;
 
 /** Routes a background persistence failure to the logger (ADR-0014). */
 export type PersistErrorHandler = (error: unknown) => void;
@@ -312,8 +326,15 @@ export function createConversationRuntimeStore(
     ): Promise<Agent | null> => {
       if (data.agent) return data.agent;
 
-      const model = modelResolver(data.conversation.agentConfigName);
-      if (!model) {
+      const resolved = modelResolver(data.conversation.agentConfigName);
+      // "loading": the Space-scoped AI config queries (agent configs, provider
+      // credentials, models.dev catalog) haven't resolved yet, so whether the
+      // role is configured is UNKNOWN. Bail WITHOUT mutating state — the
+      // Provider recreates `modelResolver` once config lands (its `isLoading`
+      // flags are in the builder's useMemo deps), which re-fires
+      // `useEnsureRuntime`'s effect and retries `resolveAgent`.
+      if (resolved.status === "loading") return null;
+      if (resolved.status === "unconfigured") {
         patchData(worldId, conversationId, (d) => ({
           ...d,
           view: {
@@ -327,6 +348,7 @@ export function createConversationRuntimeStore(
         return null;
       }
 
+      const { model } = resolved;
       patchData(worldId, conversationId, (d) => ({ ...d, agentLoading: true }));
       try {
         const agent = await constructAgent(
