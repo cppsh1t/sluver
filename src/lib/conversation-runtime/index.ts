@@ -31,6 +31,7 @@ export {
   useDraft,
   useEnsureRuntime,
   useRemoveConversation,
+  useResolveApproval,
   useSend,
 } from "./provider";
 
@@ -41,6 +42,7 @@ export {
   type ConversationRuntimeState,
   type ConversationView,
   type ModelResolver,
+  type PendingApproval,
   type PersistErrorHandler,
   type ResolvedModel,
   type StreamState,

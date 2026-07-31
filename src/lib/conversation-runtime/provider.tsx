@@ -120,7 +120,11 @@ export function ConversationRuntimeProvider({
       if (cfg.isLoading) return { status: "loading" };
       if (!cfg.config) return { status: "unconfigured" };
       try {
-        return { status: "ready", model: createLanguageModel(cfg.config) };
+        return {
+          status: "ready",
+          model: createLanguageModel(cfg.config),
+          autoExecuteDangerousTools: cfg.autoExecuteDangerousTools,
+        };
       } catch (e) {
         // Provider package not installed / factory mismatch — surface as
         // "unconfigured" rather than crashing the turn.
@@ -296,6 +300,22 @@ export function useRemoveConversation(
   return useCallback(
     (conversationId: ConversationId) => {
       store.getState().removeConversation(worldId, conversationId);
+    },
+    [store, worldId],
+  );
+}
+
+/**
+ * Returns a resolver bound to the store's `resolveApproval` action. Called by
+ * the consent UI when the user approves or denies a tool call.
+ */
+export function useResolveApproval(
+  worldId: string,
+): (conversationId: ConversationId, toolCallId: string, approved: boolean) => void {
+  const { store } = useRuntimeContext();
+  return useCallback(
+    (conversationId: ConversationId, toolCallId: string, approved: boolean) => {
+      store.getState().resolveApproval(worldId, conversationId, toolCallId, approved);
     },
     [store, worldId],
   );
