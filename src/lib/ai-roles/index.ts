@@ -4,57 +4,60 @@
  * A {@link RoleBehavior} is the role-specific subset of
  * {@link AgentLoopOptions} — everything *except* `model`, which the runtime
  * resolves live from the Space-scoped `AgentConfig` per session (ADR-0023).
- * The runtime merges a `RoleBehavior` with a bound model to construct an
- * `AgentLoop`.
+ * The runtime merges a `RoleBehavior` with a bound model + tool context to
+ * construct an `AgentLoop`.
  *
- * v1 hardcodes two roles (`explorer`, `writer`) and binds the same
- * {@link demoToolSet} to both — real functional tools land later. System
- * prompts are hardcoded strings; behavior persistence is future work
- * (ADR-0023).
+ * Two roles (`explorer`, `writer`) are hardcoded. Each binds a tool **factory**
+ * (`buildTools`) that receives a {@link ToolContext} (spaceId, worldId,
+ * approval gate, consent config) and returns a fully-wired SDK `ToolSet`.
  *
  * This module is framework-agnostic logic: no React, no IPC, no logger.
  */
 
 import type { ToolSet } from "@/lib/ai";
-import { demoToolSet } from "@/lib/tools/demo";
+import type { ToolContext } from "@/lib/tools/types";
+import { buildExplorerTools, buildWriterTools } from "@/lib/tools/worldbook";
 
 // ─── Type ─────────────────────────────────────────────────────────────────
 
 /**
  * The role-specific subset of {@link AgentLoopOptions} (everything except
- * `model`). The runtime supplies the model per session.
- *
- * `name` mirrors the `agentConfigName` key and is carried alongside so a
- * resolved {@link RoleBehavior} is self-describing (useful for logging /
- * debugging without re-deriving the key).
+ * `model` and `tools` — those are resolved per-session). The runtime supplies
+ * the model from the Space's AgentConfig and the tools from `buildTools(ctx)`.
  */
 export interface RoleBehavior {
   /** The `agentConfigName` this behavior is bound to (e.g. "explorer"). */
   readonly name: string;
   /** System prompt sent on every step; NOT a `SystemModelMessage` in the thread. */
   readonly systemPrompt: string;
-  /** Tools accessible to the model. Pass `{}` explicitly when none. */
-  readonly tools: ToolSet;
+  /** Factory: receives ToolContext, returns a wired SDK ToolSet with consent gates. */
+  readonly buildTools: (ctx: ToolContext) => ToolSet;
   /** Maximum number of steps before the loop forces `finishReason: 'max-steps'`. */
   readonly maxSteps: number;
   /** Sampling temperature. Omit to let the loop default apply. */
   readonly temperature?: number;
 }
 
-// ─── System prompts (v1 hardcoded; ADR-0023) ──────────────────────────────
+// ─── System prompts ───────────────────────────────────────────────────────
 
 const EXPLORER_SYSTEM_PROMPT = [
   "You are the Explorer, a worldbuilding assistant for Sluver.",
-  "You help users brainstorm and survey their fictional world — characters, locations, events, and lore.",
+  "You help users brainstorm and survey their fictional world — characters, locations, items, lore, and events.",
   "Be curious, generative, and concrete: offer specific suggestions the user can build on, and ask a clarifying question when intent is ambiguous.",
-  "(v1 demo: alongside worldbuilding guidance, you have a few test tools — call them when the user asks about rice arithmetic or the current time.)",
+  "You have tools to create, read, update, and delete worldbuilding entities, and to manage character phases.",
+  "Some operations require user approval before they execute — if the user denies a tool call, respect their decision and suggest alternatives.",
+  "You can also read (but not modify) the novel structure — novels, chapters, and scenes.",
+  "When creating entities with relationships (e.g. events with participants, phases with triggers), gather the necessary IDs first by listing or getting the related entities.",
 ].join(" ");
 
 const WRITER_SYSTEM_PROMPT = [
   "You are the Writer, a novel-writing assistant for Sluver.",
   "You help users draft and refine prose — scenes, chapters, dialogue, description.",
   "Be evocative and precise; match the tone the user is aiming for and respect their voice rather than rewriting it wholesale.",
-  "(v1 demo: alongside writing help, you have a few test tools — call them when the user asks about rice arithmetic or the current time.)",
+  "You have tools to create, read, update, and delete novels, chapters, and scenes.",
+  "Some operations require user approval before they execute — if the user denies a tool call, respect their decision and adapt.",
+  "You can also read (but not modify) the worldbook — characters, locations, items, and events — for reference when writing scenes.",
+  "When a scene needs character/item/event references, look them up first so you pass the correct IDs.",
 ].join(" ");
 
 // ─── Behavior map ─────────────────────────────────────────────────────────
@@ -67,14 +70,14 @@ export const ROLE_BEHAVIOR: Record<string, RoleBehavior> = {
   explorer: {
     name: "explorer",
     systemPrompt: EXPLORER_SYSTEM_PROMPT,
-    tools: demoToolSet,
-    maxSteps: 5,
+    buildTools: buildExplorerTools,
+    maxSteps: 10,
   },
   writer: {
     name: "writer",
     systemPrompt: WRITER_SYSTEM_PROMPT,
-    tools: demoToolSet,
-    maxSteps: 5,
+    buildTools: buildWriterTools,
+    maxSteps: 10,
   },
 };
 

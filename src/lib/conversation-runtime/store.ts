@@ -40,7 +40,8 @@ import { createAgentEventLogger } from "@/lib/ai/agent-logging";
 import { getRoleBehavior } from "@/lib/ai-roles";
 import { TauriSessionStore } from "@/lib/ai-store";
 import { logger } from "@/lib/logger";
-import type { Conversation, SpaceId } from "@/types";
+import type { ApprovalGate, ConsentLevel, ToolContext } from "@/lib/tools/types";
+import type { Conversation, SpaceId, WorldId } from "@/types";
 
 // ─── Public types ─────────────────────────────────────────────────────────
 
@@ -55,7 +56,7 @@ import type { Conversation, SpaceId } from "@/types";
  * construction time.
  */
 export type ResolvedModel =
-  | { readonly status: "ready"; readonly model: LanguageModel }
+  | { readonly status: "ready"; readonly model: LanguageModel; readonly autoExecuteDangerousTools: boolean }
   | { readonly status: "loading" }
   | { readonly status: "unconfigured" };
 
@@ -83,6 +84,14 @@ export interface ToolCallView {
   readonly error: { code: string; message: string } | null;
 }
 
+/** A pending tool-consent request awaiting user approval. */
+export interface PendingApproval {
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly input: unknown;
+  readonly consentLevel: ConsentLevel;
+}
+
 /** Live streaming state for the in-flight run. `null` when idle. */
 export interface StreamState {
   readonly runId: string;
@@ -102,6 +111,8 @@ export interface StreamState {
   readonly pendingInputDraft: string;
   /** Keyed by `toolCallId`. */
   readonly toolCalls: Record<string, ToolCallView>;
+  /** Keyed by `toolCallId` — non-empty while the UI shows approve/deny buttons. */
+  readonly pendingApprovals: Record<string, PendingApproval>;
 }
 
 /** The reactive slice the UI renders for one conversation. */
@@ -164,6 +175,7 @@ export interface ConversationRuntimeState {
   setDraft: (worldId: string, conversationId: string, text: string) => void;
   removeConversation: (worldId: string, conversationId: string) => void;
   clearError: (worldId: string, conversationId: string) => void;
+  resolveApproval: (worldId: string, conversationId: string, toolCallId: string, approved: boolean) => void;
 }
 
 // ─── Helpers (pure, operate on state) ─────────────────────────────────────
@@ -270,6 +282,8 @@ async function constructAgent(
   spaceId: SpaceId,
   worldId: string,
   onPersistError: PersistErrorHandler,
+  approvalGate: ApprovalGate,
+  autoExecuteDangerousTools: boolean,
 ): Promise<Agent> {
   const roleBehavior = getRoleBehavior(conversation.agentConfigName);
   if (!roleBehavior) {
@@ -277,9 +291,22 @@ async function constructAgent(
       `constructAgent: unknown agent config "${conversation.agentConfigName}" — no RoleBehavior registered.`,
     );
   }
-  // RoleBehavior carries `name` (not part of AgentLoopOptions); the spread
-  // harmlessly includes it — spreads do not trigger excess-property checks.
-  const loop = new AgentLoop({ ...roleBehavior, model });
+  const ctx: ToolContext = {
+    spaceId,
+    worldId: worldId as WorldId,
+    approvalGate,
+    autoExecuteDangerousTools,
+  };
+  const tools = roleBehavior.buildTools(ctx);
+  const loop = new AgentLoop({
+    model,
+    systemPrompt: roleBehavior.systemPrompt,
+    tools,
+    maxSteps: roleBehavior.maxSteps,
+    ...(roleBehavior.temperature !== undefined
+      ? { temperature: roleBehavior.temperature }
+      : {}),
+  });
   const store = new TauriSessionStore({ spaceId, worldId });
   return Agent.open({
     loop,
@@ -310,6 +337,78 @@ export function createConversationRuntimeStore(
         worlds: updateConversation(state, worldId, conversationId, updater) ?? state.worlds,
       }));
     };
+
+    // ── Approval gate infrastructure ──────────────────────────────
+    // Per-store map of pending approval resolvers, keyed by toolCallId.
+    // The gate sets a Promise resolver here; resolveApproval consumes it.
+    const approvalResolvers = new Map<string, (approved: boolean) => void>();
+
+    /**
+     * Create an ApprovalGate bound to a specific (worldId, conversationId).
+     * The gate patches `stream.pendingApprovals` when a request arrives, and
+     * auto-denies (resolves false) if the run's abort signal fires.
+     */
+    function createGate(worldId: string, conversationId: string): ApprovalGate {
+      return {
+        request: (req) =>
+          new Promise<boolean>((resolve) => {
+            // Auto-deny if already aborted.
+            if (req.abortSignal.aborted) {
+              resolve(false);
+              return;
+            }
+            approvalResolvers.set(req.toolCallId, resolve);
+
+            // Auto-deny on abort — unblocks the execute so the run can end.
+            req.abortSignal.addEventListener(
+              "abort",
+              () => {
+                const r = approvalResolvers.get(req.toolCallId);
+                if (r) {
+                  approvalResolvers.delete(req.toolCallId);
+                  r(false);
+                }
+                patchData(worldId, conversationId, (d) => {
+                  if (!d.view.stream) return d;
+                  const rest = { ...d.view.stream.pendingApprovals };
+                  delete rest[req.toolCallId];
+                  return {
+                    ...d,
+                    view: {
+                      ...d.view,
+                      stream: { ...d.view.stream, pendingApprovals: rest },
+                    },
+                  };
+                });
+              },
+              { once: true },
+            );
+
+            // Surface the pending approval to the UI.
+            patchData(worldId, conversationId, (d) => {
+              if (!d.view.stream) return d;
+              return {
+                ...d,
+                view: {
+                  ...d.view,
+                  stream: {
+                    ...d.view.stream,
+                    pendingApprovals: {
+                      ...d.view.stream.pendingApprovals,
+                      [req.toolCallId]: {
+                        toolCallId: req.toolCallId,
+                        toolName: req.toolName,
+                        input: req.input,
+                        consentLevel: req.consentLevel,
+                      },
+                    },
+                  },
+                },
+              };
+            });
+          }),
+      };
+    }
 
     /**
      * Resolve a usable Agent for a conversation: return the cached one, or
@@ -348,7 +447,8 @@ export function createConversationRuntimeStore(
         return null;
       }
 
-      const { model } = resolved;
+      const { model, autoExecuteDangerousTools } = resolved;
+      const gate = createGate(worldId, conversationId);
       patchData(worldId, conversationId, (d) => ({ ...d, agentLoading: true }));
       try {
         const agent = await constructAgent(
@@ -357,6 +457,8 @@ export function createConversationRuntimeStore(
           spaceId,
           worldId,
           onPersistError,
+          gate,
+          autoExecuteDangerousTools,
         );
         patchData(worldId, conversationId, (d) => ({
           ...d,
@@ -459,6 +561,7 @@ export function createConversationRuntimeStore(
               currentStep: 0,
               pendingInputDraft: "",
               toolCalls: {},
+              pendingApprovals: {},
             },
           },
         }));
@@ -626,10 +729,19 @@ export function createConversationRuntimeStore(
 
             case "abort":
               // Immediate "stopped" feedback; result.then() finalizes.
-              patchData(worldId, conversationId, (d) => ({
-                ...d,
-                view: { ...d.view, isRunning: false },
-              }));
+              // Also clear any pending approvals — the gate's abort listener
+              // should have already resolved them, but this is defensive.
+              patchData(worldId, conversationId, (d) => {
+                if (!d.view.stream) return { ...d, view: { ...d.view, isRunning: false } };
+                return {
+                  ...d,
+                  view: {
+                    ...d.view,
+                    isRunning: false,
+                    stream: { ...d.view.stream, pendingApprovals: {} },
+                  },
+                };
+              });
               return;
 
             default: {
@@ -722,6 +834,26 @@ export function createConversationRuntimeStore(
           ...d,
           view: { ...d.view, error: null },
         }));
+      },
+
+      // ── resolveApproval ──
+      resolveApproval: (worldId, conversationId, toolCallId, approved) => {
+        const resolver = approvalResolvers.get(toolCallId);
+        if (!resolver) return;
+        approvalResolvers.delete(toolCallId);
+        patchData(worldId, conversationId, (d) => {
+          if (!d.view.stream) return d;
+          const rest = { ...d.view.stream.pendingApprovals };
+          delete rest[toolCallId];
+          return {
+            ...d,
+            view: {
+              ...d.view,
+              stream: { ...d.view.stream, pendingApprovals: rest },
+            },
+          };
+        });
+        resolver(approved);
       },
     };
   });
