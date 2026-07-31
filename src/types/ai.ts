@@ -70,6 +70,11 @@ export const agentConfigSchema = z.object({
   name: z.string(),
   /** `"{providerId}/{modelId}"`, or `null` when no model is chosen. */
   modelId: z.string().nullable(),
+  /**
+   * When `true`, dangerous (creation-type) tools execute immediately without
+   * asking for confirmation each time. Defaults to `false`.
+   */
+  autoExecuteDangerousTools: z.boolean(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });

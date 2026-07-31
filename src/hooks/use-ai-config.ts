@@ -8,6 +8,7 @@ import {
   listProviderCredentials,
   refreshModelsDevCatalog,
   setProviderCredential,
+  updateAgentConfigAutoExecute,
   updateAgentConfigModel,
 } from "@/api";
 import { parseModelId, type ResolvedModelConfig } from "@/lib/ai";
@@ -93,6 +94,20 @@ export const useUpdateAgentConfigModel = (spaceId: SpaceId) => {
   });
 };
 
+export const useUpdateAgentConfigAutoExecute = (spaceId: SpaceId) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      autoExecute,
+    }: {
+      id: string;
+      autoExecute: boolean;
+    }) => updateAgentConfigAutoExecute(spaceId, id, autoExecute),
+    onSuccess: () => qc.invalidateQueries({ queryKey: aiConfigKeys.agentConfigs(spaceId) }),
+  });
+};
+
 // ─── Models.dev catalog (global) ─────────────────────────────────────────────
 
 /**
@@ -146,6 +161,7 @@ export function useResolvedModelConfig(
   agentConfigName: string,
 ): {
   config: ResolvedModelConfig | null;
+  autoExecuteDangerousTools: boolean;
   isLoading: boolean;
   error: Error | null;
 } {
@@ -159,10 +175,11 @@ export function useResolvedModelConfig(
     const error = agentConfigs.error ?? credentials.error ?? catalog.error;
 
     const agentConfig = agentConfigs.data?.find((a) => a.name === agentConfigName);
+    const autoExecuteDangerousTools = agentConfig?.autoExecuteDangerousTools ?? false;
     const [providerId, modelId] = parseModelId(agentConfig?.modelId ?? null);
 
     if (!providerId || !modelId) {
-      return { config: null, isLoading, error };
+      return { config: null, autoExecuteDangerousTools, isLoading, error };
     }
 
     const credential = credentials.data?.find(
@@ -182,7 +199,7 @@ export function useResolvedModelConfig(
       credential.apiKey.trim() === "" ||
       !catalogProvider?.npm
     ) {
-      return { config: null, isLoading, error };
+      return { config: null, autoExecuteDangerousTools, isLoading, error };
     }
 
     return {
@@ -194,6 +211,7 @@ export function useResolvedModelConfig(
           ? { baseURL: catalogProvider.apiBaseUrl }
           : {}),
       },
+      autoExecuteDangerousTools,
       isLoading,
       error,
     };

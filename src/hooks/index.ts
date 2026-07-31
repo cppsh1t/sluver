@@ -92,6 +92,7 @@ export {
   useDeleteProviderCredential,
   useAgentConfigs,
   useUpdateAgentConfigModel,
+  useUpdateAgentConfigAutoExecute,
   useModelsDevCatalog,
   useRefreshModelsDevCatalog,
   useResolvedModelConfig,

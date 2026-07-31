@@ -59,6 +59,23 @@ export function updateAgentConfigModel(
   return call<AgentConfig>("update_agent_config_model", { spaceId, id, modelId });
 }
 
+/**
+ * Toggle an agent config's `autoExecuteDangerousTools` flag. When `true`,
+ * dangerous (creation-type) tools execute immediately without per-step
+ * confirmation. Returns the updated agent config.
+ */
+export function updateAgentConfigAutoExecute(
+  spaceId: string,
+  id: string,
+  autoExecute: boolean,
+): Promise<AgentConfig> {
+  return call<AgentConfig>("update_agent_config_auto_execute", {
+    spaceId,
+    id,
+    autoExecute,
+  });
+}
+
 // ─── Models.dev catalog (global, not Space-scoped) ──────────────────────────
 
 /**
