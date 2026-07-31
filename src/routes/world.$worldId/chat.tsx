@@ -19,6 +19,7 @@ import { useTranslation } from "react-i18next";
 import { worldLayoutRoute } from "./_world";
 
 import { Composer } from "@/components/chat/composer";
+import { ConsentBanner } from "@/components/chat/consent-banner";
 import { ConversationList } from "@/components/chat/conversation-list";
 import { ConversationView } from "@/components/chat/conversation-view";
 import { useConversations } from "@/hooks";
@@ -87,6 +88,7 @@ function ChatPage() {
               pendingUserText={pendingUserText}
               onPendingUserConsumed={() => setPendingUserText(null)}
             />
+            <ConsentBanner worldId={wid} conversationId={selected.id} />
             <Composer
               worldId={wid}
               conversationId={selected.id}

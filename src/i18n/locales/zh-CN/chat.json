@@ -21,7 +21,13 @@
     "done": "完成",
     "error": "错误",
     "input": "输入",
-    "output": "输出"
+    "output": "输出",
+    "pendingApproval": "等待同意"
+  },
+  "consent": {
+    "approve": "同意",
+    "deny": "拒绝",
+    "pendingCount": "{{count}} 个工具等待同意"
   },
   "step": "第 {{n}} 步",
   "error": {

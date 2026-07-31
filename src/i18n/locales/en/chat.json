@@ -21,7 +21,13 @@
     "done": "Done",
     "error": "Error",
     "input": "Input",
-    "output": "Output"
+    "output": "Output",
+    "pendingApproval": "Pending approval"
+  },
+  "consent": {
+    "approve": "Approve",
+    "deny": "Deny",
+    "pendingCount": "{{count}} tool(s) awaiting approval"
   },
   "step": "Step {{n}}",
   "error": {
