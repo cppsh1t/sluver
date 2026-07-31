@@ -43,6 +43,10 @@
     "name": {
       "explorer": "探索者",
       "writer": "作者"
+    },
+    "autoExecute": {
+      "title": "自动执行工具",
+      "description": "开启后，创建类工具将直接执行，无需每次确认。"
     }
   },
   "catalog": {

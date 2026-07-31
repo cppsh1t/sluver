@@ -5,8 +5,9 @@ import { toast } from "sonner";
 import i18n from "@/i18n";
 import { translateError } from "@/i18n/errors";
 import { toErrorPayload } from "@/api/client";
-import { useUpdateAgentConfigModel } from "@/hooks";
+import { useUpdateAgentConfigAutoExecute, useUpdateAgentConfigModel } from "@/hooks";
 import { parseModelId } from "@/lib/ai";
+import { Switch } from "@/components/ui/switch";
 import type {
   AgentConfig,
   CatalogProvider,
@@ -37,6 +38,7 @@ export function AgentConfigModelPicker({
 }) {
   const { t } = useTranslation("ai");
   const updateMut = useUpdateAgentConfigModel(spaceId);
+  const autoExecMut = useUpdateAgentConfigAutoExecute(spaceId);
 
   const [serverProvider, serverModel] = parseModelId(agentConfig.modelId);
   const [localProvider, setLocalProvider] = useState<string | null>(
@@ -99,20 +101,51 @@ export function AgentConfigModelPicker({
     persistModel(composite);
   }
 
+  async function handleAutoExecuteToggle(checked: boolean) {
+    try {
+      await autoExecMut.mutateAsync({
+        id: agentConfig.id,
+        autoExecute: checked,
+      });
+      toast.success(i18n.t("ai:agentConfigs.toast.updateSuccess"));
+    } catch (err) {
+      toast.error(i18n.t("ai:agentConfigs.toast.updateFailed"), {
+        description: translateError(toErrorPayload(err)),
+      });
+    }
+  }
+
   return (
-    <div className="flex items-center justify-between gap-6 py-2.5">
-      <span className="text-sm font-medium">
-        {t(`ai:agentConfigs.name.${agentConfig.name}`, { defaultValue: agentConfig.name })}
-      </span>
-      <ModelCascadingSelect
-        providers={providers}
-        availableProviderIds={availableProviderIds}
-        selectedProviderId={localProvider}
-        selectedModelId={localModel}
-        disabled={disabled || updateMut.isPending}
-        onProviderChange={handleProviderChange}
-        onModelChange={handleModelChange}
-      />
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center justify-between gap-6 py-2.5">
+        <span className="text-sm font-medium">
+          {t(`ai:agentConfigs.name.${agentConfig.name}`, { defaultValue: agentConfig.name })}
+        </span>
+        <ModelCascadingSelect
+          providers={providers}
+          availableProviderIds={availableProviderIds}
+          selectedProviderId={localProvider}
+          selectedModelId={localModel}
+          disabled={disabled || updateMut.isPending}
+          onProviderChange={handleProviderChange}
+          onModelChange={handleModelChange}
+        />
+      </div>
+      <div className="flex items-center justify-between gap-6 py-1 pl-1">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-xs font-medium text-muted-foreground">
+            {t("ai:agentConfigs.autoExecute.title")}
+          </span>
+          <span className="text-[0.6875rem] text-muted-foreground/70">
+            {t("ai:agentConfigs.autoExecute.description")}
+          </span>
+        </div>
+        <Switch
+          checked={agentConfig.autoExecuteDangerousTools}
+          onCheckedChange={handleAutoExecuteToggle}
+          disabled={disabled || autoExecMut.isPending}
+        />
+      </div>
     </div>
   );
 }

@@ -43,6 +43,10 @@
     "name": {
       "explorer": "Explorer",
       "writer": "Writer"
+    },
+    "autoExecute": {
+      "title": "Auto-execute tools",
+      "description": "When enabled, creation tools execute without asking for confirmation each time."
     }
   },
   "catalog": {
