@@ -62,6 +62,16 @@ _Avoid_: Section, Part
 The leaf unit of prose in a Novel — the only entity that carries narrative text (`content`, plain text). Optionally anchored to a time range and a Location. References the Characters (at specific Phases), Items, and Events that appear in it.
 _Avoid_: Sequence, Beat, Moment, Setup, Fragment
 
+### World configuration
+
+**World config**:
+A World's own control surface — distinct from global `Settings` and from `Space config`. Lives in the `world_config` KV table inside that World's `world.db`, mirroring the `space_config` pattern one layer down. Currently holds only the `TimeMapper`; reserved for future World-scoped settings.
+_Avoid_: World settings, World preferences
+
+**TimeMapper**:
+A per-World, user-authored JavaScript function that renders an ISO timestamp into a world-time display string — the bridge between the database's ISO storage and the World's fictional time. Pure output: maps ISO → string, never the reverse. Stored as JS source under `world_config.time_mapper`. When absent or broken, times display as raw ISO.
+_Avoid_: TimeFormatter, Calendar, Chronology, WorldClock, TimeSystem
+
 ### Application layer
 
 **Setting** (plural: **Settings**):
@@ -113,3 +123,5 @@ _Avoid_: ChatMessage, StoredMessage, MessageRecord
 **Isolation (two-tier)**: The app enforces isolation at two nested boundaries. (1) **Space isolation** — Spaces share no data at any layer (schema, query, UI); each Space's World registry, password, and config are invisible to other Spaces. (2) **World isolation** — within a Space, Worlds share no data; there is no cross-World reference at any layer. Worlds that need to share content must duplicate it; Spaces that need to share content must duplicate it.
 
 **Position uniqueness**: Within each ordered collection, the `position` field is unique to its parent — `CharacterPhase.position` within their Character, `Chapter.position` within their Novel, `Scene.position` within their Chapter. Ordering is mutable via `reorder_*` commands.
+
+**Time storage (ISO as truth source)**: `Event.startAt` / `Scene.startAt` are stored exclusively as ISO 8601 strings. World-specific time representations are a display-layer concern, rendered at read time by the World's `TimeMapper` (if configured) — they never participate in storage, input parsing, or the data model. Input remains ISO via the native `datetime-local` picker; the TimeMapper is strictly `(iso: string) => string`. When no mapper is configured or it fails, times display as raw ISO.
