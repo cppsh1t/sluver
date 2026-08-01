@@ -11,3 +11,4 @@ pub mod space;
 pub mod tray;
 pub mod window;
 pub mod world;
+pub mod world_config;

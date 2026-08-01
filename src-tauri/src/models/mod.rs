@@ -12,3 +12,6 @@ pub mod provider_credential;
 pub mod ref_counts;
 pub mod space;
 pub mod world;
+pub mod world_config;
+
+pub use world_config::TimeMapperConfig;

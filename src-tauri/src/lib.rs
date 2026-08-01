@@ -198,6 +198,9 @@ pub fn run() {
             commands::conversation::delete_conversation,
             commands::conversation::load_messages,
             commands::conversation::append_messages,
+            // World config (TimeMapper — ADR-0026)
+            commands::world_config::get_time_mapper,
+            commands::world_config::set_time_mapper,
             // Tray
             commands::tray::set_tray_locale,
             // AI config (space.db)
