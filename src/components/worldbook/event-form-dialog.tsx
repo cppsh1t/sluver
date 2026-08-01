@@ -20,6 +20,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { TagInput } from "@/components/ui/tag-input";
+import { FormattedTime } from "@/components/timemapper/formatted-time";
 
 /** Convert an ISO 8601 string to the value format expected by `<input type="datetime-local">`. */
 function toDatetimeLocal(iso: string | null): string {
@@ -209,6 +210,12 @@ function EventFormDialog({
                 value={startAt}
                 onChange={(e) => setStartAt(e.currentTarget.value)}
               />
+              {startAt && (
+                <FormattedTime
+                  iso={fromDatetimeLocal(startAt) ?? ""}
+                  className="text-xs text-muted-foreground"
+                />
+              )}
             </Field>
             <Field>
               <FieldLabel htmlFor={`evt-${prefix}-end`}>
@@ -220,6 +227,12 @@ function EventFormDialog({
                 value={endAt}
                 onChange={(e) => setEndAt(e.currentTarget.value)}
               />
+              {endAt && (
+                <FormattedTime
+                  iso={fromDatetimeLocal(endAt) ?? ""}
+                  className="text-xs text-muted-foreground"
+                />
+              )}
             </Field>
           </FieldGroup>
           <DialogFooter className="mt-4">

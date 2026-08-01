@@ -1,8 +1,7 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { createRoute, useNavigate, useParams } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import dayjs from "dayjs";
 
 import { worldLayoutRoute } from "./_world";
 import { Button } from "@/components/ui/button";
@@ -19,6 +18,7 @@ import { LocationRefPicker } from "@/components/worldbook/location-ref-picker";
 import { EventFormDialog } from "@/components/worldbook/event-form-dialog";
 import { ParticipantCard } from "@/components/worldbook/participant-card";
 import { EntityCard } from "@/components/worldbook/entity-card";
+import { FormattedTime } from "@/components/timemapper/formatted-time";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft02Icon, PencilEdit01Icon } from "@hugeicons/core-free-icons";
 import { toErrorPayload } from "@/api/client";
@@ -37,8 +37,6 @@ import type {
   EventId,
   WorldId,
 } from "@/types";
-
-const TIME_FMT = "YYYY-MM-DD HH:mm";
 
 /** The basic fields edited by {@link EventFormDialog}. */
 type EventBasics = Pick<
@@ -214,14 +212,18 @@ function EventDetailPage() {
   const visibleTags = event.tags.slice(0, 5);
   const extraTags = event.tags.length - 5;
 
-  const timeLabel = (() => {
+  const timeLabelNode: ReactNode = (() => {
     const { startAt, endAt } = event;
     if (!startAt && !endAt) {
       return t("event:detail.timeSummary.unspecified");
     }
-    const s = startAt ? dayjs(startAt).format(TIME_FMT) : "—";
-    const e = endAt ? dayjs(endAt).format(TIME_FMT) : "—";
-    return `${s} ~ ${e}`;
+    return (
+      <>
+        {startAt ? <FormattedTime iso={startAt} /> : "—"}
+        {" ~ "}
+        {endAt ? <FormattedTime iso={endAt} /> : "—"}
+      </>
+    );
   })();
 
   return (
@@ -257,7 +259,7 @@ function EventDetailPage() {
                 {event.description}
               </p>
             )}
-            <p className="text-sm text-muted-foreground">{timeLabel}</p>
+            <p className="text-sm text-muted-foreground">{timeLabelNode}</p>
             {event.tags.length > 0 && (
               <div className="flex flex-wrap gap-1">
                 {visibleTags.map((tag) => (

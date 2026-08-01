@@ -1,7 +1,6 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import dayjs from "dayjs";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -29,14 +28,10 @@ import {
   MoreHorizontalIcon,
   Tick02Icon,
 } from "@hugeicons/core-free-icons";
+import { FormattedTime } from "@/components/timemapper/formatted-time";
 import { formatRelativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Event, WorldId } from "@/types";
-
-/** Compact, locale-neutral datetime for card metadata rows. */
-function formatDateTime(iso: string): string {
-  return dayjs(iso).format("YYYY-MM-DD HH:mm");
-}
 
 interface EventCardProps {
   event: Event;
@@ -76,18 +71,19 @@ function EventCard({
 
   const locationText = locationName ?? t("event:card.noLocation");
 
-  let timeText: string;
+  let timeNode: ReactNode;
   if (event.startAt && event.endAt) {
-    timeText = t("event:card.timeRange", {
-      start: formatDateTime(event.startAt),
-      end: formatDateTime(event.endAt),
-    });
+    timeNode = (
+      <>
+        <FormattedTime iso={event.startAt} /> – <FormattedTime iso={event.endAt} />
+      </>
+    );
   } else if (event.startAt) {
-    timeText = formatDateTime(event.startAt);
+    timeNode = <FormattedTime iso={event.startAt} />;
   } else if (event.endAt) {
-    timeText = formatDateTime(event.endAt);
+    timeNode = <FormattedTime iso={event.endAt} />;
   } else {
-    timeText = t("event:card.noTime");
+    timeNode = t("event:card.noTime");
   }
 
   const card = (
@@ -139,7 +135,7 @@ function EventCard({
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-2">
         <p className="text-xs text-muted-foreground">
-          {participantsText} · {locationText} · {timeText}
+          {participantsText} · {locationText} · {timeNode}
         </p>
         <p className="line-clamp-2 min-h-8 flex-1 text-sm text-muted-foreground">
           {event.description}
