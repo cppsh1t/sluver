@@ -92,25 +92,64 @@ export interface PendingApproval {
   readonly consentLevel: ConsentLevel;
 }
 
-/** Live streaming state for the in-flight run. `null` when idle. */
+/**
+ * Ordered chronological log of live-stream events. The block builder renders
+ * segments IN ARRAY ORDER so a tool card called AFTER some text appears BELOW
+ * that text — replacing the previous flat accumulator model (single `text`,
+ * `reasoning`, `toolCalls`) that hardcoded the order as
+ * `reasoning → ALL tools → text`.
+ *
+ * - `step` segments render one divider per `step_start` (one per loop step).
+ * - `reasoning` / `text` segments coalesce consecutive deltas of the same
+ *   `stepNumber`, so each step gets at most one reasoning block and one text
+ *   block, but interleaving with tools is preserved (a tool between two text
+ *   spans produces two text segments).
+ * - `tool` segments are never coalesced (each `tool_call` is distinct). Their
+ *   fields mirror {@link ToolCallView} so the segment is structurally
+ *   assignable to it (no cast needed at the render layer).
+ *
+ * `text` / `toolName` / `inputDraft` / `input` / `status` / `output` / `error`
+ * are intentionally mutable so delta handlers can replace them in place inside
+ * a fresh array (see `handleEvent`).
+ */
+export type StreamSegment =
+  | { readonly kind: "step"; readonly stepNumber: number }
+  | { readonly kind: "reasoning"; readonly stepNumber: number; text: string }
+  | { readonly kind: "text"; readonly stepNumber: number; text: string }
+  | {
+      readonly kind: "tool";
+      readonly toolCallId: string;
+      toolName: string;
+      inputDraft: string;
+      input: unknown;
+      status: "running" | "done" | "error";
+      output: unknown;
+      error: { code: string; message: string } | null;
+    };
+
+/**
+ * Live streaming state for the in-flight run. `null` when idle.
+ *
+ * Events arrive in true chronological order from the loop (`text_delta`,
+ * `reasoning_delta`, `tool_call`, `tool_result`, …). They are appended to
+ * {@link segments} so the block builder can render them in the EXACT order they
+ * arrived — preserving interleaving like text → tool → more text.
+ */
 export interface StreamState {
   readonly runId: string;
-  /** Accumulated `text_delta`. */
-  readonly text: string;
-  /** Accumulated `reasoning_delta`. */
-  readonly reasoning: string;
-  /** From `step_start` (zero-based). */
-  readonly currentStep: number;
+  /**
+   * Chronologically ordered log of stream events (step dividers, reasoning,
+   * text, tool calls). Rendered in array order by `buildBlocks`.
+   */
+  readonly segments: readonly StreamSegment[];
   /**
    * Buffer for `tool_input_delta` chunks. The loop emits these WITHOUT a
    * `toolCallId` (the SDK part carries one but the runtime strips it — see
    * `loop/tool-input-delta` handling), so they cannot be keyed per call. They
    * always precede the matching `tool_call` event, so we accumulate here and
-   * transfer into the tool card's `inputDraft` when `tool_call` arrives.
+   * transfer into the tool segment's `inputDraft` when `tool_call` arrives.
    */
   readonly pendingInputDraft: string;
-  /** Keyed by `toolCallId`. */
-  readonly toolCalls: Record<string, ToolCallView>;
   /** Keyed by `toolCallId` — non-empty while the UI shows approve/deny buttons. */
   readonly pendingApprovals: Record<string, PendingApproval>;
 }
@@ -247,27 +286,54 @@ function updateConversation(
   return newWorlds;
 }
 
-/** A blank tool-call stub — `tool_input_delta` may arrive before `tool_call`. */
-function defaultToolCall(toolCallId: string): ToolCallView {
-  return {
-    toolCallId,
-    toolName: "",
-    inputDraft: "",
-    input: undefined,
-    status: "running",
-    output: undefined,
-    error: null,
-  };
+/**
+ * Coalesce a `text_delta` / `reasoning_delta` chunk into the segment log.
+ *
+ * If the LAST segment is the same kind with the SAME `stepNumber`, append the
+ * delta to its `text`; otherwise push a fresh segment. Consecutive same-kind
+ * deltas within one step thus become a single block, but a tool interleaved
+ * between two text spans splits them into two segments — preserving the true
+ * arrival order.
+ *
+ * Returns a NEW array (immutably-spread element). Callers MUST feed the result
+ * back via the `patchData` spread pattern so zustand sees a fresh reference.
+ */
+function appendDelta(
+  segments: readonly StreamSegment[],
+  kind: "text" | "reasoning",
+  stepNumber: number,
+  delta: string,
+): readonly StreamSegment[] {
+  const next = [...segments];
+  const last = next[next.length - 1];
+  if (last && last.kind === kind && last.stepNumber === stepNumber) {
+    next[next.length - 1] = { ...last, text: last.text + delta };
+  } else {
+    next.push({ kind, stepNumber, text: delta });
+  }
+  return next;
 }
 
-/** Shallow-merge a patch into one tool-call slot, returning a new record map. */
-function upsertToolCall(
-  toolCalls: Record<string, ToolCallView>,
+/**
+ * Patch a tool segment (matched by `toolCallId`) with new fields, returning a
+ * NEW array. Used for `tool_result` (status/output) and `tool_error`
+ * (status/error). No-op if the id is not present (defensive — the matching
+ * `tool_call` should always precede these events).
+ */
+function patchToolSegment(
+  segments: readonly StreamSegment[],
   toolCallId: string,
-  patch: Partial<ToolCallView>,
-): Record<string, ToolCallView> {
-  const existing = toolCalls[toolCallId] ?? defaultToolCall(toolCallId);
-  return { ...toolCalls, [toolCallId]: { ...existing, ...patch } };
+  patch: Partial<Pick<ToolCallView, "toolName" | "status" | "output" | "error">>,
+): readonly StreamSegment[] {
+  const idx = segments.findIndex(
+    (s) => s.kind === "tool" && s.toolCallId === toolCallId,
+  );
+  if (idx === -1) return segments;
+  const seg = segments[idx];
+  if (seg.kind !== "tool") return segments; // unreachable given findIndex above
+  const next = [...segments];
+  next[idx] = { ...seg, ...patch };
+  return next;
 }
 
 /**
@@ -556,11 +622,8 @@ export function createConversationRuntimeStore(
             ...d.view,
             stream: {
               runId: handle.runId,
-              text: "",
-              reasoning: "",
-              currentStep: 0,
+              segments: [],
               pendingInputDraft: "",
-              toolCalls: {},
               pendingApprovals: {},
             },
           },
@@ -580,13 +643,20 @@ export function createConversationRuntimeStore(
               return;
 
             case "step_start":
+              // One divider per step — `step_start` fires once per loop step.
               patchData(worldId, conversationId, (d) => {
                 if (!d.view.stream) return d;
                 return {
                   ...d,
                   view: {
                     ...d.view,
-                    stream: { ...d.view.stream, currentStep: event.stepNumber },
+                    stream: {
+                      ...d.view.stream,
+                      segments: [
+                        ...d.view.stream.segments,
+                        { kind: "step", stepNumber: event.stepNumber },
+                      ],
+                    },
                   },
                 };
               });
@@ -605,7 +675,12 @@ export function createConversationRuntimeStore(
                     ...d.view,
                     stream: {
                       ...d.view.stream,
-                      text: d.view.stream.text + event.delta,
+                      segments: appendDelta(
+                        d.view.stream.segments,
+                        "text",
+                        event.stepNumber,
+                        event.delta,
+                      ),
                     },
                   },
                 };
@@ -621,7 +696,12 @@ export function createConversationRuntimeStore(
                     ...d.view,
                     stream: {
                       ...d.view.stream,
-                      reasoning: d.view.stream.reasoning + event.delta,
+                      segments: appendDelta(
+                        d.view.stream.segments,
+                        "reasoning",
+                        event.stepNumber,
+                        event.delta,
+                      ),
                     },
                   },
                 };
@@ -650,7 +730,7 @@ export function createConversationRuntimeStore(
             case "tool_call":
               patchData(worldId, conversationId, (d) => {
                 if (!d.view.stream) return d;
-                const draft = d.view.stream.pendingInputDraft;
+                const inputDraft = d.view.stream.pendingInputDraft;
                 return {
                   ...d,
                   view: {
@@ -659,13 +739,19 @@ export function createConversationRuntimeStore(
                       ...d.view.stream,
                       // Hand the buffered draft to this call, then reset.
                       pendingInputDraft: "",
-                      toolCalls: upsertToolCall(d.view.stream.toolCalls, event.toolCallId, {
-                        toolCallId: event.toolCallId,
-                        toolName: event.toolName,
-                        inputDraft: draft,
-                        input: event.input,
-                        status: "running",
-                      }),
+                      segments: [
+                        ...d.view.stream.segments,
+                        {
+                          kind: "tool",
+                          toolCallId: event.toolCallId,
+                          toolName: event.toolName,
+                          inputDraft,
+                          input: event.input,
+                          status: "running",
+                          output: undefined,
+                          error: null,
+                        },
+                      ],
                     },
                   },
                 };
@@ -681,11 +767,11 @@ export function createConversationRuntimeStore(
                     ...d.view,
                     stream: {
                       ...d.view.stream,
-                      toolCalls: upsertToolCall(d.view.stream.toolCalls, event.toolCallId, {
-                        toolName: event.toolName,
-                        status: "done",
-                        output: event.output,
-                      }),
+                      segments: patchToolSegment(
+                        d.view.stream.segments,
+                        event.toolCallId,
+                        { toolName: event.toolName, status: "done", output: event.output },
+                      ),
                     },
                   },
                 };
@@ -701,11 +787,15 @@ export function createConversationRuntimeStore(
                     ...d.view,
                     stream: {
                       ...d.view.stream,
-                      toolCalls: upsertToolCall(d.view.stream.toolCalls, event.toolCallId, {
-                        toolName: event.toolName,
-                        status: "error",
-                        error: { code: event.error.code, message: event.error.message },
-                      }),
+                      segments: patchToolSegment(
+                        d.view.stream.segments,
+                        event.toolCallId,
+                        {
+                          toolName: event.toolName,
+                          status: "error",
+                          error: { code: event.error.code, message: event.error.message },
+                        },
+                      ),
                     },
                   },
                 };

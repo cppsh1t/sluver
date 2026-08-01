@@ -28,7 +28,6 @@
 
 import type { PendingApproval, StreamState, ToolCallView } from "@/lib/conversation-runtime";
 import type { ModelMessage, SessionMessage } from "@/lib/ai";
-
 // ─── Block model ──────────────────────────────────────────────────────────
 
 /** Unified data shape for a single tool card (persisted or live). */
@@ -304,43 +303,65 @@ export function buildBlocks(
   }
 
   if (stream) {
-    // Step label — the runtime tracks only the current (zero-based) step
-    // number, so we surface a single divider for the active step.
-    blocks.push({
-      kind: "step",
-      id: `__step_${stream.currentStep}__`,
-      n: stream.currentStep + 1,
-    });
-
-    if (stream.reasoning.length > 0) {
-      blocks.push({
-        kind: "reasoning",
-        id: "__live_reasoning__",
-        text: stream.reasoning,
-        live: true,
-      });
+    // Live region — render segments in TRUE ARRIVAL ORDER so a tool called
+    // after some text appears BELOW that text (not above all text). The
+    // chronological order is preserved by `handleEvent` in the store.
+    let hasContent = false;
+    for (const seg of stream.segments) {
+      switch (seg.kind) {
+        case "step":
+          blocks.push({
+            kind: "step",
+            id: `__step_${seg.stepNumber}__`,
+            n: seg.stepNumber + 1,
+          });
+          break;
+        case "reasoning":
+          if (seg.text.length > 0) {
+            blocks.push({
+              kind: "reasoning",
+              id: `__live_reasoning_${seg.stepNumber}__`,
+              text: seg.text,
+              live: true,
+            });
+          }
+          break;
+        case "text":
+          if (seg.text.length > 0) {
+            hasContent = true;
+            // Cursor is flipped on only for the LAST assistant-text block
+            // after the loop (see below).
+            blocks.push({
+              kind: "assistant-text",
+              id: `__live_text_${seg.stepNumber}__`,
+              text: seg.text,
+              streaming: false,
+            });
+          }
+          break;
+        case "tool":
+          hasContent = true;
+          blocks.push({
+            kind: "tool",
+            id: `__live_tool_${seg.toolCallId}__`,
+            tool: toolBlockFromLive(seg, stream.pendingApprovals[seg.toolCallId]),
+          });
+          break;
+      }
     }
-
-    for (const tc of Object.values(stream.toolCalls)) {
-      blocks.push({
-        kind: "tool",
-        id: `__live_tool_${tc.toolCallId}__`,
-        tool: toolBlockFromLive(tc, stream.pendingApprovals[tc.toolCallId]),
-      });
+    // Blinking cursor lands on the LAST assistant-text block while the run
+    // is live — there can be more than one (text → tool → more text).
+    if (isRunning) {
+      for (let i = blocks.length - 1; i >= 0; i--) {
+        const block = blocks[i];
+        if (block.kind === "assistant-text") {
+          blocks[i] = { ...block, streaming: true };
+          break;
+        }
+      }
     }
-
-    if (stream.text.length > 0) {
-      blocks.push({
-        kind: "assistant-text",
-        id: "__live_text__",
-        text: stream.text,
-        streaming: isRunning,
-      });
-    }
-
-    // Abort window: the `abort` event flips isRunning off but the stream is
-    // only cleared on finalization — show a "Stopped" marker in that gap.
-    if (!isRunning && stream.text.length === 0 && Object.keys(stream.toolCalls).length === 0) {
+    // Abort window: aborted, no text/tool content produced.
+    if (!isRunning && !hasContent) {
       blocks.push({ kind: "stopped", id: "__stopped__" });
     }
   }

@@ -45,6 +45,7 @@ export {
   type PendingApproval,
   type PersistErrorHandler,
   type ResolvedModel,
+  type StreamSegment,
   type StreamState,
   type ToolCallView,
 } from "./store";
