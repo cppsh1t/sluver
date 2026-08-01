@@ -22,7 +22,47 @@
     "error": "Error",
     "input": "Input",
     "output": "Output",
-    "pendingApproval": "Pending approval"
+    "pendingApproval": "Pending approval",
+    "rawJson": "Raw JSON",
+    "idLabel": "ID",
+    "nameQuote": "“{{name}}”",
+    "listResult": "Found {{count}} {{entity}}",
+    "listPending": "{{action}} {{entity}} list",
+    "deleted": "Deleted {{entity}}",
+    "reorderPending": "{{action}} {{count}} {{entity}}",
+    "reorderDone": "Reordered {{count}} {{entity}}",
+    "countResult": "Refs: {{events}} events · {{scenes}} scenes",
+    "action": {
+      "create": "Create",
+      "update": "Update",
+      "delete": "Delete",
+      "get": "Get",
+      "list": "List",
+      "reorder": "Reorder",
+      "count": "Count refs",
+      "addPhase": "Add phase",
+      "getTime": "Get current time"
+    },
+    "entity": {
+      "character": "character",
+      "location": "location",
+      "item": "item",
+      "lore": "lore",
+      "event": "event",
+      "novel": "novel",
+      "chapter": "chapter",
+      "scene": "scene",
+      "phase": "phase"
+    },
+    "param": {
+      "id": "ID",
+      "aliases": "Aliases",
+      "tags": "Tags",
+      "description": "Description",
+      "summary": "Summary",
+      "count": "Count",
+      "timezone": "Timezone"
+    }
   },
   "consent": {
     "approve": "Approve",

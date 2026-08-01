@@ -3,13 +3,18 @@
  *
  * The centerpiece of the "looks like an AI coding tool" requirement. Mirrors
  * the compact, expandable execution display in Cursor / Cline: a status
- * indicator + monospace tool-name badge, with collapsible JSON input/output.
+ * indicator + monospace tool-name badge, with an entity-shaped preview body
+ * (via {@link ToolBody}) and a collapsible raw-JSON fallback for power users.
  *
  * States:
- * - `running` — animated ring spinner + live input preview; expanded by
- *   default so the streaming args are visible.
- * - `done`    — checkmark; collapsed by default, click to inspect I/O.
- * - `error`   — destructive marker + error message; input shown on expand.
+ * - `running` — animated ring spinner + live input preview; EXPANDED by
+ *   default so the streaming args + preview are visible.
+ * - `pendingApproval` — amber shield; EXPANDED by default with inline
+ *   approve/deny. The header shows a one-line human summary
+ *   ("创建角色「张三」") next to the tool-name badge so the user sees what
+ *   they are approving at a glance.
+ * - `done`    — checkmark; collapsed by default, click to inspect preview/JSON.
+ * - `error`   — destructive marker + error message; expanded to show failure.
  *
  * All colors reference semantic oklch tokens (no hardcoded hex) so the card
  * adapts to the active color theme + dark mode.
@@ -34,6 +39,8 @@ import {
   formatToolOutput,
   type ToolBlockData,
 } from "./message-render";
+import { summarizeToolCall } from "./tool-summary";
+import { ToolBody, ToolSummaryLine } from "./tool-cards/tool-body";
 
 interface ToolCardProps {
   readonly tool: ToolBlockData;
@@ -97,7 +104,7 @@ function statusTextKey(status: ToolBlockData["status"]): string {
   }
 }
 
-/** Collapsible labeled `<pre>` for tool input/output payloads. */
+/** Collapsible labeled `<pre>` for tool input/output payloads (raw-JSON view). */
 function PayloadBlock({
   label,
   value,
@@ -126,10 +133,16 @@ function PayloadBlock({
 
 export function ToolCard({ tool, worldId, conversationId }: ToolCardProps) {
   const { t } = useTranslation("chat");
-  const [open, setOpen] = useState(tool.status === "running");
+  const isPending = !!tool.pendingApproval;
+  // Expanded by default while running or awaiting approval; collapsed when done.
+  const [open, setOpen] = useState(tool.status === "running" || isPending);
+  const [showRaw, setShowRaw] = useState(false);
   const resolveApproval = useResolveApproval(worldId);
 
-  const isPending = !!tool.pendingApproval;
+  const summary = summarizeToolCall(tool.toolName, tool.input, tool.output);
+  // Recognized tools render an entity-shaped preview; unknown ones fall back
+  // to the raw-JSON view as the primary body.
+  const hasStructuredPreview = summary.entityType !== null || summary.action === "getTime";
 
   const statusKey = isPending ? "chat:tool.pendingApproval" : statusTextKey(tool.status);
   const labelText = t(statusKey);
@@ -142,47 +155,54 @@ export function ToolCard({ tool, worldId, conversationId }: ToolCardProps) {
       ? draftText
       : inputText;
   const outputText = formatToolOutput(tool.output);
-  const hasDetails = effectiveInput.length > 0 || outputText.length > 0;
+  const hasRawDetails = effectiveInput.length > 0 || outputText.length > 0;
+  const hasError = tool.status === "error" && tool.error != null;
 
   return (
     <div className="overflow-hidden rounded-lg border border-border/70 bg-muted/20">
       <button
         type="button"
-        onClick={() => hasDetails && setOpen((v) => !v)}
-        aria-expanded={hasDetails ? open : undefined}
-        disabled={!hasDetails}
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
         className={cn(
-          "flex w-full items-center gap-2 px-2.5 py-1.5 text-left outline-none transition-colors",
+          "flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left outline-none transition-colors",
           "focus-visible:ring-2 focus-visible:ring-ring/30",
-          hasDetails && "hover:bg-muted/50",
-          !hasDetails && "cursor-default",
+          "hover:bg-muted/50",
         )}
       >
         {isPending ? (
           <HugeiconsIcon
             icon={ShieldAlert}
             strokeWidth={2}
-            className="size-3.5 text-amber-500"
+            className="size-3.5 shrink-0 text-amber-500"
           />
         ) : (
           <StatusIndicator status={tool.status} label={labelText} />
         )}
-        <code className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[0.6875rem] font-medium text-secondary-foreground">
+        <code className="shrink-0 rounded bg-secondary px-1.5 py-0.5 font-mono text-[0.6875rem] font-medium text-secondary-foreground">
           {tool.toolName || "tool"}
         </code>
-        <span className={cn("text-[0.6875rem]", isPending ? "text-amber-600 dark:text-amber-500" : statusLabelClass(tool.status))}>
+        {hasStructuredPreview && (
+          <span className="min-w-0 truncate text-[0.6875rem] text-muted-foreground">
+            <ToolSummaryLine summary={summary} />
+          </span>
+        )}
+        <span
+          className={cn(
+            "ml-auto shrink-0 text-[0.6875rem]",
+            isPending ? "text-amber-600 dark:text-amber-500" : statusLabelClass(tool.status),
+          )}
+        >
           {labelText}
         </span>
-        {hasDetails && (
-          <HugeiconsIcon
-            icon={ChevronDownIcon}
-            strokeWidth={2}
-            className={cn(
-              "ml-auto size-3.5 text-muted-foreground transition-transform",
-              open && "rotate-180",
-            )}
-          />
-        )}
+        <HugeiconsIcon
+          icon={ChevronDownIcon}
+          strokeWidth={2}
+          className={cn(
+            "size-3.5 shrink-0 text-muted-foreground transition-transform",
+            open && "rotate-180",
+          )}
+        />
       </button>
 
       {/* Approve / Deny buttons when pending user consent */}
@@ -205,24 +225,70 @@ export function ToolCard({ tool, worldId, conversationId }: ToolCardProps) {
         </div>
       )}
 
-      {open && hasDetails && (
+      {open && (
         <div className="flex flex-col gap-2 border-t border-border/60 px-2.5 py-2">
-          {effectiveInput.length > 0 && (
-            <PayloadBlock label={t("chat:tool.input")} value={effectiveInput} />
-          )}
-          {tool.status === "error" && tool.error ? (
-            <PayloadBlock
-              label={t("chat:tool.error")}
-              value={tool.error.message || tool.error.code}
-              tone="error"
-            />
+          {hasStructuredPreview ? (
+            <>
+              {/* Primary: entity-shaped preview. */}
+              <ToolBody tool={tool} />
+              {/* Secondary: collapsible raw JSON for power users. */}
+              {hasRawDetails && (
+                <button
+                  type="button"
+                  onClick={() => setShowRaw((v) => !v)}
+                  aria-expanded={showRaw}
+                  className="self-start text-[0.625rem] font-medium uppercase tracking-wide text-muted-foreground/70 transition-colors hover:text-muted-foreground"
+                >
+                  {t("chat:tool.rawJson")}
+                </button>
+              )}
+              {showRaw && hasRawDetails && (
+                <>
+                  {effectiveInput.length > 0 && (
+                    <PayloadBlock label={t("chat:tool.input")} value={effectiveInput} />
+                  )}
+                  {hasError ? (
+                    <PayloadBlock
+                      label={t("chat:tool.error")}
+                      value={tool.error?.message || tool.error?.code || ""}
+                      tone="error"
+                    />
+                  ) : (
+                    outputText.length > 0 && (
+                      <PayloadBlock
+                        label={t("chat:tool.output")}
+                        value={outputText}
+                      />
+                    )
+                  )}
+                </>
+              )}
+              {hasError && !showRaw && (
+                <PayloadBlock
+                  label={t("chat:tool.error")}
+                  value={tool.error?.message || tool.error?.code || ""}
+                  tone="error"
+                />
+              )}
+            </>
           ) : (
-            outputText.length > 0 && (
-              <PayloadBlock
-                label={t("chat:tool.output")}
-                value={outputText}
-              />
-            )
+            // Unknown tool — raw JSON is the primary body.
+            <>
+              {effectiveInput.length > 0 && (
+                <PayloadBlock label={t("chat:tool.input")} value={effectiveInput} />
+              )}
+              {hasError ? (
+                <PayloadBlock
+                  label={t("chat:tool.error")}
+                  value={tool.error?.message || tool.error?.code || ""}
+                  tone="error"
+                />
+              ) : (
+                outputText.length > 0 && (
+                  <PayloadBlock label={t("chat:tool.output")} value={outputText} />
+                )
+              )}
+            </>
           )}
         </div>
       )}
