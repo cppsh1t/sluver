@@ -312,10 +312,27 @@ const WORLD_MIGRATION_004: &str = r#"
     CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
 "#;
 
+/// Migration 5 for each world DB: per-World key-value config table
+/// (ADR-0026: TimeMapper). Mirrors `space_config` in `space.db` — identity
+/// is implicit in which DB file is connected, so there is NO `world_id`
+/// column (per ADR-0007). Currently holds only the TimeMapper config under
+/// key `"time_mapper"` (`{ "code": string }` — the user-authored JS). Added
+/// as a separate migration so existing world DB files get the table via
+/// `rusqlite_migration`'s incremental tracking.
+const WORLD_MIGRATION_005: &str = r#"
+    -- Per-World key-value config (mirrors space_config in space.db).
+    -- Currently holds only the TimeMapper (key = "time_mapper").
+    CREATE TABLE IF NOT EXISTS world_config (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+"#;
+
 const WORLD_SLICE: &[M] = &[
     M::up(WORLD_SQL),
     M::up(WORLD_MIGRATION_002),
     M::up(WORLD_MIGRATION_003),
     M::up(WORLD_MIGRATION_004),
+    M::up(WORLD_MIGRATION_005),
 ];
 pub const WORLD_MIGRATIONS: Migrations = Migrations::from_slice(WORLD_SLICE);
