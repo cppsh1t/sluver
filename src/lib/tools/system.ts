@@ -6,11 +6,13 @@
 
 import { z } from "zod";
 
+import { timemapperTools } from "./timemapper";
 import type { ToolDef } from "./types";
 
 /** All system-level tools, keyed by `snake_case` name. */
 export function systemTools(): Record<string, ToolDef> {
   return {
+    ...timemapperTools(),
     get_current_time: {
       description:
         "Get the current date and time. Use when the user asks what time it is, or needs a timestamp.",
