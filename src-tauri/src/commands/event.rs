@@ -6,7 +6,7 @@ use crate::db::{DbError, DbManager};
 use crate::models::character::CharacterRef;
 use crate::models::event::{CreateEventInput, Event, UpdateEventInput};
 use crate::models::ref_counts::RefCounts;
-use crate::util::{new_id, now_iso};
+use crate::util::{new_id, normalize_iso, now_iso};
 
 fn load_event(conn: &mut rusqlite::Connection, id: &str, world_id: &str) -> Result<Event, DbError> {
     let (name, description, start_at, end_at, location_id, notes, tags_json, created_at, updated_at) =
@@ -73,6 +73,9 @@ pub fn create_event(
     tracing::Span::current().record("entity_id", event_id.as_str());
     let now = now_iso();
     let tags_json = serde_json::to_string(&input.tags)?;
+    // Canonicalize timestamps; drop non-ISO values (ADR-0026 — strict ISO contract).
+    let start_at = normalize_iso(&input.start_at);
+    let end_at = normalize_iso(&input.end_at);
 
     state.with_world(&space_id, &world_id, |conn| {
     let tx = conn.transaction()?;
@@ -83,8 +86,8 @@ pub fn create_event(
             event_id,
             input.name,
             input.description,
-            input.start_at,
-            input.end_at,
+            start_at,
+            end_at,
             input.location_id,
             input.notes,
             tags_json,
@@ -227,6 +230,9 @@ pub fn update_event(
 ) -> Result<Event, DbError> {
     let now = now_iso();
     let tags_json = serde_json::to_string(&input.tags)?;
+    // Canonicalize timestamps; drop non-ISO values (ADR-0026 — strict ISO contract).
+    let start_at = normalize_iso(&input.start_at);
+    let end_at = normalize_iso(&input.end_at);
 
     state.with_world(&space_id, &world_id, |conn| {
     let tx = conn.transaction()?;
@@ -237,8 +243,8 @@ pub fn update_event(
         params![
             input.name,
             input.description,
-            input.start_at,
-            input.end_at,
+            start_at,
+            end_at,
             input.location_id,
             input.notes,
             tags_json,

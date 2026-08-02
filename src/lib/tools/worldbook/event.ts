@@ -29,8 +29,8 @@ const characterRefSchema = z.object({
 const createSchema = z.object({
   name: z.string().min(1).describe("Event name (must be unique within the world)."),
   description: z.string().optional().describe("What happens in this event."),
-  startAt: z.string().optional().describe("ISO 8601 timestamp for when the event starts."),
-  endAt: z.string().optional().describe("ISO 8601 timestamp for when the event ends."),
+  startAt: z.string().datetime({ offset: true }).optional().describe("ISO 8601 timestamp (e.g. 2026-01-15T10:30:00Z) for when the event starts. Free-form text like \"midnight\" is rejected."),
+  endAt: z.string().datetime({ offset: true }).optional().describe("ISO 8601 timestamp (e.g. 2026-01-15T10:30:00Z) for when the event ends. Free-form text like \"midnight\" is rejected."),
   characterRefs: z.array(characterRefSchema).optional().describe("Characters participating, each pinned to a phase."),
   locationId: z.string().optional().describe("UUID of the location where the event takes place."),
   notes: z.string().optional().describe("Author-only notes."),

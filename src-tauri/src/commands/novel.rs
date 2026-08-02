@@ -8,7 +8,7 @@ use crate::models::novel::{
     Chapter, CreateChapterInput, CreateNovelInput, CreateSceneInput, Novel, Scene,
     UpdateChapterInput, UpdateNovelInput, UpdateSceneInput,
 };
-use crate::util::{new_id, now_iso};
+use crate::util::{new_id, normalize_iso, now_iso};
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -690,6 +690,9 @@ pub fn create_scene(
     let id = new_id();
     tracing::Span::current().record("entity_id", id.as_str());
     let now = now_iso();
+    // Canonicalize timestamps; drop non-ISO values (ADR-0026 — strict ISO contract).
+    let start_at = normalize_iso(&input.start_at);
+    let end_at = normalize_iso(&input.end_at);
 
     state.with_world(&space_id, &world_id, |conn| {
     let tx = conn.transaction()?;
@@ -710,8 +713,8 @@ pub fn create_scene(
             input.title,
             input.summary,
             input.content,
-            input.start_at,
-            input.end_at,
+            start_at,
+            end_at,
             input.location_id,
             next_pos,
             now,
@@ -766,6 +769,9 @@ pub fn update_scene(
     state: State<'_, DbManager>,
 ) -> Result<Scene, DbError> {
     let now = now_iso();
+    // Canonicalize timestamps; drop non-ISO values (ADR-0026 — strict ISO contract).
+    let start_at = normalize_iso(&input.start_at);
+    let end_at = normalize_iso(&input.end_at);
 
     state.with_world(&space_id, &world_id, |conn| {
     let tx = conn.transaction()?;
@@ -777,8 +783,8 @@ pub fn update_scene(
             input.title,
             input.summary,
             input.content,
-            input.start_at,
-            input.end_at,
+            start_at,
+            end_at,
             input.location_id,
             now,
             id,
