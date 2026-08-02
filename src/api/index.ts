@@ -22,5 +22,6 @@ export * from './space';
 export * from './session';
 export * from './ai';
 export * from './diagnostics';
+export * from './image';
 
 export type * from './types';

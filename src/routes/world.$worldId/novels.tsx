@@ -174,6 +174,8 @@ function NovelsPage() {
       <NovelFormDialog
         key="novel-create"
         mode="create"
+        spaceId={spaceId}
+        worldId={wid}
         open={createOpen}
         onOpenChange={setCreateOpen}
         onSubmit={handleCreate}

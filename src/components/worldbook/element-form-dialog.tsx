@@ -20,13 +20,71 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { TagInput } from "@/components/ui/tag-input";
+import { EntityImageField, type EntityImageId } from "@/components/entity-image-field";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  InformationSquareIcon,
+  Location01Icon,
+  ShoppingBagIcon,
+} from "@hugeicons/core-free-icons";
+import type { EntityKind } from "@/components/ui/entity-avatar";
 import type { UpdateElementInput } from "@/api";
+import type { WorldId } from "@/types";
+
+/**
+ * Per-entity crop spec. Mirrors the project's per-kind cover contract: the
+ * crop aspect and the export dimensions are paired so a freshly-uploaded
+ * image exactly fills the EntityAvatar frame without distortion.
+ */
+const ELEMENT_CROP_SPEC: Record<
+  Exclude<EntityKind, "world" | "character" | "phase" | "event" | "novel">,
+  { aspect: number; outputWidth: number; outputHeight: number }
+> = {
+  location: { aspect: 4 / 3, outputWidth: 400, outputHeight: 300 },
+  item: { aspect: 1, outputWidth: 256, outputHeight: 256 },
+  lore: { aspect: 1, outputWidth: 256, outputHeight: 256 },
+};
+
+function elementFallbackIcon(entityType: "location" | "item" | "lore") {
+  switch (entityType) {
+    case "location":
+      return (
+        <HugeiconsIcon
+          icon={Location01Icon}
+          strokeWidth={1.5}
+          className="size-8 text-muted-foreground"
+        />
+      );
+    case "item":
+      return (
+        <HugeiconsIcon
+          icon={ShoppingBagIcon}
+          strokeWidth={1.5}
+          className="size-8 text-muted-foreground"
+        />
+      );
+    case "lore":
+      return (
+        <HugeiconsIcon
+          icon={InformationSquareIcon}
+          strokeWidth={1.5}
+          className="size-8 text-muted-foreground"
+        />
+      );
+  }
+}
 
 interface ElementFormDialogProps {
   entityType: "location" | "item" | "lore";
   mode: "create" | "edit";
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Space + World scoping for the image API. Required in `edit` mode; ignored
+   * in `create` mode (no entity id yet to attach an image to).
+   */
+  spaceId: string;
+  worldId: WorldId;
   entity?: {
     id: string;
     name: string;
@@ -42,6 +100,8 @@ function ElementFormDialog({
   mode,
   open,
   onOpenChange,
+  spaceId,
+  worldId,
   entity,
   onSubmit,
 }: ElementFormDialogProps) {
@@ -103,6 +163,7 @@ function ElementFormDialog({
       : t("worldbook:form.editDescription", { entity: entityName });
 
   const prefix = mode === "create" ? "create" : "edit";
+  const cropSpec = ELEMENT_CROP_SPEC[entityType];
 
   return (
     <Dialog
@@ -119,6 +180,27 @@ function ElementFormDialog({
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <FieldGroup>
+            {/* Image upload — edit mode only. Per the project pattern, the
+                create flow does NOT carry image bytes (no id yet); users add
+                the image from the edit dialog after the entity exists. */}
+            {mode === "edit" && entity && (
+              <Field>
+                <FieldLabel>{t("common:imageField.change")}</FieldLabel>
+                <EntityImageField
+                  kind={entityType as EntityKind}
+                  spaceId={spaceId}
+                  worldId={worldId}
+                  id={entity.id as EntityImageId}
+                  aspect={cropSpec.aspect}
+                  outputWidth={cropSpec.outputWidth}
+                  outputHeight={cropSpec.outputHeight}
+                  className="flex items-center gap-4"
+                  avatarClassName="size-24 rounded-md"
+                  fallbackIcon={elementFallbackIcon(entityType)}
+                  cropTitle={t("worldbook:form.editTitle", { entity: entityName })}
+                />
+              </Field>
+            )}
             <Field>
               <FieldLabel htmlFor={`wb-${prefix}-name`}>
                 {t("worldbook:form.nameLabel")}

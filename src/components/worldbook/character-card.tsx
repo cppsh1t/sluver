@@ -32,7 +32,8 @@ import {
 import { formatRelativeTime } from "@/lib/format";
 import { countCharacterRefs, type RefCounts } from "@/api";
 import { cn } from "@/lib/utils";
-import type { CharacterId, WorldId } from "@/types";
+import { EntityAvatar } from "@/components/ui/entity-avatar";
+import type { CharacterId, SpaceId, WorldId } from "@/types";
 
 // ─── Phase stepper ───────────────────────────────────────────────────────────
 
@@ -243,10 +244,20 @@ function CharacterCard({
       >
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <HugeiconsIcon
-              icon={UserMultiple02Icon}
-              strokeWidth={2}
-              className="text-muted-foreground"
+            <EntityAvatar
+              kind="character"
+              spaceId={spaceId as SpaceId}
+              worldId={worldId}
+              id={characterId}
+              alt={name}
+              fallbackIcon={
+                <HugeiconsIcon
+                  icon={UserMultiple02Icon}
+                  strokeWidth={2}
+                  className="size-5 text-muted-foreground"
+                />
+              }
+              className="size-9 shrink-0 rounded-md"
             />
             <span className="truncate">{name}</span>
           </CardTitle>

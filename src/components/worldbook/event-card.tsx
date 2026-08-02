@@ -31,7 +31,8 @@ import {
 import { FormattedTime } from "@/components/timemapper/formatted-time";
 import { formatRelativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { Event, WorldId } from "@/types";
+import { EntityAvatar } from "@/components/ui/entity-avatar";
+import type { Event, SpaceId, WorldId } from "@/types";
 
 interface EventCardProps {
   event: Event;
@@ -96,10 +97,20 @@ function EventCard({
     >
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <HugeiconsIcon
-            icon={Calendar03Icon}
-            strokeWidth={2}
-            className="text-muted-foreground"
+          <EntityAvatar
+            kind="event"
+            spaceId={spaceId as SpaceId}
+            worldId={worldId}
+            id={event.id}
+            alt={event.name}
+            fallbackIcon={
+              <HugeiconsIcon
+                icon={Calendar03Icon}
+                strokeWidth={2}
+                className="size-5 text-muted-foreground"
+              />
+            }
+            className="size-9 shrink-0 rounded-md"
           />
           <span className="truncate">{event.name}</span>
         </CardTitle>

@@ -104,6 +104,15 @@ pub enum DbError {
     #[error("Logging reload failed: {0}")]
     LoggingReload(String),
 
+    /// Per-entity image upload rejected — base64 decode failed, the
+    /// `image_mime` is not in the allowlist (`image/webp`, `image/jpeg`,
+    /// `image/png`), or the decoded payload exceeds the 1 MiB defense-
+    /// in-depth ceiling. Surfaces as `INVALID_IMAGE` with no args (the
+    /// reason is binary on the Rust side; the frontend surfaces a generic
+    /// translated "image is invalid or too large" message).
+    #[error("Invalid image")]
+    InvalidImage,
+
     /// Caller passed a value to `set_log_level` that isn't one of the three
     /// allowed tiers (`standard` / `verbose` / `very_verbose`). Surfaces as
     /// `INVALID_LOG_LEVEL` with `{ provided }` so the frontend can render
@@ -171,6 +180,10 @@ impl DbError {
                 "INVALID_INPUT",
                 HashMap::from([("message".to_string(), msg.clone())]),
             ),
+            // Per-entity image rejection: generic code is enough — the
+            // frontend surfaces a translated "image is invalid or too
+            // large" message. No structured args.
+            DbError::InvalidImage => ("INVALID_IMAGE", HashMap::new()),
             // Infrastructure errors: opaque code, no structured args.
             DbError::Sqlite(_)
             | DbError::Io(_)

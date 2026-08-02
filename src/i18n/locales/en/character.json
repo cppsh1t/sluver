@@ -88,6 +88,10 @@
     "phaseDeleteSuccess": "Phase deleted",
     "phaseDeleteFailed": "Failed to delete phase",
     "reorderSuccess": "Phase order updated",
-    "reorderFailed": "Failed to update order"
+    "reorderFailed": "Failed to update order",
+    "imageUpdated": "Image updated",
+    "imageUpdateFailed": "Failed to update image",
+    "imageRemoved": "Image removed",
+    "imageRemoveFailed": "Failed to remove image"
   }
 }

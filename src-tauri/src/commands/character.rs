@@ -7,7 +7,7 @@ use crate::models::character::{
     Character, CharacterPhase, CharacterRef, CreateCharacterInput, CreatePhaseInput,
     UpdateCharacterInput, UpdatePhaseInput,
 };
-use crate::util::{new_id, now_iso};
+use crate::util::{decode_and_validate_image, new_id, now_iso};
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -440,3 +440,123 @@ pub fn reorder_phases(
         Ok(())
     })
 }
+
+// ─── Per-entity image commands (Character + CharacterPhase) ─────────────────
+//
+// Two separate triples — Character and CharacterPhase use different tables
+// (`characters` vs `character_phases`) and surface under different NotFound
+// labels, but the body is otherwise identical, so we share one macro. Phase
+// commands use the "phase" naming (matching `add_phase` / `update_phase`
+// above) — the `id` is the phase row's id, not the parent character's.
+//
+// Logging follows ADR-0014 / ADR-0016: only metadata (entity_id, byte length,
+// mime) is ever logged — the bytes themselves are creative content. update +
+// clear are INFO; get is DEBUG because it fires on every avatar render.
+
+macro_rules! impl_character_image_commands {
+    ($table:literal, $label:literal, $id_param:ident, $update_fn:ident, $clear_fn:ident, $get_fn:ident) => {
+        #[tracing::instrument(
+            skip(state, image_base64),
+            fields(entity_id = %$id_param)
+        )]
+        #[tauri::command]
+        pub fn $update_fn(
+            space_id: String,
+            world_id: String,
+            $id_param: String,
+            image_base64: String,
+            image_mime: String,
+            state: State<'_, DbManager>,
+        ) -> Result<(), DbError> {
+            let bytes = decode_and_validate_image(&image_base64, &image_mime)?;
+            let now = now_iso();
+            tracing::info!(
+                entity_id = %$id_param,
+                image_bytes_len = bytes.len(),
+                image_mime = %image_mime,
+                "image updated"
+            );
+            state.with_world(&space_id, &world_id, |conn| {
+                let updated = conn.execute(
+                    &format!(
+                        "UPDATE {} SET image_blob = ?1, image_mime = ?2, updated_at = ?3 WHERE id = ?4",
+                        $table
+                    ),
+                    params![&bytes, &image_mime, now, &$id_param],
+                )?;
+                if updated == 0 {
+                    return Err(DbError::NotFound($label, $id_param));
+                }
+                Ok(())
+            })
+        }
+
+        #[tracing::instrument(skip(state, $id_param), fields(entity_id = %$id_param))]
+        #[tauri::command]
+        pub fn $clear_fn(
+            space_id: String,
+            world_id: String,
+            $id_param: String,
+            state: State<'_, DbManager>,
+        ) -> Result<(), DbError> {
+            let now = now_iso();
+            tracing::info!(entity_id = %$id_param, "image cleared");
+            state.with_world(&space_id, &world_id, |conn| {
+                let updated = conn.execute(
+                    &format!(
+                        "UPDATE {} SET image_blob = NULL, image_mime = NULL, updated_at = ?1 WHERE id = ?2",
+                        $table
+                    ),
+                    params![now, &$id_param],
+                )?;
+                if updated == 0 {
+                    return Err(DbError::NotFound($label, $id_param));
+                }
+                Ok(())
+            })
+        }
+
+        #[tracing::instrument(skip(state, $id_param), fields(entity_id = %$id_param))]
+        #[tauri::command]
+        pub fn $get_fn(
+            space_id: String,
+            world_id: String,
+            $id_param: String,
+            state: State<'_, DbManager>,
+        ) -> Result<tauri::ipc::Response, DbError> {
+            tracing::debug!(entity_id = %$id_param, "image fetched");
+            let bytes: Option<Vec<u8>> = state.with_world(&space_id, &world_id, |conn| {
+                conn.query_row(
+                    &format!("SELECT image_blob FROM {} WHERE id = ?1", $table),
+                    params![&$id_param],
+                    |row| row.get::<_, Option<Vec<u8>>>(0),
+                )
+                .map_err(|e| match e {
+                    rusqlite::Error::QueryReturnedNoRows => {
+                        DbError::NotFound("Image", $id_param.clone())
+                    }
+                    other => DbError::Sqlite(other),
+                })
+            })?;
+            let bytes = bytes.ok_or_else(|| DbError::NotFound("Image", $id_param))?;
+            Ok(tauri::ipc::Response::new(bytes))
+        }
+    };
+}
+
+impl_character_image_commands!(
+    "characters",
+    "Character",
+    id,
+    update_character_image,
+    clear_character_image,
+    get_character_image
+);
+impl_character_image_commands!(
+    "character_phases",
+    "Phase",
+    phase_id,
+    update_phase_image,
+    clear_phase_image,
+    get_phase_image
+);

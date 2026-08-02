@@ -119,6 +119,10 @@ pub fn run() {
             commands::world::get_world,
             commands::world::update_world,
             commands::world::delete_world,
+            // World cover image (space.db registry)
+            commands::world::update_world_image,
+            commands::world::clear_world_image,
+            commands::world::get_world_image,
             // App settings
             commands::setting::get_app_setting,
             commands::setting::update_app_setting,
@@ -146,24 +150,40 @@ pub fn run() {
             commands::character::update_phase,
             commands::character::delete_phase,
             commands::character::reorder_phases,
+            // Character / Phase image
+            commands::character::update_character_image,
+            commands::character::clear_character_image,
+            commands::character::get_character_image,
+            commands::character::update_phase_image,
+            commands::character::clear_phase_image,
+            commands::character::get_phase_image,
             // Location
             commands::element::create_location,
             commands::element::get_location,
             commands::element::list_locations,
             commands::element::update_location,
             commands::element::delete_location,
+            commands::element::update_location_image,
+            commands::element::clear_location_image,
+            commands::element::get_location_image,
             // Item
             commands::element::create_item,
             commands::element::get_item,
             commands::element::list_items,
             commands::element::update_item,
             commands::element::delete_item,
+            commands::element::update_item_image,
+            commands::element::clear_item_image,
+            commands::element::get_item_image,
             // Lore
             commands::element::create_lore,
             commands::element::get_lore,
             commands::element::list_lores,
             commands::element::update_lore,
             commands::element::delete_lore,
+            commands::element::update_lore_image,
+            commands::element::clear_lore_image,
+            commands::element::get_lore_image,
             // Event
             commands::event::create_event,
             commands::event::get_event,
@@ -172,12 +192,20 @@ pub fn run() {
             commands::event::delete_event,
             commands::event::count_phase_refs,
             commands::event::count_character_refs,
+            // Event image
+            commands::event::update_event_image,
+            commands::event::clear_event_image,
+            commands::event::get_event_image,
             // Novel
             commands::novel::create_novel,
             commands::novel::get_novel,
             commands::novel::list_novels,
             commands::novel::update_novel,
             commands::novel::delete_novel,
+            // Novel image
+            commands::novel::update_novel_image,
+            commands::novel::clear_novel_image,
+            commands::novel::get_novel_image,
             // Chapter
             commands::novel::create_chapter,
             commands::novel::get_chapter,

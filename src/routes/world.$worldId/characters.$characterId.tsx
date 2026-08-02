@@ -412,6 +412,8 @@ function CharacterDetailPage() {
       <CharacterFormDialog
         key={character.id}
         mode="edit"
+        spaceId={spaceId}
+        worldId={wid}
         open={editBaseOpen}
         onOpenChange={setEditBaseOpen}
         entity={

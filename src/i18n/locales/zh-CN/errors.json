@@ -22,5 +22,6 @@
   "AGENT_CONFIG_NOT_FOUND": "未找到 Agent ({{id}})",
   "CATALOG_FETCH_FAILED": "拉取模型目录失败且无本地缓存",
   "INVALID_INPUT": "无效输入：{{message}}",
+  "INVALID_IMAGE": "图片无效或过大（仅支持 WebP / JPEG / PNG，最大 1 MB）",
   "INTERNAL_ERROR": "发生内部错误"
 }

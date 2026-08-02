@@ -63,6 +63,7 @@
     "radash": "^12.1.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-easy-crop": "^6.2.3",
     "react-i18next": "^17.0.9",
     "react-markdown": "^10.1.0",
     "rehype-highlight": "^7.0.2",

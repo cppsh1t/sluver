@@ -4,9 +4,11 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { SearchablePickerDialog } from "@/components/worldbook/searchable-picker-dialog";
 import { EntityCard } from "@/components/worldbook/entity-card";
-import type { Item } from "@/types";
+import type { Item, WorldId } from "@/types";
 
 interface ItemMultiPickerProps {
+  spaceId: string;
+  worldId: WorldId;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   items: Item[];
@@ -24,6 +26,8 @@ interface ItemMultiPickerProps {
  * and closes. Clicking a card toggles its membership in the local selection.
  */
 function ItemMultiPicker({
+  spaceId,
+  worldId,
   open,
   onOpenChange,
   items,
@@ -97,6 +101,9 @@ function ItemMultiPicker({
         {filtered.map((it) => (
           <EntityCard
             key={it.id}
+            spaceId={spaceId}
+            worldId={worldId}
+            id={it.id}
             name={it.name}
             description={it.description}
             tags={it.tags}

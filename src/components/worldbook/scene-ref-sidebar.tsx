@@ -12,11 +12,14 @@ import type {
   Item,
   Location,
   Scene,
+  WorldId,
 } from "@/types";
 
 export type WorkspaceMode = "edit" | "read";
 
 interface SceneRefSidebarProps {
+  spaceId: string;
+  worldId: WorldId;
   allScenes: Scene[];
   characters: Character[];
   locations: Location[];
@@ -27,6 +30,8 @@ interface SceneRefSidebarProps {
 }
 
 function SceneRefSidebar({
+  spaceId,
+  worldId,
   allScenes,
   characters,
   locations,
@@ -182,6 +187,9 @@ function SceneRefSidebar({
               return (
                 <EntityCard
                   key={id}
+                  spaceId={spaceId}
+                  worldId={worldId}
+                  id={loc.id}
                   name={loc.name}
                   description={loc.description}
                   tags={loc.tags}
@@ -211,6 +219,9 @@ function SceneRefSidebar({
               return (
                 <EntityCard
                   key={id}
+                  spaceId={spaceId}
+                  worldId={worldId}
+                  id={item.id}
                   name={item.name}
                   description={item.description}
                   tags={item.tags}

@@ -5,7 +5,7 @@ use crate::db::{DbError, DbManager};
 use crate::models::item::{CreateItemInput, Item, UpdateItemInput};
 use crate::models::location::{CreateLocationInput, Location, UpdateLocationInput};
 use crate::models::lore::{CreateLoreInput, Lore, UpdateLoreInput};
-use crate::util::{new_id, now_iso};
+use crate::util::{decode_and_validate_image, new_id, now_iso};
 
 // ─── shared helpers ───────────────────────────────────────────────────────────
 
@@ -408,3 +408,146 @@ pub fn delete_lore(
         Ok(())
     })
 }
+
+// ─── Per-entity image commands (Location / Item / Lore) ──────────────────────
+//
+// Mirrors the `load_element!` / `list_element!` macro pattern above: the three
+// "element" tables share an identical image-column schema (`image_blob BLOB`,
+// `image_mime TEXT`, both nullable), so we generate the 3 standard image IPC
+// commands per table via one macro instantiated 3×. Image bytes flow ONLY
+// through these dedicated commands — the entity structs and `list_*` / `get_*`
+// queries never touch the columns (avoids a serde Vec<u8> → JSON-number-array
+// encoding trap and keeps list payloads light).
+//
+// Logging follows ADR-0014 / ADR-0016: only metadata (entity_id, byte length,
+// mime) is ever logged — the bytes themselves are creative content and must
+// never reach the log file. update + clear are INFO; get is DEBUG because it
+// fires on every cover-image render and would flood the log at INFO.
+
+/// Generate `update_<entity>_image` / `clear_<entity>_image` / `get_<entity>_image`
+/// commands bound to a specific `$table` and surfaced under `$label` in
+/// `DbError::NotFound` messages. The signature contract (frontend depends on
+/// these exact names + param order):
+///   - update: `(space_id, world_id, id, image_base64, image_mime, state)`
+///   - clear:  `(space_id, world_id, id, state)`
+///   - get:    `(space_id, world_id, id, state) -> tauri::ipc::Response`
+macro_rules! impl_element_image_commands {
+    ($table:literal, $label:literal, $update_fn:ident, $clear_fn:ident, $get_fn:ident) => {
+        #[tracing::instrument(
+            skip(state, image_base64),
+            fields(entity_id = %id)
+        )]
+        #[tauri::command]
+        pub fn $update_fn(
+            space_id: String,
+            world_id: String,
+            id: String,
+            image_base64: String,
+            image_mime: String,
+            state: State<'_, DbManager>,
+        ) -> Result<(), DbError> {
+            let bytes = decode_and_validate_image(&image_base64, &image_mime)?;
+            let now = now_iso();
+            tracing::info!(
+                entity_id = %id,
+                image_bytes_len = bytes.len(),
+                image_mime = %image_mime,
+                "image updated"
+            );
+            state.with_world(&space_id, &world_id, |conn| {
+                let updated = conn.execute(
+                    &format!(
+                        "UPDATE {} SET image_blob = ?1, image_mime = ?2, updated_at = ?3 WHERE id = ?4",
+                        $table
+                    ),
+                    params![&bytes, &image_mime, now, &id],
+                )?;
+                if updated == 0 {
+                    return Err(DbError::NotFound($label, id));
+                }
+                Ok(())
+            })
+        }
+
+        #[tracing::instrument(skip(state, id), fields(entity_id = %id))]
+        #[tauri::command]
+        pub fn $clear_fn(
+            space_id: String,
+            world_id: String,
+            id: String,
+            state: State<'_, DbManager>,
+        ) -> Result<(), DbError> {
+            let now = now_iso();
+            tracing::info!(entity_id = %id, "image cleared");
+            state.with_world(&space_id, &world_id, |conn| {
+                let updated = conn.execute(
+                    &format!(
+                        "UPDATE {} SET image_blob = NULL, image_mime = NULL, updated_at = ?1 WHERE id = ?2",
+                        $table
+                    ),
+                    params![now, &id],
+                )?;
+                if updated == 0 {
+                    return Err(DbError::NotFound($label, id));
+                }
+                Ok(())
+            })
+        }
+
+        #[tracing::instrument(skip(state, id), fields(entity_id = %id))]
+        #[tauri::command]
+        pub fn $get_fn(
+            space_id: String,
+            world_id: String,
+            id: String,
+            state: State<'_, DbManager>,
+        ) -> Result<tauri::ipc::Response, DbError> {
+            tracing::debug!(entity_id = %id, "image fetched");
+            // Read the BLOB as Option<Vec<u8>> so a NULL image (row exists but
+            // no image set) and a missing row both surface as a structured
+            // NotFound("Image", id). The frontend treats both the same way
+            // (show the placeholder).
+            //
+            // `id` is captured by reference inside the closure (params![&id]
+            // + id.clone() in the error branch only borrow), so it stays owned
+            // by this function and can be moved into the final NotFound below.
+            let bytes: Option<Vec<u8>> = state.with_world(&space_id, &world_id, |conn| {
+                conn.query_row(
+                    &format!("SELECT image_blob FROM {} WHERE id = ?1", $table),
+                    params![&id],
+                    |row| row.get::<_, Option<Vec<u8>>>(0),
+                )
+                .map_err(|e| match e {
+                    rusqlite::Error::QueryReturnedNoRows => {
+                        DbError::NotFound("Image", id.clone())
+                    }
+                    other => DbError::Sqlite(other),
+                })
+            })?;
+            let bytes = bytes.ok_or_else(|| DbError::NotFound("Image", id))?;
+            Ok(tauri::ipc::Response::new(bytes))
+        }
+    };
+}
+
+impl_element_image_commands!(
+    "locations",
+    "Location",
+    update_location_image,
+    clear_location_image,
+    get_location_image
+);
+impl_element_image_commands!(
+    "items",
+    "Item",
+    update_item_image,
+    clear_item_image,
+    get_item_image
+);
+impl_element_image_commands!(
+    "lores",
+    "Lore",
+    update_lore_image,
+    clear_lore_image,
+    get_lore_image
+);

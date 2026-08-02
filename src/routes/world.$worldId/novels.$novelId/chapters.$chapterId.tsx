@@ -500,6 +500,8 @@ function ChapterWorkspacePage() {
       {/* ─── Right sidebar (read mode only) ──────────────────────────────── */}
       {mode === "read" && (
         <SceneRefSidebar
+          spaceId={spaceId}
+          worldId={wid}
           allScenes={displayScenes}
           characters={characters}
           locations={locations}

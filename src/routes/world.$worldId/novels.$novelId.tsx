@@ -154,9 +154,12 @@ function NovelWorkspaceLayout() {
         <NovelFormDialog
           key={`novel-edit-${novel.id}`}
           mode="edit"
+          spaceId={spaceId}
+          worldId={wid}
           open={editNovelOpen}
           onOpenChange={setEditNovelOpen}
           entity={{
+            id: novel.id,
             title: novel.title,
             description: novel.description,
             tags: novel.tags,

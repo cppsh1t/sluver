@@ -97,6 +97,22 @@ const SPACE_MIGRATION_003: &str = r#"
     ALTER TABLE agent_configs ADD COLUMN auto_execute_dangerous_tools INTEGER NOT NULL DEFAULT 0;
 "#;
 
+/// Migration 4 for `space.db`: per-World cover image columns on the `worlds`
+/// registry table. Both columns are nullable (NULL = no image set), and the
+/// image flows exclusively through the dedicated `update_world_image` /
+/// `clear_world_image` / `get_world_image` commands — the regular World
+/// struct + `list_worlds` / `get_world` queries do NOT touch these columns
+/// (avoids a serde Vec<u8> → JSON-number-array encoding trap and keeps the
+/// world-list query light). `image_blob` holds the raw bytes (webp/jpeg/png
+/// only, ≤ 1 MiB); `image_mime` is the matching MIME type. Added as a
+/// separate migration so existing `space.db` files get the columns via
+/// `rusqlite_migration`'s incremental tracking — modifying the original
+/// `SPACE_SQL` would NOT re-run for already-migrated databases.
+const SPACE_MIGRATION_004: &str = r#"
+    ALTER TABLE worlds ADD COLUMN image_blob BLOB;
+    ALTER TABLE worlds ADD COLUMN image_mime TEXT;
+"#;
+
 // ─── world DB schema ────────────────────────────────────────────────────────
 // Tier 3 of the three-database design (ADR-0007). One file per World at
 // `spaces/{spaceId}/worlds/{worldId}.db`. Schema is byte-for-byte identical
@@ -251,7 +267,12 @@ const META_SLICE: &[M] = &[M::up(META_SQL)];
 pub const META_MIGRATIONS: Migrations = Migrations::from_slice(META_SLICE);
 
 /// Migrations for each `space.db` (that Space's world registry + config).
-const SPACE_SLICE: &[M] = &[M::up(SPACE_SQL), M::up(SPACE_MIGRATION_002), M::up(SPACE_MIGRATION_003)];
+const SPACE_SLICE: &[M] = &[
+    M::up(SPACE_SQL),
+    M::up(SPACE_MIGRATION_002),
+    M::up(SPACE_MIGRATION_003),
+    M::up(SPACE_MIGRATION_004),
+];
 pub const SPACE_MIGRATIONS: Migrations = Migrations::from_slice(SPACE_SLICE);
 
 /// Migrations for each world DB file (all world-scoped tables).
@@ -328,11 +349,44 @@ const WORLD_MIGRATION_005: &str = r#"
     );
 "#;
 
+/// Migration 6 for each world DB: per-entity image columns on the 7
+/// "imageable" world-scoped tables. Both columns are nullable (NULL = no
+/// image set), and images flow exclusively through the dedicated
+/// `update_*_image` / `clear_*_image` / `get_*_image` commands — the
+/// regular entity structs + `list_*` / `get_*` queries do NOT touch these
+/// columns (avoids a serde Vec<u8> → JSON-number-array encoding trap and
+/// keeps list queries light). `image_blob` holds the raw bytes (webp/jpeg/
+/// png only, ≤ 1 MiB); `image_mime` is the matching MIME type.
+///
+/// Note that chapters and scenes are intentionally NOT in this list: only
+/// entities that surface as "cards" with a cover image get the columns
+/// (World registry + the 7 world-scoped entities listed below). Added as a
+/// separate migration so existing world DB files get the columns via
+/// `rusqlite_migration`'s incremental tracking — modifying the original
+/// `WORLD_SQL` would NOT re-run for already-migrated databases.
+const WORLD_MIGRATION_006: &str = r#"
+    ALTER TABLE characters      ADD COLUMN image_blob BLOB;
+    ALTER TABLE characters      ADD COLUMN image_mime TEXT;
+    ALTER TABLE character_phases ADD COLUMN image_blob BLOB;
+    ALTER TABLE character_phases ADD COLUMN image_mime TEXT;
+    ALTER TABLE locations       ADD COLUMN image_blob BLOB;
+    ALTER TABLE locations       ADD COLUMN image_mime TEXT;
+    ALTER TABLE items           ADD COLUMN image_blob BLOB;
+    ALTER TABLE items           ADD COLUMN image_mime TEXT;
+    ALTER TABLE lores           ADD COLUMN image_blob BLOB;
+    ALTER TABLE lores           ADD COLUMN image_mime TEXT;
+    ALTER TABLE events          ADD COLUMN image_blob BLOB;
+    ALTER TABLE events          ADD COLUMN image_mime TEXT;
+    ALTER TABLE novels          ADD COLUMN image_blob BLOB;
+    ALTER TABLE novels          ADD COLUMN image_mime TEXT;
+"#;
+
 const WORLD_SLICE: &[M] = &[
     M::up(WORLD_SQL),
     M::up(WORLD_MIGRATION_002),
     M::up(WORLD_MIGRATION_003),
     M::up(WORLD_MIGRATION_004),
     M::up(WORLD_MIGRATION_005),
+    M::up(WORLD_MIGRATION_006),
 ];
 pub const WORLD_MIGRATIONS: Migrations = Migrations::from_slice(WORLD_SLICE);

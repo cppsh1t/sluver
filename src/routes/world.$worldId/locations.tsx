@@ -180,6 +180,9 @@ function LocationsPage() {
             {filtered.map((entity) => (
               <EntityCard
                 key={entity.id}
+                spaceId={spaceId}
+                worldId={wid}
+                id={entity.id}
                 name={entity.name}
                 description={entity.description}
                 tags={entity.tags}
@@ -196,6 +199,8 @@ function LocationsPage() {
       <ElementFormDialog
         mode="create"
         entityType={entityType}
+        spaceId={spaceId}
+        worldId={wid}
         open={createOpen}
         onOpenChange={setCreateOpen}
         onSubmit={handleCreate}
@@ -205,6 +210,8 @@ function LocationsPage() {
         key={editTarget?.id ?? "edit-closed"}
         mode="edit"
         entityType={entityType}
+        spaceId={spaceId}
+        worldId={wid}
         entity={editTarget ?? undefined}
         open={!!editTarget}
         onOpenChange={(v) => !v && setEditTarget(null)}

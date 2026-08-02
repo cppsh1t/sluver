@@ -96,6 +96,10 @@
     "deleteSuccess": "Event deleted",
     "createFailed": "Failed to create",
     "updateFailed": "Failed to update",
-    "deleteFailed": "Failed to delete"
+    "deleteFailed": "Failed to delete",
+    "imageUpdated": "Image updated",
+    "imageUpdateFailed": "Failed to update image",
+    "imageRemoved": "Image removed",
+    "imageRemoveFailed": "Failed to remove image"
   }
 }

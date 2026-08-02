@@ -35,18 +35,20 @@ import {
 } from "@hugeicons/core-free-icons";
 
 import { EditWorldDialog } from "@/components/world-hub/edit-world-dialog";
+import { EntityAvatar } from "@/components/ui/entity-avatar";
 import { formatRelativeTime } from "@/lib/format";
 import type { UpdateWorldInput } from "@/api";
-import type { World } from "@/types";
+import type { SpaceId, World } from "@/types";
 
 interface WorldCardProps {
+  spaceId: string;
   world: World;
   onOpen: (world: World) => void;
   onUpdate: (world: World, input: UpdateWorldInput) => Promise<void>;
   onDelete: (world: World) => void;
 }
 
-function WorldCard({ world, onOpen, onUpdate, onDelete }: WorldCardProps) {
+function WorldCard({ spaceId, world, onOpen, onUpdate, onDelete }: WorldCardProps) {
   const { t } = useTranslation(["world", "common"]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -60,10 +62,19 @@ function WorldCard({ world, onOpen, onUpdate, onDelete }: WorldCardProps) {
       <Card className="cursor-pointer transition-shadow hover:shadow-md">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <HugeiconsIcon
-              icon={Globe02Icon}
-              strokeWidth={2}
-              className="text-muted-foreground"
+            <EntityAvatar
+              kind="world"
+              spaceId={spaceId as SpaceId}
+              worldId={world.id}
+              alt={world.name}
+              fallbackIcon={
+                <HugeiconsIcon
+                  icon={Globe02Icon}
+                  strokeWidth={2}
+                  className="size-5 text-muted-foreground"
+                />
+              }
+              className="size-9 shrink-0 rounded-md"
             />
             <span className="truncate">{world.name}</span>
           </CardTitle>

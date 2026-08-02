@@ -21,6 +21,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { TagInput } from "@/components/ui/tag-input";
 import { FormattedTime } from "@/components/timemapper/formatted-time";
+import { EntityImageField } from "@/components/entity-image-field";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Calendar03Icon } from "@hugeicons/core-free-icons";
+import type { EventId, WorldId } from "@/types";
 
 /** Convert an ISO 8601 string to the value format expected by `<input type="datetime-local">.
  * Returns `""` for null/empty/unparseable input so stale rows degrade to an
@@ -45,7 +49,14 @@ interface EventFormDialogProps {
   mode: "create" | "edit";
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Space + World scoping for the image API. Required in `edit` mode; ignored
+   * in `create` mode (no entity id yet to attach an image to).
+   */
+  spaceId: string;
+  worldId: WorldId;
   entity?: {
+    id?: string;
     name: string;
     description: string;
     notes: string;
@@ -67,6 +78,8 @@ function EventFormDialog({
   mode,
   open,
   onOpenChange,
+  spaceId,
+  worldId,
   entity,
   onSubmit,
 }: EventFormDialogProps) {
@@ -159,6 +172,31 @@ function EventFormDialog({
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <FieldGroup>
+            {/* Image upload — edit mode only. Create flow has no id yet. */}
+            {mode === "edit" && entity?.id && (
+              <Field>
+                <FieldLabel>{t("common:imageField.change")}</FieldLabel>
+                <EntityImageField
+                  kind="event"
+                  spaceId={spaceId}
+                  worldId={worldId}
+                  id={entity.id as EventId}
+                  aspect={16 / 9}
+                  outputWidth={640}
+                  outputHeight={360}
+                  className="flex items-center gap-4"
+                  avatarClassName="size-24 rounded-md"
+                  fallbackIcon={
+                    <HugeiconsIcon
+                      icon={Calendar03Icon}
+                      strokeWidth={1.5}
+                      className="size-8 text-muted-foreground"
+                    />
+                  }
+                  cropTitle={t("event:form.editTitle", { entity: entityName })}
+                />
+              </Field>
+            )}
             <Field>
               <FieldLabel htmlFor={`evt-${prefix}-name`}>
                 {t("event:form.nameLabel")}

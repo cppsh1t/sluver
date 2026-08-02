@@ -146,6 +146,10 @@
     "updateSuccess": "小说已更新",
     "updateFailed": "更新小说失败",
     "deleteSuccess": "小说已删除",
-    "deleteFailed": "删除小说失败"
+    "deleteFailed": "删除小说失败",
+    "imageUpdated": "图片已更新",
+    "imageUpdateFailed": "图片更新失败",
+    "imageRemoved": "图片已移除",
+    "imageRemoveFailed": "图片移除失败"
   }
 }

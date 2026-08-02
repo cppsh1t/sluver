@@ -354,6 +354,8 @@ function EventDetailPage() {
               {t("event:detail.location.title")}
             </h2>
             <LocationRefPicker
+              spaceId={spaceId}
+              worldId={wid}
               locations={locations ?? []}
               selectedLocationId={event.locationId}
               onSelect={handleSelectLocation}
@@ -372,6 +374,9 @@ function EventDetailPage() {
               return (
                 <div className="max-w-sm">
                   <EntityCard
+                    spaceId={spaceId}
+                    worldId={wid}
+                    id={loc.id}
                     name={loc.name}
                     description={loc.description}
                     tags={loc.tags}
@@ -413,10 +418,13 @@ function EventDetailPage() {
       {/* Edit basics dialog */}
       <EventFormDialog
         mode="edit"
+        spaceId={spaceId}
+        worldId={wid}
         open={editOpen}
         onOpenChange={setEditOpen}
         entity={
           event && {
+            id: event.id,
             name: event.name,
             description: event.description,
             notes: event.notes,

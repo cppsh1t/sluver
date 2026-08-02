@@ -64,6 +64,12 @@ tracing-log = "0.2.0"
 # the binary slim. Pinned to `^8` (latest stable line as of writing).
 zip = { version = "8", default-features = false, features = ["deflate"] }
 
+# Per-entity image upload (BLOB + mime). Used by the `update_*_image`
+# commands to decode base64 payloads sent from the frontend before
+# writing them to SQLite. `default-features = false` keeps the crate
+# minimal — we only need the standard alphabet.
+base64 = { version = "0.22", default-features = false }
+
 [dev-dependencies]
 # Filesystem isolation for DbManager / command integration tests (T10 stress test).
 tempfile = "3"

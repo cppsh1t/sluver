@@ -47,6 +47,10 @@
     "updateFailed": "Failed to update",
     "deleteSuccess": "{{entity}} deleted",
     "deleteFailed": "Failed to delete",
-    "loadFailed": "Failed to load {{entity}}"
+    "loadFailed": "Failed to load {{entity}}",
+    "imageUpdated": "Image updated",
+    "imageUpdateFailed": "Failed to update image",
+    "imageRemoved": "Image removed",
+    "imageRemoveFailed": "Failed to remove image"
   }
 }

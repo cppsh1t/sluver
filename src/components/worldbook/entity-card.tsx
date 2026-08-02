@@ -33,6 +33,14 @@ import {
 } from "@hugeicons/core-free-icons";
 import { formatRelativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { EntityAvatar } from "@/components/ui/entity-avatar";
+import type {
+  ItemId,
+  LocationId,
+  LoreId,
+  SpaceId,
+  WorldId,
+} from "@/types";
 
 const ENTITY_ICONS = {
   location: MapPinIcon,
@@ -41,6 +49,9 @@ const ENTITY_ICONS = {
 } as const;
 
 interface EntityCardProps {
+  spaceId: string;
+  worldId: WorldId;
+  id: LocationId | ItemId | LoreId;
   name: string;
   description: string;
   tags: string[];
@@ -55,6 +66,9 @@ interface EntityCardProps {
 }
 
 function EntityCard({
+  spaceId,
+  worldId,
+  id,
   name,
   description,
   tags,
@@ -86,10 +100,20 @@ function EntityCard({
       >
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <HugeiconsIcon
-              icon={Icon}
-              strokeWidth={2}
-              className="text-muted-foreground"
+            <EntityAvatar
+              kind={entityType}
+              spaceId={spaceId as SpaceId}
+              worldId={worldId}
+              id={id}
+              alt={name}
+              fallbackIcon={
+                <HugeiconsIcon
+                  icon={Icon}
+                  strokeWidth={2}
+                  className="size-5 text-muted-foreground"
+                />
+              }
+              className="size-9 shrink-0 rounded-md"
             />
             <span className="truncate">{name}</span>
           </CardTitle>

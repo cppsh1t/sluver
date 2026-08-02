@@ -146,6 +146,10 @@
     "updateSuccess": "Novel updated",
     "updateFailed": "Failed to update novel",
     "deleteSuccess": "Novel deleted",
-    "deleteFailed": "Failed to delete novel"
+    "deleteFailed": "Failed to delete novel",
+    "imageUpdated": "Image updated",
+    "imageUpdateFailed": "Failed to update image",
+    "imageRemoved": "Image removed",
+    "imageRemoveFailed": "Failed to remove image"
   }
 }

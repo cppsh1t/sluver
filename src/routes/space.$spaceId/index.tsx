@@ -59,8 +59,11 @@ function SpaceHomePage() {
 
   async function handleCreate(input: CreateWorldInput) {
     try {
-      await createWorld.mutateAsync(input);
+      const newWorld = await createWorld.mutateAsync(input);
       toast.success(i18n.t("world:toast.createSuccess"));
+      // Return the new id so CreateWorldDialog can commit a pending cover
+      // image (if any) via `updateWorldImage`.
+      return newWorld.id;
     } catch (err) {
       toast.error(i18n.t("world:toast.createFailed"), {
         description: translateError(toErrorPayload(err)),
@@ -148,6 +151,7 @@ function SpaceHomePage() {
                   {worlds.map((world) => (
                     <WorldCard
                       key={world.id}
+                      spaceId={spaceId}
                       world={world}
                       onOpen={handleOpen}
                       onUpdate={handleUpdate}

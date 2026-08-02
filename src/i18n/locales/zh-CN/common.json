@@ -41,6 +41,27 @@
     "chat": "对话",
     "assistant": "助手"
   },
+  "imageEditor": {
+    "title": "编辑图片",
+    "description": "选择一张图片，裁剪后将自动压缩为 WebP 格式。",
+    "chooseFile": "选择文件",
+    "changeFile": "更换文件",
+    "confirm": "确认",
+    "uploading": "上传中…",
+    "zoom": "缩放",
+    "acceptedFormats": "支持 PNG / JPEG / WebP / GIF，最大 5 MB",
+    "invalidFile": "不支持的文件格式，请选择 PNG、JPEG、WebP 或 GIF 图片。",
+    "fileTooLarge": "文件过大（{{size}}），请选择小于 5 MB 的图片。",
+    "loadFailed": "图片加载失败，请重试。",
+    "submitFailed": "保存图片失败，请重试。"
+  },
+  "imageField": {
+    "upload": "上传图片",
+    "change": "更换图片",
+    "remove": "移除图片",
+    "pending": "已选择图片 — 保存后将自动上传",
+    "pendingClear": "清除已选"
+  },
   "status": {
     "worldWorkspaceComingSoon": "世界工作区即将推出",
     "libraryComingSoon": {

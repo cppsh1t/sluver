@@ -88,6 +88,10 @@
     "phaseDeleteSuccess": "阶段已删除",
     "phaseDeleteFailed": "删除阶段失败",
     "reorderSuccess": "阶段顺序已更新",
-    "reorderFailed": "更新顺序失败"
+    "reorderFailed": "更新顺序失败",
+    "imageUpdated": "图片已更新",
+    "imageUpdateFailed": "图片更新失败",
+    "imageRemoved": "图片已移除",
+    "imageRemoveFailed": "图片移除失败"
   }
 }

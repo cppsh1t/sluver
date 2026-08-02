@@ -434,6 +434,8 @@ function SceneCard({
                   {t("novel:refs.location.title")}
                 </h4>
                 <LocationRefPicker
+                  spaceId={spaceId}
+                  worldId={worldId}
                   locations={locations}
                   selectedLocationId={scene.locationId}
                   onSelect={(id) =>
@@ -453,6 +455,9 @@ function SceneCard({
                   }
                   return (
                     <EntityCard
+                      spaceId={spaceId}
+                      worldId={worldId}
+                      id={loc.id}
                       name={loc.name}
                       description={loc.description}
                       tags={loc.tags}
@@ -502,6 +507,9 @@ function SceneCard({
                     return (
                       <EntityCard
                         key={id}
+                        spaceId={spaceId}
+                        worldId={worldId}
+                        id={item.id}
                         name={item.name}
                         description={item.description}
                         tags={item.tags}
@@ -581,6 +589,8 @@ function SceneCard({
 
       {/* Picker dialogs */}
       <ItemMultiPicker
+        spaceId={spaceId}
+        worldId={worldId}
         open={itemPickerOpen}
         onOpenChange={setItemPickerOpen}
         items={items}

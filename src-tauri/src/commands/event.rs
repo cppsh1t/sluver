@@ -6,7 +6,7 @@ use crate::db::{DbError, DbManager};
 use crate::models::character::CharacterRef;
 use crate::models::event::{CreateEventInput, Event, UpdateEventInput};
 use crate::models::ref_counts::RefCounts;
-use crate::util::{new_id, normalize_iso, now_iso};
+use crate::util::{decode_and_validate_image, new_id, normalize_iso, now_iso};
 
 fn load_event(conn: &mut rusqlite::Connection, id: &str, world_id: &str) -> Result<Event, DbError> {
     let (name, description, start_at, end_at, location_id, notes, tags_json, created_at, updated_at) =
@@ -345,4 +345,95 @@ pub fn count_character_refs(
             scenes: scenes as u64,
         })
     })
+}
+
+// ─── Per-entity image commands (Event) ──────────────────────────────────────
+//
+// The `image_blob` / `image_mime` columns on the `events` table are added by
+// `WORLD_MIGRATION_006`. Image bytes flow ONLY through these dedicated
+// commands — the `Event` struct and `list_events` / `get_event` queries never
+// touch the columns (avoids a serde Vec<u8> → JSON-number-array encoding trap
+// and keeps list payloads light).
+//
+// Logging (ADR-0014 / ADR-0016): only metadata (entity_id, byte length, mime)
+// is ever logged — the bytes themselves are creative content. update + clear
+// are INFO; get is DEBUG because it fires on every event card render.
+
+#[tracing::instrument(
+    skip(state, image_base64),
+    fields(entity_id = %id)
+)]
+#[tauri::command]
+pub fn update_event_image(
+    space_id: String,
+    world_id: String,
+    id: String,
+    image_base64: String,
+    image_mime: String,
+    state: State<'_, DbManager>,
+) -> Result<(), DbError> {
+    let bytes = decode_and_validate_image(&image_base64, &image_mime)?;
+    let now = now_iso();
+    tracing::info!(
+        entity_id = %id,
+        image_bytes_len = bytes.len(),
+        image_mime = %image_mime,
+        "image updated"
+    );
+    state.with_world(&space_id, &world_id, |conn| {
+        let updated = conn.execute(
+            "UPDATE events SET image_blob = ?1, image_mime = ?2, updated_at = ?3 WHERE id = ?4",
+            params![&bytes, &image_mime, now, &id],
+        )?;
+        if updated == 0 {
+            return Err(DbError::NotFound("Event", id));
+        }
+        Ok(())
+    })
+}
+
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
+#[tauri::command]
+pub fn clear_event_image(
+    space_id: String,
+    world_id: String,
+    id: String,
+    state: State<'_, DbManager>,
+) -> Result<(), DbError> {
+    let now = now_iso();
+    tracing::info!(entity_id = %id, "image cleared");
+    state.with_world(&space_id, &world_id, |conn| {
+        let updated = conn.execute(
+            "UPDATE events SET image_blob = NULL, image_mime = NULL, updated_at = ?1 WHERE id = ?2",
+            params![now, &id],
+        )?;
+        if updated == 0 {
+            return Err(DbError::NotFound("Event", id));
+        }
+        Ok(())
+    })
+}
+
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
+#[tauri::command]
+pub fn get_event_image(
+    space_id: String,
+    world_id: String,
+    id: String,
+    state: State<'_, DbManager>,
+) -> Result<tauri::ipc::Response, DbError> {
+    tracing::debug!(entity_id = %id, "image fetched");
+    let bytes: Option<Vec<u8>> = state.with_world(&space_id, &world_id, |conn| {
+        conn.query_row(
+            "SELECT image_blob FROM events WHERE id = ?1",
+            params![&id],
+            |row| row.get::<_, Option<Vec<u8>>>(0),
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => DbError::NotFound("Image", id.clone()),
+            other => DbError::Sqlite(other),
+        })
+    })?;
+    let bytes = bytes.ok_or_else(|| DbError::NotFound("Image", id))?;
+    Ok(tauri::ipc::Response::new(bytes))
 }

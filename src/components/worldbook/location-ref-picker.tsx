@@ -5,9 +5,11 @@ import { Button } from "@/components/ui/button";
 import { SearchablePickerDialog } from "@/components/worldbook/searchable-picker-dialog";
 import { EntityCard } from "@/components/worldbook/entity-card";
 import { cn } from "@/lib/utils";
-import type { Location } from "@/types";
+import type { Location, WorldId } from "@/types";
 
 interface LocationRefPickerProps {
+  spaceId: string;
+  worldId: WorldId;
   locations: Location[];
   selectedLocationId: string | null;
   onSelect: (locationId: string | null) => void;
@@ -18,6 +20,8 @@ interface LocationRefPickerProps {
  * "无地点"). Selecting a card commits immediately and closes the dialog.
  */
 function LocationRefPicker({
+  spaceId,
+  worldId,
   locations,
   selectedLocationId,
   onSelect,
@@ -72,6 +76,9 @@ function LocationRefPicker({
           {filtered.map((loc) => (
             <EntityCard
               key={loc.id}
+              spaceId={spaceId}
+              worldId={worldId}
+              id={loc.id}
               name={loc.name}
               description={loc.description}
               tags={loc.tags}

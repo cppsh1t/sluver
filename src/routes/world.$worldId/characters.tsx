@@ -193,6 +193,8 @@ function CharactersPage() {
 
       <CharacterFormDialog
         mode="create"
+        spaceId={spaceId}
+        worldId={wid}
         open={createOpen}
         onOpenChange={setCreateOpen}
         onSubmit={handleCreate}

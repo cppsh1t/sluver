@@ -20,12 +20,23 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { TagInput } from "@/components/ui/tag-input";
+import { EntityImageField } from "@/components/entity-image-field";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { UserCircleIcon } from "@hugeicons/core-free-icons";
 import type { UpdateCharacterInput } from "@/api";
+import type { CharacterId, WorldId } from "@/types";
 
 interface CharacterFormDialogProps {
   mode: "create" | "edit";
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Space + World scoping for the image API. Required in `edit` mode (the
+   * EntityImageField needs them); ignored in `create` mode where there is
+   * no entity yet to attach an image to.
+   */
+  spaceId: string;
+  worldId: WorldId;
   entity?: {
     id: string;
     name: string;
@@ -41,6 +52,8 @@ function CharacterFormDialog({
   mode,
   open,
   onOpenChange,
+  spaceId,
+  worldId,
   entity,
   onSubmit,
 }: CharacterFormDialogProps) {
@@ -126,6 +139,33 @@ function CharacterFormDialog({
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <FieldGroup>
+            {/* Image upload — edit mode only. Create mode has no id yet, so
+                per the project pattern we surface the upload UI on the edit
+                dialog instead of deferring bytes through the create flow. */}
+            {mode === "edit" && entity && (
+              <Field>
+                <FieldLabel>{t("common:imageField.change")}</FieldLabel>
+                <EntityImageField
+                  kind="character"
+                  spaceId={spaceId}
+                  worldId={worldId}
+                  id={entity.id as CharacterId}
+                  aspect={3 / 4}
+                  outputWidth={300}
+                  outputHeight={400}
+                  className="flex items-center gap-4"
+                  avatarClassName="size-24 rounded-md"
+                  fallbackIcon={
+                    <HugeiconsIcon
+                      icon={UserCircleIcon}
+                      strokeWidth={1.5}
+                      className="size-8 text-muted-foreground"
+                    />
+                  }
+                  cropTitle={t("character:edit.title")}
+                />
+              </Field>
+            )}
             <Field>
               <FieldLabel htmlFor={`char-${prefix}-name`}>
                 {t("character:form.nameLabel")}

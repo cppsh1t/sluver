@@ -191,6 +191,8 @@ function EventsPage() {
       <EventFormDialog
         key="event-create"
         mode="create"
+        spaceId={spaceId}
+        worldId={wid}
         open={createOpen}
         onOpenChange={setCreateOpen}
         onSubmit={handleCreate}

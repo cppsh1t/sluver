@@ -96,6 +96,10 @@
     "deleteSuccess": "事件已删除",
     "createFailed": "创建失败",
     "updateFailed": "更新失败",
-    "deleteFailed": "删除失败"
+    "deleteFailed": "删除失败",
+    "imageUpdated": "图片已更新",
+    "imageUpdateFailed": "图片更新失败",
+    "imageRemoved": "图片已移除",
+    "imageRemoveFailed": "图片移除失败"
   }
 }

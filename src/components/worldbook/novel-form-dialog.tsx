@@ -20,12 +20,23 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { TagInput } from "@/components/ui/tag-input";
+import { EntityImageField } from "@/components/entity-image-field";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Book02Icon } from "@hugeicons/core-free-icons";
+import type { NovelId, WorldId } from "@/types";
 
 interface NovelFormDialogProps {
   mode: "create" | "edit";
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Space + World scoping for the image API. Required in `edit` mode; ignored
+   * in `create` mode (no entity id yet to attach an image to).
+   */
+  spaceId: string;
+  worldId: WorldId;
   entity?: {
+    id?: string;
     title: string;
     description: string;
     tags: string[];
@@ -41,6 +52,8 @@ function NovelFormDialog({
   mode,
   open,
   onOpenChange,
+  spaceId,
+  worldId,
   entity,
   onSubmit,
 }: NovelFormDialogProps) {
@@ -116,6 +129,31 @@ function NovelFormDialog({
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <FieldGroup>
+            {/* Image upload — edit mode only. Create flow has no id yet. */}
+            {mode === "edit" && entity?.id && (
+              <Field>
+                <FieldLabel>{t("common:imageField.change")}</FieldLabel>
+                <EntityImageField
+                  kind="novel"
+                  spaceId={spaceId}
+                  worldId={worldId}
+                  id={entity.id as NovelId}
+                  aspect={2 / 3}
+                  outputWidth={320}
+                  outputHeight={480}
+                  className="flex items-center gap-4"
+                  avatarClassName="size-24 rounded-md"
+                  fallbackIcon={
+                    <HugeiconsIcon
+                      icon={Book02Icon}
+                      strokeWidth={1.5}
+                      className="size-8 text-muted-foreground"
+                    />
+                  }
+                  cropTitle={t("novel:form.editTitle", { entity: entityName })}
+                />
+              </Field>
+            )}
             <Field>
               <FieldLabel htmlFor={`novel-${prefix}-title`}>
                 {t("novel:form.titleLabel")}

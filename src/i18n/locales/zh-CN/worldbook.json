@@ -47,6 +47,10 @@
     "updateFailed": "更新失败",
     "deleteSuccess": "{{entity}}已删除",
     "deleteFailed": "删除失败",
-    "loadFailed": "加载{{entity}}失败"
+    "loadFailed": "加载{{entity}}失败",
+    "imageUpdated": "图片已更新",
+    "imageUpdateFailed": "图片更新失败",
+    "imageRemoved": "图片已移除",
+    "imageRemoveFailed": "图片移除失败"
   }
 }

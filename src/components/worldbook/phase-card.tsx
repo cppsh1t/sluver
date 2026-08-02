@@ -33,6 +33,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { EventCard } from "@/components/worldbook/event-card";
 import { EventRefPicker } from "@/components/worldbook/event-ref-picker";
+import { EntityImageField } from "@/components/entity-image-field";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Cancel01Icon,
@@ -41,10 +42,11 @@ import {
   MoreHorizontalIcon,
   PencilEdit01Icon,
   SaveIcon,
+  UserCircleIcon,
 } from "@hugeicons/core-free-icons";
 import { countPhaseRefs, type RefCounts } from "@/api";
 import type { CreatePhaseInput } from "@/api";
-import type { CharacterPhase, Event, EventId, Location, WorldId } from "@/types";
+import type { CharacterPhase, Event, EventId, Location, PhaseId, WorldId } from "@/types";
 
 interface PhaseCardProps {
   spaceId: string;
@@ -174,6 +176,33 @@ function PhaseCard({
       <Card className={isDragging ? "opacity-50" : undefined}>
         <CardContent>
           <FieldGroup>
+            {/* Phase portrait — only when editing an existing phase (drafts
+                have no id yet; per the project pattern, upload happens after
+                the first save via the edit-mode UI). */}
+            {!isDraft && phase && (
+              <Field>
+                <FieldLabel>{t("common:imageField.change")}</FieldLabel>
+                <EntityImageField
+                  kind="phase"
+                  spaceId={spaceId}
+                  worldId={worldId}
+                  id={phase.id as PhaseId}
+                  aspect={3 / 4}
+                  outputWidth={300}
+                  outputHeight={400}
+                  className="flex items-center gap-4"
+                  avatarClassName="size-24 rounded-md"
+                  fallbackIcon={
+                    <HugeiconsIcon
+                      icon={UserCircleIcon}
+                      strokeWidth={1.5}
+                      className="size-8 text-muted-foreground"
+                    />
+                  }
+                  cropTitle={t("character:phase.edit")}
+                />
+              </Field>
+            )}
             <Field>
               <FieldLabel htmlFor={`phase-${phase?.id ?? "draft"}-name`}>
                 {t("character:phase.nameLabel")}

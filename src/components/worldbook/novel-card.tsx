@@ -27,7 +27,8 @@ import {
   MoreHorizontalIcon,
 } from "@hugeicons/core-free-icons";
 import { formatRelativeTime } from "@/lib/format";
-import type { Novel, WorldId } from "@/types";
+import { EntityAvatar } from "@/components/ui/entity-avatar";
+import type { Novel, SpaceId, WorldId } from "@/types";
 
 interface NovelCardProps {
   novel: Novel;
@@ -62,10 +63,20 @@ function NovelCard({ novel, spaceId, worldId, onDelete }: NovelCardProps) {
         <Card className="h-full">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <HugeiconsIcon
-                icon={BookOpen01Icon}
-                strokeWidth={2}
-                className="text-muted-foreground"
+              <EntityAvatar
+                kind="novel"
+                spaceId={spaceId as SpaceId}
+                worldId={worldId}
+                id={novel.id}
+                alt={novel.title}
+                fallbackIcon={
+                  <HugeiconsIcon
+                    icon={BookOpen01Icon}
+                    strokeWidth={2}
+                    className="size-5 text-muted-foreground"
+                  />
+                }
+                className="size-9 shrink-0 rounded-md"
               />
               <span className="truncate">{novel.title}</span>
             </CardTitle>

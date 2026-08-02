@@ -41,6 +41,27 @@
     "chat": "Chat",
     "assistant": "Assistant"
   },
+  "imageEditor": {
+    "title": "Edit image",
+    "description": "Choose an image; it will be cropped and compressed to WebP.",
+    "chooseFile": "Choose file",
+    "changeFile": "Change file",
+    "confirm": "Confirm",
+    "uploading": "Uploading…",
+    "zoom": "Zoom",
+    "acceptedFormats": "PNG / JPEG / WebP / GIF, up to 5 MB",
+    "invalidFile": "Unsupported file. Please choose a PNG, JPEG, WebP, or GIF image.",
+    "fileTooLarge": "File is too large ({{size}}). Please choose an image under 5 MB.",
+    "loadFailed": "Failed to load the image. Please try again.",
+    "submitFailed": "Failed to save the image. Please try again."
+  },
+  "imageField": {
+    "upload": "Upload image",
+    "change": "Change image",
+    "remove": "Remove image",
+    "pending": "Image selected — will upload after save",
+    "pendingClear": "Clear selected"
+  },
   "status": {
     "worldWorkspaceComingSoon": "World workspace coming soon",
     "libraryComingSoon": {
