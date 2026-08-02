@@ -22,17 +22,23 @@ import { Textarea } from "@/components/ui/textarea";
 import { TagInput } from "@/components/ui/tag-input";
 import { FormattedTime } from "@/components/timemapper/formatted-time";
 
-/** Convert an ISO 8601 string to the value format expected by `<input type="datetime-local">`. */
+/** Convert an ISO 8601 string to the value format expected by `<input type="datetime-local">.
+ * Returns `""` for null/empty/unparseable input so stale rows degrade to an
+ * empty field instead of feeding `NaN` components downstream. */
 function toDatetimeLocal(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-/** Convert a datetime-local input value back to an ISO 8601 string (`null` when empty). */
+/** Convert a datetime-local input value back to an ISO 8601 string (`null` when
+ * empty or unparseable). Never throws — guards against Invalid Date. */
 function fromDatetimeLocal(local: string): string | null {
-  return local ? new Date(local).toISOString() : null;
+  if (!local) return null;
+  const d = new Date(local);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
 interface EventFormDialogProps {
