@@ -24,9 +24,9 @@ export const DEFAULT_TEMPLATE = `/**
  *   - new Date(iso) is available for parsing.
  *   - No access to DOM, window, localStorage, or Tauri APIs.
  *
- * Examples:
- *   "2024-03-15T10:30:00Z" → "3rd of Bloommoon, 1247 IE"
- *   "1066-10-14T09:00:00Z" → "Conquest Day 1, Year 1"
+ * Default output: "YYYY-MM-DD HH:mm:ss" (host local time).
+ *   e.g. "2024-03-15T10:30:00Z" → "2024-03-15 18:30:00" in UTC+8.
+ * Replace the body below to implement your World's custom calendar.
  *
  * Need help? Copy this entire file (comments + code), paste it into
  * ChatGPT or Claude with a description of your world's time system,
@@ -34,6 +34,23 @@ export const DEFAULT_TEMPLATE = `/**
  */
 
 export default function format(iso) {
-  return iso; // ← replace with your world's time logic
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) {
+    return iso; // unparsable input — return as-is
+  }
+  const pad = (n) => String(n).padStart(2, "0");
+  return (
+    d.getFullYear() +
+    "-" +
+    pad(d.getMonth() + 1) +
+    "-" +
+    pad(d.getDate()) +
+    " " +
+    pad(d.getHours()) +
+    ":" +
+    pad(d.getMinutes()) +
+    ":" +
+    pad(d.getSeconds())
+  );
 }
 `;
