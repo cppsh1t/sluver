@@ -34,6 +34,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { EventCard } from "@/components/worldbook/event-card";
 import { EventRefPicker } from "@/components/worldbook/event-ref-picker";
 import { EntityImageField } from "@/components/entity-image-field";
+import { EntityAvatar } from "@/components/ui/entity-avatar";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Cancel01Icon,
@@ -46,7 +47,15 @@ import {
 } from "@hugeicons/core-free-icons";
 import { countPhaseRefs, type RefCounts } from "@/api";
 import type { CreatePhaseInput } from "@/api";
-import type { CharacterPhase, Event, EventId, Location, PhaseId, WorldId } from "@/types";
+import type {
+  CharacterPhase,
+  Event,
+  EventId,
+  Location,
+  PhaseId,
+  SpaceId,
+  WorldId,
+} from "@/types";
 
 interface PhaseCardProps {
   spaceId: string;
@@ -333,19 +342,54 @@ function PhaseCard({
             </DropdownMenu>
           </CardAction>
         </CardHeader>
-        <CardContent className="flex flex-col gap-2">
-          <p className="whitespace-pre-wrap text-sm text-muted-foreground">
-            {phase!.appearance}
-          </p>
+        <CardContent className="flex flex-col gap-3">
+          {/* Hero row: phase portrait alongside the primary (appearance) field,
+              mirroring the avatar-in-title pattern used by EventCard but placed
+              in the content area so the CardHeader layout stays untouched. */}
+          <div className="flex gap-3">
+            <EntityAvatar
+              kind="phase"
+              spaceId={spaceId as SpaceId}
+              worldId={worldId}
+              id={phase!.id as PhaseId}
+              alt={phase!.name}
+              fallbackIcon={
+                <HugeiconsIcon
+                  icon={UserCircleIcon}
+                  strokeWidth={1.5}
+                  className="size-8 text-muted-foreground"
+                />
+              }
+              className="size-20 shrink-0 rounded-md"
+            />
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <span className="text-xs font-medium text-muted-foreground">
+                {t("character:phase.appearanceLabel")}
+              </span>
+              <p className="whitespace-pre-wrap text-sm text-foreground">
+                {phase!.appearance}
+              </p>
+            </div>
+          </div>
           {phase!.description && (
-            <p className="whitespace-pre-wrap text-sm text-muted-foreground">
-              {phase!.description}
-            </p>
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-muted-foreground">
+                {t("character:phase.descriptionLabel")}
+              </span>
+              <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                {phase!.description}
+              </p>
+            </div>
           )}
           {phase!.conversationStyle && (
-            <p className="whitespace-pre-wrap text-sm text-muted-foreground">
-              {phase!.conversationStyle}
-            </p>
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-muted-foreground">
+                {t("character:phase.conversationStyleLabel")}
+              </span>
+              <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                {phase!.conversationStyle}
+              </p>
+            </div>
           )}
           {triggerEvent && (
             <EventCard
