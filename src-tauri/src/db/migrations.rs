@@ -381,6 +381,18 @@ const WORLD_MIGRATION_006: &str = r#"
     ALTER TABLE novels          ADD COLUMN image_mime TEXT;
 "#;
 
+/// Migration 7 for each world DB: rename `character_phases.changes` →
+/// `description` and add `conversation_style`. The `changes` column is
+/// renamed in place (SQLite ≥ 3.25 `RENAME COLUMN`); `conversation_style`
+/// is a new free-form text column. Added as a separate migration so existing
+/// world DB files get the change via `rusqlite_migration`'s incremental
+/// tracking — modifying the original `WORLD_SQL` would NOT re-run for
+/// already-migrated databases.
+const WORLD_MIGRATION_007: &str = r#"
+    ALTER TABLE character_phases RENAME COLUMN changes TO description;
+    ALTER TABLE character_phases ADD COLUMN conversation_style TEXT NOT NULL DEFAULT '';
+"#;
+
 const WORLD_SLICE: &[M] = &[
     M::up(WORLD_SQL),
     M::up(WORLD_MIGRATION_002),
@@ -388,5 +400,6 @@ const WORLD_SLICE: &[M] = &[
     M::up(WORLD_MIGRATION_004),
     M::up(WORLD_MIGRATION_005),
     M::up(WORLD_MIGRATION_006),
+    M::up(WORLD_MIGRATION_007),
 ];
 pub const WORLD_MIGRATIONS: Migrations = Migrations::from_slice(WORLD_SLICE);

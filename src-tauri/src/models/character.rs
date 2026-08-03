@@ -16,7 +16,8 @@ pub struct CharacterPhase {
     pub character_id: String,
     pub name: String,
     pub appearance: String,
-    pub changes: String,
+    pub description: String,
+    pub conversation_style: String,
     pub trigger_event_id: Option<String>,
     pub trigger_event_name: Option<String>,
     pub created_at: String,
@@ -30,7 +31,9 @@ pub struct CreatePhaseInput {
     pub name: String,
     pub appearance: String,
     #[serde(default)]
-    pub changes: String,
+    pub description: String,
+    #[serde(default)]
+    pub conversation_style: String,
     #[serde(default)]
     pub trigger_event_id: Option<String>,
 }
@@ -41,7 +44,8 @@ pub struct CreatePhaseInput {
 pub struct UpdatePhaseInput {
     pub name: String,
     pub appearance: String,
-    pub changes: String,
+    pub description: String,
+    pub conversation_style: String,
     pub trigger_event_id: Option<String>,
 }
 

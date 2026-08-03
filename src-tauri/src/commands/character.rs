@@ -43,7 +43,7 @@ fn load_phases(
     character_id: &str,
 ) -> rusqlite::Result<Vec<CharacterPhase>> {
     let mut stmt = conn.prepare(
-        "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.changes, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name
+        "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.description, cp.conversation_style, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name
          FROM character_phases cp
          LEFT JOIN events e ON cp.trigger_event_id = e.id
          WHERE cp.character_id = ?1 ORDER BY cp.position",
@@ -55,7 +55,8 @@ fn load_phases(
                 character_id: row.get("character_id")?,
                 name: row.get("name")?,
                 appearance: row.get("appearance")?,
-                changes: row.get("changes")?,
+                description: row.get("description")?,
+                conversation_style: row.get("conversation_style")?,
                 trigger_event_id: row.get("trigger_event_id")?,
                 trigger_event_name: row.get("trigger_event_name")?,
                 created_at: row.get("created_at")?,
@@ -159,7 +160,7 @@ pub fn list_characters(
 
     // (b) Batch-load ALL phases
     let mut phase_stmt = conn.prepare(
-        "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.changes, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name
+        "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.description, cp.conversation_style, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name
          FROM character_phases cp
          LEFT JOIN events e ON cp.trigger_event_id = e.id
          ORDER BY cp.character_id, cp.position",
@@ -174,7 +175,8 @@ pub fn list_characters(
                     character_id: cid,
                     name: row.get("name")?,
                     appearance: row.get("appearance")?,
-                    changes: row.get("changes")?,
+                    description: row.get("description")?,
+                    conversation_style: row.get("conversation_style")?,
                     trigger_event_id: row.get("trigger_event_id")?,
                     trigger_event_name: row.get("trigger_event_name")?,
                     created_at: row.get("created_at")?,
@@ -293,14 +295,15 @@ pub fn add_phase(
         )?;
 
     tx.execute(
-        "INSERT INTO character_phases (id, character_id, name, appearance, changes, trigger_event_id, position, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        "INSERT INTO character_phases (id, character_id, name, appearance, description, conversation_style, trigger_event_id, position, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             phase_id,
             character_id,
             input.name,
             input.appearance,
-            input.changes,
+            input.description,
+            input.conversation_style,
             input.trigger_event_id,
             next_pos,
             now,
@@ -311,7 +314,7 @@ pub fn add_phase(
 
     // Read back
     conn.query_row(
-        "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.changes, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name
+        "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.description, cp.conversation_style, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name
          FROM character_phases cp
          LEFT JOIN events e ON cp.trigger_event_id = e.id
          WHERE cp.id = ?1",
@@ -322,7 +325,8 @@ pub fn add_phase(
                 character_id: row.get("character_id")?,
                 name: row.get("name")?,
                 appearance: row.get("appearance")?,
-                changes: row.get("changes")?,
+                description: row.get("description")?,
+                conversation_style: row.get("conversation_style")?,
                 trigger_event_id: row.get("trigger_event_id")?,
                 trigger_event_name: row.get("trigger_event_name")?,
                 created_at: row.get("created_at")?,
@@ -348,16 +352,16 @@ pub fn update_phase(
     state.with_world(&space_id, &world_id, |conn| {
     let updated = conn.execute(
         "UPDATE character_phases
-         SET name = ?1, appearance = ?2, changes = ?3, trigger_event_id = ?4, updated_at = ?5
-         WHERE id = ?6",
-        params![input.name, input.appearance, input.changes, input.trigger_event_id, now, phase_id],
+         SET name = ?1, appearance = ?2, description = ?3, conversation_style = ?4, trigger_event_id = ?5, updated_at = ?6
+         WHERE id = ?7",
+        params![input.name, input.appearance, input.description, input.conversation_style, input.trigger_event_id, now, phase_id],
     )?;
     if updated == 0 {
         return Err(DbError::NotFound("Phase", phase_id));
     }
 
     conn.query_row(
-        "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.changes, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name
+        "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.description, cp.conversation_style, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name
          FROM character_phases cp
          LEFT JOIN events e ON cp.trigger_event_id = e.id
          WHERE cp.id = ?1",
@@ -368,7 +372,8 @@ pub fn update_phase(
                 character_id: row.get("character_id")?,
                 name: row.get("name")?,
                 appearance: row.get("appearance")?,
-                changes: row.get("changes")?,
+                description: row.get("description")?,
+                conversation_style: row.get("conversation_style")?,
                 trigger_event_id: row.get("trigger_event_id")?,
                 trigger_event_name: row.get("trigger_event_name")?,
                 created_at: row.get("created_at")?,
