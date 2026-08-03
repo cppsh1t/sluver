@@ -31,8 +31,9 @@ import {
 } from "@/components/ui/empty";
 import { CharacterFormDialog } from "@/components/worldbook/character-form-dialog";
 import { PhaseCard } from "@/components/worldbook/phase-card";
+import { EntityAvatar } from "@/components/ui/entity-avatar";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Add01Icon, ArrowLeft02Icon, PencilEdit01Icon } from "@hugeicons/core-free-icons";
+import { Add01Icon, ArrowLeft02Icon, PencilEdit01Icon, UserMultiple02Icon } from "@hugeicons/core-free-icons";
 import { toErrorPayload } from "@/api/client";
 import { translateError } from "@/i18n/errors";
 import {
@@ -46,7 +47,7 @@ import {
   useLocations,
 } from "@/hooks";
 import type { UpdateCharacterInput, CreatePhaseInput } from "@/api";
-import type { CharacterId, CharacterPhase, Event, Location, WorldId } from "@/types";
+import type { CharacterId, CharacterPhase, Event, Location, SpaceId, WorldId } from "@/types";
 
 // ─── Sortable wrapper ────────────────────────────────────────────────────────
 
@@ -283,38 +284,55 @@ function CharacterDetailPage() {
         </Button>
 
         {/* Identity header */}
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex flex-col gap-1">
-            <h1 className="font-heading text-2xl font-semibold">
-              {character.name}
-            </h1>
-            {character.aliases.length > 0 && (
-              <p className="text-sm text-muted-foreground">
-                {t("character:card.aliasesLabel")}: {character.aliases.join(", ")}
-              </p>
-            )}
-            {character.description && (
-              <p className="text-sm text-muted-foreground">
-                {character.description}
-              </p>
-            )}
-            {character.tags.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {visibleTags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
-                  >
-                    {tag}
-                  </span>
-                ))}
-                {extraTags > 0 && (
-                  <span className="px-1.5 py-0.5 text-xs text-muted-foreground/70">
-                    +{extraTags}
-                  </span>
-                )}
-              </div>
-            )}
+        <div className="flex items-start justify-between gap-6">
+          <div className="flex items-start gap-5">
+            <EntityAvatar
+              kind="character"
+              spaceId={spaceId as SpaceId}
+              worldId={wid}
+              id={cid}
+              alt={character.name}
+              fallbackIcon={
+                <HugeiconsIcon
+                  icon={UserMultiple02Icon}
+                  strokeWidth={2}
+                  className="size-10 text-muted-foreground"
+                />
+              }
+              className="w-32 shrink-0 rounded-lg"
+            />
+            <div className="flex flex-col gap-1">
+              <h1 className="font-heading text-2xl font-semibold">
+                {character.name}
+              </h1>
+              {character.aliases.length > 0 && (
+                <p className="text-sm text-muted-foreground">
+                  {t("character:card.aliasesLabel")}: {character.aliases.join(", ")}
+                </p>
+              )}
+              {character.description && (
+                <p className="text-sm text-muted-foreground">
+                  {character.description}
+                </p>
+              )}
+              {character.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {visibleTags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                  {extraTags > 0 && (
+                    <span className="px-1.5 py-0.5 text-xs text-muted-foreground/70">
+                      +{extraTags}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
           <Button
             variant="outline"
@@ -325,6 +343,18 @@ function CharacterDetailPage() {
             {t("character:detail.editBase")}
           </Button>
         </div>
+
+        {/* Notes — free-form, shown only when non-empty */}
+        {character.notes.trim() && (
+          <section className="mt-6 flex flex-col gap-2">
+            <h2 className="text-sm font-medium">
+              {t("character:detail.notesLabel")}
+            </h2>
+            <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+              {character.notes}
+            </p>
+          </section>
+        )}
 
         <Separator className="my-6" />
 

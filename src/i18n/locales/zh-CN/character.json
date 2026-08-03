@@ -49,6 +49,7 @@
   "detail": {
     "back": "角色",
     "editBase": "编辑信息",
+    "notesLabel": "备注",
     "phasesTitle": "阶段",
     "addPhase": "添加阶段",
     "emptyPhasesTitle": "还没有阶段",

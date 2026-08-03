@@ -12,7 +12,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardTitle } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -100,7 +100,12 @@ function PhaseStepper({ phases }: PhaseStepperProps) {
   function handleMouseDown(e: React.MouseEvent<HTMLDivElement>) {
     const el = scrollRef.current;
     if (!el || !overflow) return;
-    dragState.current = { dragging: true, startX: e.pageX, startScroll: el.scrollLeft, moved: false };
+    dragState.current = {
+      dragging: true,
+      startX: e.pageX,
+      startScroll: el.scrollLeft,
+      moved: false,
+    };
   }
 
   // Suppress card click after a drag (moved !== click).
@@ -118,7 +123,7 @@ function PhaseStepper({ phases }: PhaseStepperProps) {
       onClick={handleClick}
       className={[
         "flex select-none items-center gap-1.5 overflow-x-auto",
-        "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        "scrollbar-none [&::-webkit-scrollbar]:hidden",
         overflow ? "cursor-grab active:cursor-grabbing" : "",
       ].join(" ")}
     >
@@ -207,8 +212,7 @@ function CharacterCard({
   }
 
   const isDisclosable =
-    disclosureCounts !== null &&
-    (disclosureCounts.events > 0 || disclosureCounts.scenes > 0);
+    disclosureCounts !== null && (disclosureCounts.events > 0 || disclosureCounts.scenes > 0);
 
   function handleCardClick() {
     if (selectable) {
@@ -237,102 +241,99 @@ function CharacterCard({
         onClick={handleCardClick}
         onKeyDown={handleCardKeyDown}
         className={cn(
+          "p-4",
           selectable && "relative cursor-pointer",
           selected && "ring-2 ring-primary",
           focused && "ring-2 ring-primary/50",
         )}
       >
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <EntityAvatar
-              kind="character"
-              spaceId={spaceId as SpaceId}
-              worldId={worldId}
-              id={characterId}
-              alt={name}
-              fallbackIcon={
-                <HugeiconsIcon
-                  icon={UserMultiple02Icon}
-                  strokeWidth={2}
-                  className="size-5 text-muted-foreground"
-                />
-              }
-              className="size-9 shrink-0 rounded-md"
+        {/* Image + content wrapped in ONE child div so the Card's banner
+            auto-rules (has-[>img:first-child]:pt-0, *:[img:first-child]:
+            rounded-t-lg) never fire on the avatar <img> — those would zero the
+            top padding (misaligning it from the bottom) and override the top
+            corners. items-center vertically centers the shorter side and does
+            NOT stretch, so the cropper-fixed 3:4 ratio stays locked (no crop). */}
+        <div className="flex items-center gap-4">
+          <EntityAvatar
+            kind="character"
+            spaceId={spaceId as SpaceId}
+            worldId={worldId}
+            id={characterId}
+            alt={name}
+            fallbackIcon={
+              <HugeiconsIcon
+                icon={UserMultiple02Icon}
+                strokeWidth={2}
+              className="size-12 text-muted-foreground"
             />
-            <span className="truncate">{name}</span>
-          </CardTitle>
-          {!selectable && (
-            <CardAction>
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  onClick={(e) => e.stopPropagation()}
-                  render={
-                    <Button variant="ghost" size="icon-sm" />
-                  }
-                >
-                  <HugeiconsIcon icon={MoreHorizontalIcon} strokeWidth={2} />
-                  <span className="sr-only">{t("common:actions.moreActions")}</span>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onClick?.();
-                    }}
+          }
+          className="w-36 shrink-0 rounded-md"
+          />
+
+          {/* Content column */}
+          <div className="flex min-w-0 flex-1 flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="min-w-0 flex-1 truncate">{name}</CardTitle>
+              {!selectable && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    onClick={(e) => e.stopPropagation()}
+                    render={<Button variant="ghost" size="icon-sm" />}
                   >
-                    <HugeiconsIcon icon={PencilEdit01Icon} strokeWidth={2} />
-                    {t("character:card.editAction")}
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    variant="destructive"
-                    onClick={handleDeleteClick}
-                  >
-                    <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
-                    {t("character:card.deleteAction")}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </CardAction>
-          )}
-        </CardHeader>
-        <CardContent className="flex flex-1 flex-col gap-2">
-          {aliases.length > 0 && (
-            <p className="text-xs text-muted-foreground">
-              {t("character:card.aliasesLabel")}: {aliases.join(", ")}
-            </p>
-          )}
-          <p className="line-clamp-2 min-h-8 flex-1 text-sm text-muted-foreground">
-            {description}
-          </p>
-          {phases.length > 0 ? (
-            <PhaseStepper phases={phases} />
-          ) : (
-            <span className="text-xs text-muted-foreground/60">
-              {t("character:card.noPhases")}
-            </span>
-          )}
-          {tags.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {visibleTags.map((tag) => (
-                <span
-                  key={tag}
-                  className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
-                >
-                  {tag}
-                </span>
-              ))}
-              {extraCount > 0 && (
-                <span className="px-1.5 py-0.5 text-xs text-muted-foreground/70">
-                  +{extraCount}
-                </span>
+                    <HugeiconsIcon icon={MoreHorizontalIcon} strokeWidth={2} />
+                    <span className="sr-only">{t("common:actions.moreActions")}</span>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onClick?.();
+                      }}
+                    >
+                      <HugeiconsIcon icon={PencilEdit01Icon} strokeWidth={2} />
+                      {t("character:card.editAction")}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem variant="destructive" onClick={handleDeleteClick}>
+                      <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
+                      {t("character:card.deleteAction")}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
             </div>
-          )}
-          <p className="text-xs text-muted-foreground/70">
-            {formatRelativeTime(updatedAt)}
-          </p>
-        </CardContent>
+
+            {aliases.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {t("character:card.aliasesLabel")}: {aliases.join(", ")}
+              </p>
+            )}
+            <p className="line-clamp-2 min-h-8 flex-1 text-sm text-muted-foreground">{description}</p>
+            {phases.length > 0 ? (
+              <PhaseStepper phases={phases} />
+            ) : (
+              <span className="text-xs text-muted-foreground/60">{t("character:card.noPhases")}</span>
+            )}
+            {tags.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {visibleTags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+                  >
+                    {tag}
+                  </span>
+                ))}
+                {extraCount > 0 && (
+                  <span className="px-1.5 py-0.5 text-xs text-muted-foreground/70">
+                    +{extraCount}
+                  </span>
+                )}
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground/70">{formatRelativeTime(updatedAt)}</p>
+          </div>
+        </div>
 
         {selectable && selected && !onRemove && (
           <HugeiconsIcon

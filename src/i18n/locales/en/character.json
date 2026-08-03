@@ -49,6 +49,7 @@
   "detail": {
     "back": "Characters",
     "editBase": "Edit info",
+    "notesLabel": "Notes",
     "phasesTitle": "Phases",
     "addPhase": "Add phase",
     "emptyPhasesTitle": "No phases yet",
