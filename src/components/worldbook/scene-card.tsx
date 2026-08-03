@@ -408,7 +408,7 @@ function SceneCard({
                         characterAliases={c.aliases}
                         phaseName={p.name}
                         phaseAppearance={p.appearance}
-                        phaseChanges={p.changes}
+                        phaseDescription={p.description}
                         onRemove={() =>
                           onFieldChange({
                             characterRefs: scene.characterRefs.filter(

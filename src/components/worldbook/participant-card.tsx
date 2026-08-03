@@ -9,7 +9,7 @@ interface ParticipantCardProps {
   characterAliases: string[]
   phaseName: string
   phaseAppearance: string
-  phaseChanges: string
+  phaseDescription: string
   onRemove?: () => void
 }
 
@@ -18,7 +18,7 @@ function ParticipantCard({
   characterAliases,
   phaseName,
   phaseAppearance,
-  phaseChanges,
+  phaseDescription,
   onRemove,
 }: ParticipantCardProps) {
   const { t } = useTranslation(["event", "common"])
@@ -39,9 +39,9 @@ function ParticipantCard({
         <p className="line-clamp-2 text-sm text-muted-foreground">
           {phaseAppearance}
         </p>
-        {phaseChanges ? (
+        {phaseDescription ? (
           <p className="line-clamp-2 text-xs text-muted-foreground/70">
-            {phaseChanges}
+            {phaseDescription}
           </p>
         ) : null}
       </CardContent>

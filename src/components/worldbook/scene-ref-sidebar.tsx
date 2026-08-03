@@ -162,7 +162,7 @@ function SceneRefSidebar({
                   characterAliases={c.aliases}
                   phaseName={p.name}
                   phaseAppearance={p.appearance}
-                  phaseChanges={p.changes}
+                  phaseDescription={p.description}
                 />
               );
             })}

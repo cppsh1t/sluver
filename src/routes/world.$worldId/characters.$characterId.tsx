@@ -173,7 +173,8 @@ function CharacterDetailPage() {
         input: {
           name: input.name,
           appearance: input.appearance,
-          changes: input.changes ?? "",
+          description: input.description ?? "",
+          conversationStyle: input.conversationStyle ?? "",
           triggerEventId: input.triggerEventId ?? null,
         },
       });

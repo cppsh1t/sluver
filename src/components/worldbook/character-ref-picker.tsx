@@ -170,9 +170,9 @@ function CharacterRefPicker({
                         {p.appearance}
                       </p>
                     )}
-                    {p.changes && (
+                    {p.description && (
                       <p className="line-clamp-2 text-xs text-muted-foreground/80">
-                        {p.changes}
+                        {p.description}
                       </p>
                     )}
                   </button>

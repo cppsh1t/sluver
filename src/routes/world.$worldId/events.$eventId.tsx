@@ -336,7 +336,7 @@ function EventDetailPage() {
                     characterAliases={c.aliases}
                     phaseName={p.name}
                     phaseAppearance={p.appearance}
-                    phaseChanges={p.changes}
+                    phaseDescription={p.description}
                     onRemove={() => handleRemoveRef(ref)}
                   />
                 );

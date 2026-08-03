@@ -26,7 +26,8 @@ export type PhaseId = z.infer<typeof phaseIdSchema>;
  * Keeps the essential identity anchors (`name`, `appearance`, temporal
  * `triggerEventId`) and collapses all narrative-state detail (identity,
  * personality, relationships, abilities, etc.) into a single free-form
- * `changes` field.
+ * `description` field. `conversationStyle` captures how the character
+ * speaks and behaves in dialogue during this period.
  *
  * Phase ordering within a character is determined by array position in
  * `Character.phases` (position 0 = earliest period). No separate `order` field.
@@ -38,9 +39,12 @@ export const characterPhaseSchema = z.object({
   name: z.string(),
   /** 外观 — physical appearance description in this period. */
   appearance: z.string(),
-  /** 变化 — free-form description of this period's state and changes
+  /** 描述 — free-form description of this period's state and changes
    *  (identity, personality, relationships, abilities, etc.). */
-  changes: z.string(),
+  description: z.string(),
+  /** 对话风格 — how the character speaks and behaves in dialogue
+   *  during this period (tone, vocabulary, mannerisms, etc.). */
+  conversationStyle: z.string(),
   /** ID of the Event that triggered the transition INTO this phase. `null` for the initial phase. */
   triggerEventId: eventIdSchema.nullable(),
   /** Resolved name of the trigger event (LEFT JOIN from events table). `null` when `triggerEventId` is null. */

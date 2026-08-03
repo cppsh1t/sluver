@@ -80,7 +80,10 @@ function PhaseCard({
   const [editing, setEditing] = useState(!phase);
   const [name, setName] = useState(phase?.name ?? "");
   const [appearance, setAppearance] = useState(phase?.appearance ?? "");
-  const [changes, setChanges] = useState(phase?.changes ?? "");
+  const [description, setDescription] = useState(phase?.description ?? "");
+  const [conversationStyle, setConversationStyle] = useState(
+    phase?.conversationStyle ?? "",
+  );
   const [triggerEventId, setTriggerEventId] = useState<EventId | null>(
     phase?.triggerEventId ?? null,
   );
@@ -95,7 +98,8 @@ function PhaseCard({
     if (phase) {
       setName(phase.name);
       setAppearance(phase.appearance);
-      setChanges(phase.changes);
+      setDescription(phase.description);
+      setConversationStyle(phase.conversationStyle);
       setTriggerEventId(phase.triggerEventId);
     }
   }
@@ -110,7 +114,8 @@ function PhaseCard({
       await onSave({
         name: trimmedName,
         appearance: trimmedAppearance,
-        changes: changes.trim(),
+        description: description.trim(),
+        conversationStyle: conversationStyle.trim(),
         triggerEventId,
       });
       if (!isDraft) {
@@ -228,14 +233,28 @@ function PhaseCard({
               />
             </Field>
             <Field>
-              <FieldLabel htmlFor={`phase-${phase?.id ?? "draft"}-changes`}>
-                {t("character:phase.changesLabel")}
+              <FieldLabel htmlFor={`phase-${phase?.id ?? "draft"}-description`}>
+                {t("character:phase.descriptionLabel")}
               </FieldLabel>
               <Textarea
-                id={`phase-${phase?.id ?? "draft"}-changes`}
-                value={changes}
-                onChange={(e) => setChanges(e.currentTarget.value)}
-                placeholder={t("character:phase.changesPlaceholder")}
+                id={`phase-${phase?.id ?? "draft"}-description`}
+                value={description}
+                onChange={(e) => setDescription(e.currentTarget.value)}
+                placeholder={t("character:phase.descriptionPlaceholder")}
+                rows={3}
+              />
+            </Field>
+            <Field>
+              <FieldLabel
+                htmlFor={`phase-${phase?.id ?? "draft"}-conversation-style`}
+              >
+                {t("character:phase.conversationStyleLabel")}
+              </FieldLabel>
+              <Textarea
+                id={`phase-${phase?.id ?? "draft"}-conversation-style`}
+                value={conversationStyle}
+                onChange={(e) => setConversationStyle(e.currentTarget.value)}
+                placeholder={t("character:phase.conversationStylePlaceholder")}
                 rows={3}
               />
             </Field>
@@ -318,9 +337,14 @@ function PhaseCard({
           <p className="whitespace-pre-wrap text-sm text-muted-foreground">
             {phase!.appearance}
           </p>
-          {phase!.changes && (
+          {phase!.description && (
             <p className="whitespace-pre-wrap text-sm text-muted-foreground">
-              {phase!.changes}
+              {phase!.description}
+            </p>
+          )}
+          {phase!.conversationStyle && (
+            <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+              {phase!.conversationStyle}
             </p>
           )}
           {triggerEvent && (

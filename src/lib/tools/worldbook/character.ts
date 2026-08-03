@@ -105,12 +105,13 @@ export function characterTools(): Record<string, ToolDef> {
 
     add_phase: {
       description:
-        "Add a new phase (life stage) to a character. Each phase has its own appearance and changes. Position auto-appends to the end of the phase list.",
+        "Add a new phase (life stage) to a character. Each phase has its own appearance, description, and conversation style. Position auto-appends to the end of the phase list.",
       inputSchema: z.object({
         characterId: z.string().describe("The character's UUID."),
         name: z.string().min(1).describe("Phase name (e.g. 'Before the Fall', 'In Exile'). Must be unique within the character."),
         appearance: z.string().min(1).describe("Physical description during this phase."),
-        changes: z.string().optional().describe("What defines this period (emotional/circumstantial)."),
+        description: z.string().optional().describe("What defines this period (emotional/circumstantial state, identity, relationships, abilities)."),
+        conversationStyle: z.string().optional().describe("How the character speaks and behaves in dialogue during this period (tone, vocabulary, mannerisms)."),
         triggerEventId: z.string().optional().describe("UUID of the event that triggered this phase, if any."),
       }),
       consentLevel: "configurable",
@@ -119,7 +120,8 @@ export function characterTools(): Record<string, ToolDef> {
           characterId: string;
           name: string;
           appearance: string;
-          changes?: string;
+          description?: string;
+          conversationStyle?: string;
           triggerEventId?: string;
         };
         return addPhase(ctx.spaceId, ctx.worldId, characterId as never, rest as never);
@@ -166,22 +168,24 @@ export function characterTools(): Record<string, ToolDef> {
         phaseId: z.string().describe("The phase's UUID."),
         name: z.string().min(1).optional().describe("New phase name (if changing)."),
         appearance: z.string().min(1).optional().describe("New physical description (if changing)."),
-        changes: z.string().optional().describe("New changes description (replaces current). Omit to keep current."),
+        description: z.string().optional().describe("New description (replaces current). Omit to keep current."),
+        conversationStyle: z.string().optional().describe("New conversation style (replaces current). Omit to keep current."),
         triggerEventId: z.string().nullable().optional().describe("UUID of the triggering event, or null to clear. Omit to keep current."),
       }),
       consentLevel: "always",
       execute: async (input, ctx) => {
-        const { phaseId, ...changes } = input as {
+        const { phaseId, ...updates } = input as {
           phaseId: string;
           name?: string;
           appearance?: string;
-          changes?: string;
+          description?: string;
+          conversationStyle?: string;
           triggerEventId?: string | null;
         };
 
         // Read current phase via listCharacters (phases are embedded in characters).
         const characters = await listCharacters(ctx.spaceId, ctx.worldId);
-        let current: { name: string; appearance: string; changes: string; triggerEventId: string | null } | undefined;
+        let current: { name: string; appearance: string; description: string; conversationStyle: string; triggerEventId: string | null } | undefined;
         for (const char of characters) {
           const found = char.phases.find((p) => p.id === phaseId);
           if (found) {
@@ -195,12 +199,13 @@ export function characterTools(): Record<string, ToolDef> {
 
         // triggerEventId: undefined → keep current; null → clear; string → set.
         const triggerEventId =
-          changes.triggerEventId !== undefined ? changes.triggerEventId : current.triggerEventId;
+          updates.triggerEventId !== undefined ? updates.triggerEventId : current.triggerEventId;
 
         return updatePhase(ctx.spaceId, ctx.worldId, phaseId as never, {
-          name: changes.name ?? current.name,
-          appearance: changes.appearance ?? current.appearance,
-          changes: changes.changes ?? current.changes,
+          name: updates.name ?? current.name,
+          appearance: updates.appearance ?? current.appearance,
+          description: updates.description ?? current.description,
+          conversationStyle: updates.conversationStyle ?? current.conversationStyle,
           triggerEventId: triggerEventId as never,
         });
       },

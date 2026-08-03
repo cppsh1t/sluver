@@ -34,7 +34,7 @@ type CreateInput<T, R extends keyof T> = Pick<T, R> & Partial<Omit<T, R>>;
 // ─── Editable field sets (shared between Create and Update) ─────────────────
 
 type WorldFields = Pick<World, 'name' | 'description'>;
-type PhaseFields = Pick<CharacterPhase, 'name' | 'appearance' | 'changes' | 'triggerEventId'>;
+type PhaseFields = Pick<CharacterPhase, 'name' | 'appearance' | 'description' | 'conversationStyle' | 'triggerEventId'>;
 type CharacterFields = Pick<Character, 'name' | 'aliases' | 'description' | 'notes' | 'tags'>;
 type ElementFields = Pick<Location, 'name' | 'description' | 'notes' | 'tags'>;
 type EventFields = Pick<Event, 'name' | 'description' | 'startAt' | 'endAt' | 'characterRefs' | 'locationId' | 'notes' | 'tags'>;
