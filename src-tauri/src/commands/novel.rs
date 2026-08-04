@@ -13,14 +13,15 @@ use crate::util::{decode_and_validate_image, new_id, normalize_iso, now_iso};
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 fn load_novel(conn: &rusqlite::Connection, id: &str, world_id: &str) -> Result<Novel, DbError> {
-    let (title, description, tags_json, created_at, updated_at) = conn
+    let (title, description, author, tags_json, created_at, updated_at) = conn
         .query_row(
-            "SELECT title, description, tags, created_at, updated_at FROM novels WHERE id = ?1",
+            "SELECT title, description, author, tags, created_at, updated_at FROM novels WHERE id = ?1",
             params![id],
             |row| {
                 Ok((
                     row.get::<_, String>("title")?,
                     row.get::<_, String>("description")?,
+                    row.get::<_, String>("author")?,
                     row.get::<_, String>("tags")?,
                     row.get::<_, String>("created_at")?,
                     row.get::<_, String>("updated_at")?,
@@ -44,6 +45,7 @@ fn load_novel(conn: &rusqlite::Connection, id: &str, world_id: &str) -> Result<N
         world_id: world_id.to_string(),
         title,
         description,
+        author,
         chapter_ids,
         tags: serde_json::from_str(&tags_json).unwrap_or_default(),
         created_at,
@@ -183,9 +185,9 @@ pub fn create_novel(
 
     state.with_world(&space_id, &world_id, |conn| {
         conn.execute(
-            "INSERT INTO novels (id, title, description, tags, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![id, input.title, input.description, tags_json, now, now],
+            "INSERT INTO novels (id, title, description, author, tags, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![id, input.title, input.description, input.author, tags_json, now, now],
         )?;
         load_novel(conn, &id, &world_id)
     })
@@ -217,12 +219,13 @@ pub fn list_novels(
             id: String,
             title: String,
             description: String,
+            author: String,
             tags_json: String,
             created_at: String,
             updated_at: String,
         }
         let mut stmt = conn.prepare(
-            "SELECT id, title, description, tags, created_at, updated_at
+            "SELECT id, title, description, author, tags, created_at, updated_at
          FROM novels ORDER BY created_at",
         )?;
         let raws: Vec<NovelRaw> = stmt
@@ -231,6 +234,7 @@ pub fn list_novels(
                     id: row.get("id")?,
                     title: row.get("title")?,
                     description: row.get("description")?,
+                    author: row.get("author")?,
                     tags_json: row.get("tags")?,
                     created_at: row.get("created_at")?,
                     updated_at: row.get("updated_at")?,
@@ -278,6 +282,7 @@ pub fn list_novels(
                     world_id: world_id.to_string(),
                     title: raw.title,
                     description: raw.description,
+                    author: raw.author,
                     chapter_ids,
                     tags,
                     created_at: raw.created_at,
@@ -528,8 +533,8 @@ pub fn update_novel(
 
     state.with_world(&space_id, &world_id, |conn| {
         let updated = conn.execute(
-        "UPDATE novels SET title = ?1, description = ?2, tags = ?3, updated_at = ?4 WHERE id = ?5",
-        params![input.title, input.description, tags_json, now, id],
+        "UPDATE novels SET title = ?1, description = ?2, author = ?3, tags = ?4, updated_at = ?5 WHERE id = ?6",
+        params![input.title, input.description, input.author, tags_json, now, id],
     )?;
         if updated == 0 {
             return Err(DbError::NotFound("Novel", id));

@@ -132,6 +132,13 @@ pub enum DbError {
                        // TBA — see ADR-0014).
     #[error("Log export failed: {0}")]
     LogExportFailed(String),
+
+    /// `export_novel` failed midway (file IO, epub build, etc.). Dynamic
+    /// message only; surfaces as `NOVEL_EXPORT_FAILED`. Partial output file
+    /// cleanup is NOT attempted (the file may be valid up to the failure
+    /// point for EPUB; for TXT it's a complete prefix).
+    #[error("Novel export failed: {0}")]
+    NovelExportFailed(String),
 }
 
 impl DbError {
@@ -208,6 +215,9 @@ impl DbError {
             // `export_logs` failure: dynamic IO/zip message — code is enough,
             // everything useful is in `message`.
             DbError::LogExportFailed(_) => ("LOG_EXPORT_FAILED", HashMap::new()),
+            // `export_novel` failure: dynamic IO/epub message — code is enough,
+            // everything useful is in `message`.
+            DbError::NovelExportFailed(_) => ("NOVEL_EXPORT_FAILED", HashMap::new()),
         };
         ErrorPayload {
             code: code.to_string(),

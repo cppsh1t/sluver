@@ -10,6 +10,7 @@ pub struct Novel {
     pub world_id: String,
     pub title: String,
     pub description: String,
+    pub author: String,
     pub chapter_ids: Vec<String>,
     pub tags: Vec<String>,
     pub created_at: String,
@@ -23,6 +24,8 @@ pub struct CreateNovelInput {
     #[serde(default)]
     pub description: String,
     #[serde(default)]
+    pub author: String,
+    #[serde(default)]
     pub tags: Vec<String>,
 }
 
@@ -31,6 +34,7 @@ pub struct CreateNovelInput {
 pub struct UpdateNovelInput {
     pub title: String,
     pub description: String,
+    pub author: String,
     pub tags: Vec<String>,
 }
 

@@ -70,6 +70,13 @@ zip = { version = "8", default-features = false, features = ["deflate"] }
 # minimal — we only need the standard alphabet.
 base64 = { version = "0.22", default-features = false }
 
+# Novel export to EPUB (src/export.rs). `default-features = false` +
+# `zip-library` selects the pure-Rust zip backend (no system `zip` binary
+# dependency). epub-builder 0.8 pulls `zip ^6` transitively; it coexists with
+# our direct `zip = "8"` dep above (different majors resolve as separate crates
+# in the dependency tree).
+epub-builder = { version = "0.8", default-features = false, features = ["zip-library"] }
+
 [dev-dependencies]
 # Filesystem isolation for DbManager / command integration tests (T10 stress test).
 tempfile = "3"

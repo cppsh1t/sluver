@@ -43,6 +43,7 @@ const characterRefSchema = z.object({
 const createNovelSchema = z.object({
   title: z.string().min(1).describe("Novel title (must be unique within the world)."),
   description: z.string().optional().describe("Novel description / synopsis."),
+  author: z.string().optional().describe("Author name shown on exports."),
   tags: z.array(z.string()).optional().describe("Categorization tags."),
 });
 
@@ -81,11 +82,12 @@ export function novelTools(): Record<string, ToolDef> {
       inputSchema: updateNovelSchema,
       consentLevel: "always",
       execute: async (input, ctx) => {
-        const { id, ...changes } = input as { id: string; title?: string; description?: string; tags?: string[] };
+        const { id, ...changes } = input as { id: string; title?: string; description?: string; author?: string; tags?: string[] };
         const current = await getNovel(ctx.spaceId, ctx.worldId, id as never);
         return updateNovel(ctx.spaceId, ctx.worldId, id as never, {
           title: changes.title ?? current.title,
           description: changes.description ?? current.description,
+          author: changes.author ?? current.author,
           tags: changes.tags ?? current.tags,
         });
       },

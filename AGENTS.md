@@ -27,6 +27,12 @@ Tauri v2 desktop app for **worldbuilding & novel writing**. React 19 + TypeScrip
   - [ADR-0019](./docs/adr/0019-ai-agent-library-purity-boundary.md) — AI agent runtime library stays free of all application concerns (no React, no IPC, no logger)
   - [ADR-0020](./docs/adr/0020-session-layer.md) — Stateful `Agent` + `SessionStore` wrap the stateless `AgentLoop` for conversation memory and persistence
   - [ADR-0021](./docs/adr/0021-novel-scene-autosave-and-routing.md) — Novel Scenes are not deep-linkable; full-replacement `update_scene` mandates single-source-of-truth auto-save
+- [ADR-0022](./docs/adr/0022-chat-conversations-world-scoped.md) — Chat conversations are World-scoped (persisted in world.db)
+- [ADR-0023](./docs/adr/0023-conversation-role-bound-live-model.md) — Conversation is role-bound; model resolved live from AgentConfig
+- [ADR-0024](./docs/adr/0024-conversation-runtime-cache-space-layout.md) — Conversation runtime cache at the Space-layout layer
+- [ADR-0025](./docs/adr/0025-tool-consent-execute-blocking-gate.md) — Tool consent via execute-blocking approval gate
+- [ADR-0026](./docs/adr/0026-timemapper-architecture.md) — TimeMapper: user-authored JS, output-only, Web Worker isolation
+- [ADR-0027](./docs/adr/0027-novel-export-epub-and-txt.md) — Novel export as EPUB + TXT (Rust-side generation, no MOBI); `Novel.author` field; single `export_novel` aggregation command
 
 ## Git commit style
 

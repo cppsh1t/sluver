@@ -19,6 +19,9 @@
     "titleLabel": "Title",
     "titlePlaceholder": "Novel title",
     "titleDescription": "Must be unique within this world",
+    "authorLabel": "Author",
+    "authorPlaceholder": "e.g. Lin Mei",
+    "authorDescription": "Shown on the exported EPUB title page and TXT header.",
     "descriptionLabel": "Description",
     "descriptionPlaceholder": "A brief synopsis...",
     "tagsLabel": "Tags",
@@ -121,6 +124,22 @@
       "prev": "Previous image",
       "next": "Next image",
       "counter": "{{current}} / {{total}}"
+    }
+  },
+  "export": {
+    "menuItem": "Export...",
+    "dialogTitle": "Export Novel",
+    "dialogDescription": "Choose a format for the exported file.",
+    "formatEpub": "EPUB",
+    "formatEpubDescription": "For e-readers (Kindle, Apple Books, Kobo, etc.)",
+    "formatTxt": "Plain Text (TXT)",
+    "formatTxtDescription": "Plain text, no formatting or images",
+    "confirm": "Export",
+    "exporting": "Exporting...",
+    "cancel": "Cancel",
+    "toast": {
+      "success": "Novel exported successfully.",
+      "failed": "Export failed"
     }
   },
   "refs": {

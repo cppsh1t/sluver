@@ -133,3 +133,38 @@ export function reorderScenes(
 ): Promise<void> {
   return call<void>('reorder_scenes', { spaceId, worldId, chapterId, sceneIds });
 }
+
+// ─── Export ──────────────────────────────────────────────────────────────────
+
+/**
+ * Export format. Bare string over IPC — the Rust side is a unit enum
+ * `ExportFormat { Epub, Txt }` with `#[serde(rename_all = "camelCase")]`,
+ * which serde accepts as a plain string for unit variants.
+ */
+export type ExportFormat = 'epub' | 'txt';
+
+/**
+ * Export a novel to a file on disk.
+ *
+ * `outputPath` MUST be an absolute path, typically obtained from the
+ * `save()` native dialog (`@tauri-apps/plugin-dialog`). The Rust side
+ * writes the file via `std::fs`, so no `fs:*` Tauri capability is
+ * required. Returns void; rejects with `ErrorPayload` on failure.
+ *
+ * See ADR-0027 for the EPUB + TXT generation contract.
+ */
+export function exportNovel(args: {
+  spaceId: string;
+  worldId: WorldId;
+  novelId: NovelId;
+  format: ExportFormat;
+  outputPath: string;
+}): Promise<void> {
+  return call<void>('export_novel', {
+    spaceId: args.spaceId,
+    worldId: args.worldId,
+    novelId: args.novelId,
+    format: args.format,
+    outputPath: args.outputPath,
+  });
+}

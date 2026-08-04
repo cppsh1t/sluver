@@ -425,6 +425,18 @@ const WORLD_MIGRATION_008: &str = r#"
     CREATE INDEX IF NOT EXISTS idx_scene_images_scene ON scene_images(scene_id, position);
 "#;
 
+/// Migration 9 for each world DB: permanent `author` column on `novels`.
+/// Mirrors the `description` column precedent (WORLD_MIGRATION_002): a non-null
+/// text field on an existing table, backfilled to `''` for pre-existing rows
+/// via `NOT NULL DEFAULT ''`. This is the project's established convention for
+/// non-null text fields added to existing tables. Added as a separate
+/// migration so existing world DB files get the column via
+/// `rusqlite_migration`'s incremental tracking — modifying the original
+/// `WORLD_SQL` would NOT re-run for already-migrated databases.
+const WORLD_MIGRATION_009: &str = r#"
+    ALTER TABLE novels ADD COLUMN author TEXT NOT NULL DEFAULT '';
+"#;
+
 const WORLD_SLICE: &[M] = &[
     M::up(WORLD_SQL),
     M::up(WORLD_MIGRATION_002),
@@ -434,5 +446,6 @@ const WORLD_SLICE: &[M] = &[
     M::up(WORLD_MIGRATION_006),
     M::up(WORLD_MIGRATION_007),
     M::up(WORLD_MIGRATION_008),
+    M::up(WORLD_MIGRATION_009),
 ];
 pub const WORLD_MIGRATIONS: Migrations = Migrations::from_slice(WORLD_SLICE);

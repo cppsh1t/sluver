@@ -1,5 +1,6 @@
 mod commands;
 mod db;
+mod export;
 mod logging;
 mod models;
 mod tray;
@@ -226,6 +227,8 @@ pub fn run() {
             commands::novel::reorder_scene_images,
             commands::novel::get_scene_image,
             commands::novel::list_scene_image_ids,
+            // Novel export (TXT / EPUB file generation)
+            commands::export_book::export_novel,
             // Conversation (world-scoped chat — ADR-0022)
             commands::conversation::list_conversations,
             commands::conversation::create_conversation,

@@ -4,6 +4,7 @@ pub mod conversation;
 pub mod diagnostics;
 pub mod element;
 pub mod event;
+pub mod export_book;
 pub mod novel;
 pub mod session;
 pub mod setting;

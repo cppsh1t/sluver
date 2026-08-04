@@ -24,10 +24,12 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Delete02Icon,
   BookOpen01Icon,
+  BookDownloadIcon,
   MoreHorizontalIcon,
 } from "@hugeicons/core-free-icons";
 import { formatRelativeTime } from "@/lib/format";
 import { EntityAvatar } from "@/components/ui/entity-avatar";
+import { ExportNovelDialog } from "@/components/worldbook/export-novel-dialog";
 import type { Novel, SpaceId, WorldId } from "@/types";
 
 interface NovelCardProps {
@@ -40,6 +42,7 @@ interface NovelCardProps {
 function NovelCard({ novel, spaceId, worldId, onDelete }: NovelCardProps) {
   const { t } = useTranslation(["novel", "common"]);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const entityName = t("novel:entityName.singular");
 
   const visibleTags = novel.tags.slice(0, 3);
@@ -93,6 +96,16 @@ function NovelCard({ novel, spaceId, worldId, onDelete }: NovelCardProps) {
                   <span className="sr-only">{t("common:actions.moreActions")}</span>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setExportOpen(true);
+                    }}
+                  >
+                    <HugeiconsIcon icon={BookDownloadIcon} strokeWidth={2} />
+                    {t("novel:export.menuItem")}
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     variant="destructive"
                     onClick={(e) => {
@@ -169,6 +182,14 @@ function NovelCard({ novel, spaceId, worldId, onDelete }: NovelCardProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ExportNovelDialog
+        open={exportOpen}
+        onOpenChange={setExportOpen}
+        novel={{ id: novel.id, title: novel.title }}
+        spaceId={spaceId}
+        worldId={worldId}
+      />
     </>
   );
 }

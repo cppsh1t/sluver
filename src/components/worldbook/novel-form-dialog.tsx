@@ -39,11 +39,13 @@ interface NovelFormDialogProps {
     id?: string;
     title: string;
     description: string;
+    author: string;
     tags: string[];
   };
   onSubmit: (input: {
     title: string;
     description: string;
+    author: string;
     tags: string[];
   }) => Promise<void>;
 }
@@ -62,12 +64,14 @@ function NovelFormDialog({
 
   const [title, setTitle] = useState(entity?.title ?? "");
   const [description, setDescription] = useState(entity?.description ?? "");
+  const [author, setAuthor] = useState(entity?.author ?? "");
   const [tags, setTags] = useState<string[]>(entity?.tags ?? []);
   const [submitting, setSubmitting] = useState(false);
 
   function reset() {
     setTitle("");
     setDescription("");
+    setAuthor("");
     setTags([]);
   }
 
@@ -76,6 +80,7 @@ function NovelFormDialog({
     if (!prevOpen.current && open && entity) {
       setTitle(entity.title);
       setDescription(entity.description);
+      setAuthor(entity.author);
       setTags(entity.tags);
     }
     prevOpen.current = open;
@@ -91,6 +96,7 @@ function NovelFormDialog({
       await onSubmit({
         title: trimmed,
         description: description.trim(),
+        author: author.trim(),
         tags,
       });
       if (mode === "create") reset();
@@ -167,6 +173,20 @@ function NovelFormDialog({
               />
               <FieldDescription>
                 {t("novel:form.titleDescription")}
+              </FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={`novel-${prefix}-author`}>
+                {t("novel:form.authorLabel")}
+              </FieldLabel>
+              <Input
+                id={`novel-${prefix}-author`}
+                value={author}
+                onChange={(e) => setAuthor(e.currentTarget.value)}
+                placeholder={t("novel:form.authorPlaceholder")}
+              />
+              <FieldDescription>
+                {t("novel:form.authorDescription")}
               </FieldDescription>
             </Field>
             <Field>

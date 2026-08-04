@@ -43,6 +43,8 @@ export const novelSchema = z.object({
   worldId: worldIdSchema,
   title: z.string(),
   description: z.string(),
+  /** Author name shown on exported EPUB title page and TXT header. */
+  author: z.string(),
   /** Ordered chapter IDs — the novel's content. Position in array = reading order. */
   chapterIds: z.array(chapterIdSchema),
   /** User-defined tags for categorization / filtering. */

@@ -23,5 +23,6 @@
   "CATALOG_FETCH_FAILED": "Failed to fetch model catalog and no local copy available",
   "INVALID_INPUT": "Invalid input: {{message}}",
   "INVALID_IMAGE": "Image is invalid or too large (WebP / JPEG / PNG only, max 1 MB)",
+  "NOVEL_EXPORT_FAILED": "Failed to export the novel.",
   "INTERNAL_ERROR": "An internal error occurred"
 }

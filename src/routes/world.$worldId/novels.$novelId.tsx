@@ -162,6 +162,7 @@ function NovelWorkspaceLayout() {
             id: novel.id,
             title: novel.title,
             description: novel.description,
+            author: novel.author,
             tags: novel.tags,
           }}
           onSubmit={handleUpdateNovel}
