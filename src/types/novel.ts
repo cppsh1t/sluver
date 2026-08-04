@@ -133,3 +133,30 @@ export const sceneSchema = z.object({
 });
 
 export type Scene = z.infer<typeof sceneSchema>;
+
+// ─── Scene image (sidecar) ───────────────────────────────────────────────
+
+/**
+ * 场景图片（SceneImage）— a sidecar image attached to a Scene.
+ *
+ * Images are NOT part of the {@link sceneSchema}; they live in a dedicated
+ * `scene_images` table and are addressed by their own id. A Scene has zero or
+ * more images, ordered by `position`. See `src/api/scene-image.ts` for the
+ * full lifecycle (add / delete / reorder / fetch).
+ */
+export const sceneImageIdSchema = z.string().brand<"SceneImageId">();
+export type SceneImageId = z.infer<typeof sceneImageIdSchema>;
+
+/**
+ * Metadata for a scene image. The raw bytes travel separately via
+ * {@link getSceneImage} (returns `ArrayBuffer`); this schema describes only
+ * the row metadata.
+ */
+export const sceneImageMetaSchema = z.object({
+  id: sceneImageIdSchema,
+  sceneId: sceneIdSchema,
+  position: z.number(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+export type SceneImageMeta = z.infer<typeof sceneImageMetaSchema>;
