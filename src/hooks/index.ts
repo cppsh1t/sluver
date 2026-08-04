@@ -110,3 +110,11 @@ export {
   useTimeMapper,
   useSetTimeMapper,
 } from "./use-timemapper";
+
+export {
+  useSceneImages,
+  useSceneImageBytes,
+  useAddSceneImage,
+  useDeleteSceneImage,
+  useReorderSceneImages,
+} from "./use-scene-images";
