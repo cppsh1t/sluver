@@ -26,8 +26,9 @@
  * Every run termination — success, abort, error, max-steps — resolves
  * `handle.result` with the matching `finishReason`. A stream-terminating
  * *error* no longer rejects; instead the result carries `finishReason: 'error'`
- * and an `error` field. Partial `responseMessages` accumulated before the
- * error are best-effort salvaged into `result.messages`. See ADR-0018.
+ * and an `error` field. Partial `responseMessages` accumulated before an
+ * *error* or an *abort* are best-effort salvaged into `result.messages`. See
+ * ADR-0018.
  *
  * ## Purity
  *
@@ -235,6 +236,11 @@ export class AgentLoop {
 
         if (outcome.kind === "aborted") {
           finishReason = "aborted";
+          // Best-effort: keep any partial response messages the model produced
+          // before the abort, so they reach persistence (ADR-0018/0020).
+          if (outcome.partialMessages && outcome.partialMessages.length > 0) {
+            messages.push(...outcome.partialMessages);
+          }
           emitter.emit({ type: "abort", runId, reason: abortReason(signal) });
           break;
         }
@@ -418,7 +424,11 @@ export class AgentLoop {
 
       // Stream drained. Decide before awaiting the PromiseLike results.
       if (abortedDuringStream || signal.aborted) {
-        return { kind: "aborted" };
+        // Best-effort: keep any partial response messages the model produced
+        // before the abort fired, so callers retain conversational state.
+        // Mirrors the error-path salvage below (ADR-0018 revised).
+        const partialMessages = await tryGetResponseMessages(result);
+        return { kind: "aborted", partialMessages };
       }
       if (stepError) {
         const partialMessages = await tryGetResponseMessages(result);
@@ -501,25 +511,83 @@ export class AgentLoop {
 
 type StepOutcome =
   | { kind: "continue"; finalStep: StepResult<ToolSet>; responseMessages: ModelMessage[]; usage: LanguageModelUsage }
-  | { kind: "aborted" }
+  | { kind: "aborted"; partialMessages?: ModelMessage[] }
   | { kind: "errored"; error: AgentError; partialMessages?: ModelMessage[] };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
 /**
  * Best-effort salvage of `responseMessages` from a `streamText` result that may
- * be in an error state. The stream is fully drained by the time this is called.
- * Returns `undefined` if the messages can't be recovered (e.g. the result itself
- * rejected, or `streamText` threw synchronously before producing a result).
+ * be in an error or aborted state. The stream is fully drained by the time this
+ * is called. Returns `undefined` if the messages can't be recovered (e.g. the
+ * result itself rejected, or `streamText` threw synchronously before producing
+ * a result).
+ *
+ * The salvaged messages are passed through {@link filterIncompleteToolCalls}
+ * before returning, so that a `tool-call` part whose tool never executed (no
+ * matching `tool-result`) is stripped — most providers reject requests that
+ * contain a `tool-call` without a following `tool-result`.
  */
 async function tryGetResponseMessages(
   result: ReturnType<typeof streamText<ToolSet>>,
 ): Promise<ModelMessage[] | undefined> {
   try {
-    return await result.responseMessages;
+    const messages = await result.responseMessages;
+    return filterIncompleteToolCalls(messages);
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Strip incomplete `tool-call` parts from salvaged partial messages.
+ *
+ * When a stream is aborted or errors mid-flight, `responseMessages` may include
+ * an assistant message containing a `tool-call` whose tool never executed (no
+ * matching `tool-result` in the same batch). Persisting such a dangling
+ * `tool-call` would break the next turn — most providers (OpenAI, Anthropic,
+ * …) reject message threads where a `tool-call` is not followed by a
+ * `tool-result`.
+ *
+ * The filter collects every `toolCallId` that HAS a result (scanning both
+ * assistant and tool messages), strips `tool-call` parts without one from
+ * assistant messages, and drops assistant messages that become empty.
+ */
+function filterIncompleteToolCalls(messages: ModelMessage[]): ModelMessage[] {
+  // Pass 1: collect toolCallIds that completed (have a matching tool-result).
+  const completed = new Set<string>();
+  for (const msg of messages) {
+    const { content } = msg;
+    if (typeof content === "string" || !Array.isArray(content)) continue;
+    for (const part of content) {
+      if (part.type === "tool-result") {
+        completed.add(part.toolCallId);
+      }
+    }
+  }
+
+  // Pass 2: strip dangling tool-call parts from assistant messages.
+  const result: ModelMessage[] = [];
+  for (const msg of messages) {
+    if (msg.role !== "assistant") {
+      result.push(msg);
+      continue;
+    }
+    const { content } = msg;
+    if (typeof content === "string" || !Array.isArray(content)) {
+      result.push(msg);
+      continue;
+    }
+    const kept = content.filter(
+      (part) => part.type !== "tool-call" || completed.has(part.toolCallId),
+    );
+    // Drop the message entirely if all its parts were dangling tool-calls.
+    if (kept.length === 0) continue;
+    result.push(
+      kept.length === content.length ? msg : { ...msg, content: kept },
+    );
+  }
+  return result;
 }
 
 /** Map an SDK per-step `FinishReason` onto the runtime's `AgentFinishReason`. */
