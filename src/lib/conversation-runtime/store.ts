@@ -162,6 +162,14 @@ export interface ConversationView {
   readonly stream: StreamState | null;
   readonly isRunning: boolean;
   readonly error: { code: string; message: string } | null;
+  /**
+   * Why the most recent run ended, when that ending should be surfaced to the
+   * user. `"aborted"` is set the moment the `abort` event fires and again on
+   * run finalization, so a "Stopped" marker survives below the (now persisted)
+   * partial assistant message — not only in the ephemeral live-stream window.
+   * Cleared on the next `send`.
+   */
+  readonly stopReason: "aborted" | null;
   /** Draft text — preserved across conversation switches (ADR-0024). */
   draft: string;
 }
@@ -225,6 +233,7 @@ export const EMPTY_VIEW: ConversationView = {
   stream: null,
   isRunning: false,
   error: null,
+  stopReason: null,
   draft: "",
 };
 
@@ -590,7 +599,7 @@ export function createConversationRuntimeStore(
         // Clear error + flip to running. Stream is set after we have the runId.
         patchData(worldId, conversationId, (d) => ({
           ...d,
-          view: { ...d.view, error: null, isRunning: true, stream: null },
+          view: { ...d.view, error: null, isRunning: true, stream: null, stopReason: null },
         }));
 
         let handle: AgentRunHandle;
@@ -821,13 +830,23 @@ export function createConversationRuntimeStore(
               // Immediate "stopped" feedback; result.then() finalizes.
               // Also clear any pending approvals — the gate's abort listener
               // should have already resolved them, but this is defensive.
+              // stopReason is set here so the "Stopped" marker shows instantly
+              // (even before finalization refreshes view.messages), and is
+              // re-asserted by the finalization .then() so it survives the
+              // stream → null transition.
               patchData(worldId, conversationId, (d) => {
-                if (!d.view.stream) return { ...d, view: { ...d.view, isRunning: false } };
+                if (!d.view.stream) {
+                  return {
+                    ...d,
+                    view: { ...d.view, isRunning: false, stopReason: "aborted" },
+                  };
+                }
                 return {
                   ...d,
                   view: {
                     ...d.view,
                     isRunning: false,
+                    stopReason: "aborted",
                     stream: { ...d.view.stream, pendingApprovals: {} },
                   },
                 };
@@ -854,7 +873,7 @@ export function createConversationRuntimeStore(
         // agent.getMessages() here already reflects the appended response.
         // The result NEVER rejects (ADR-0018); the .catch is defensive.
         void handle.result
-          .then(() => {
+          .then((result) => {
             patchData(worldId, conversationId, (d) => ({
               ...d,
               runHandle: null,
@@ -863,6 +882,7 @@ export function createConversationRuntimeStore(
                 messages: [...agent.getMessages()],
                 isRunning: false,
                 stream: null,
+                stopReason: result.finishReason === "aborted" ? "aborted" : null,
               },
             }));
           })

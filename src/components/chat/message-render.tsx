@@ -276,12 +276,17 @@ function toolBlockFromLive(
  * @param isRunning whether a run is in flight (gates the streaming cursor).
  * @param pendingUserText optimistic user text for the in-flight turn; shown
  *   only when no matching user message is already present in `messages`.
+ * @param stopReason why the most recent run ended, when user-visible
+ *   (`"aborted"`). Drives the "Stopped" marker both in the live-stream window
+ *   (even when partial text exists) and after finalization (when the stream is
+ *   gone but the persisted partial message remains).
  */
 export function buildBlocks(
   messages: readonly SessionMessage[],
   stream: StreamState | null,
   isRunning: boolean,
   pendingUserText: string | null,
+  stopReason: "aborted" | null = null,
 ): RenderBlock[] {
   const blocks = blocksForMessages(messages);
 
@@ -360,10 +365,19 @@ export function buildBlocks(
         }
       }
     }
-    // Abort window: aborted, no text/tool content produced.
-    if (!isRunning && !hasContent) {
+    // Abort window: show "Stopped" when the run ended without producing any
+    // text/tool content, OR when it was explicitly aborted (stopReason set) —
+    // in the latter case partial text may exist, and the marker should still
+    // appear below it.
+    if (!isRunning && (!hasContent || stopReason === "aborted")) {
       blocks.push({ kind: "stopped", id: "__stopped__" });
     }
+  } else if (stopReason === "aborted") {
+    // Finalized abort: the live stream is gone but the run was aborted. The
+    // persisted partial assistant message (salvaged by the loop) is already in
+    // `blocks` via blocksForMessages; append the marker so the user can tell
+    // the response was cut short.
+    blocks.push({ kind: "stopped", id: "__stopped__" });
   }
 
   return blocks;

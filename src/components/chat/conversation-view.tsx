@@ -212,6 +212,7 @@ export function ConversationView({
     view.stream,
     view.isRunning,
     pendingUserText,
+    view.stopReason,
   );
 
   const isEmpty =
