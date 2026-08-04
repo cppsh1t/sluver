@@ -23,5 +23,6 @@ export * from './session';
 export * from './ai';
 export * from './diagnostics';
 export * from './image';
+export * from './scene-image';
 
 export type * from './types';
