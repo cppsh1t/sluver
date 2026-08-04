@@ -220,6 +220,12 @@ pub fn run() {
             commands::novel::update_scene,
             commands::novel::delete_scene,
             commands::novel::reorder_scenes,
+            // Scene gallery images (1:N — scene_images sidecar, WORLD_MIGRATION_008)
+            commands::novel::add_scene_image,
+            commands::novel::delete_scene_image,
+            commands::novel::reorder_scene_images,
+            commands::novel::get_scene_image,
+            commands::novel::list_scene_image_ids,
             // Conversation (world-scoped chat — ADR-0022)
             commands::conversation::list_conversations,
             commands::conversation::create_conversation,

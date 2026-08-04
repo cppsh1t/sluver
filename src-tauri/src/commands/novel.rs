@@ -5,7 +5,7 @@ use tauri::State;
 use crate::db::{DbError, DbManager};
 use crate::models::character::CharacterRef;
 use crate::models::novel::{
-    Chapter, CreateChapterInput, CreateNovelInput, CreateSceneInput, Novel, Scene,
+    Chapter, CreateChapterInput, CreateNovelInput, CreateSceneInput, Novel, Scene, SceneImageMeta,
     UpdateChapterInput, UpdateNovelInput, UpdateSceneInput,
 };
 use crate::util::{decode_and_validate_image, new_id, normalize_iso, now_iso};
@@ -974,4 +974,235 @@ pub fn get_novel_image(
     })?;
     let bytes = bytes.ok_or_else(|| DbError::NotFound("Image", id))?;
     Ok(tauri::ipc::Response::new(bytes))
+}
+
+// ─── Scene gallery image commands (1:N) ─────────────────────────────────────
+//
+// The `scene_images` sidecar table is created by `WORLD_MIGRATION_008`. Unlike
+// the single-image columns on the other "imageable" tables (WORLD_MIGRATION_006),
+// a Scene owns an ordered 1:N gallery. Image bytes flow ONLY through
+// `add_scene_image` / `get_scene_image` — the `Scene` struct, `load_scene`, and
+// `list_scenes` never touch the `scene_images` table (avoids the serde Vec<u8>
+// → JSON-number-array encoding trap and keeps scene payloads light). The
+// `SceneImageMeta` struct returned by `add_scene_image` / `list_scene_image_ids`
+// carries metadata only — NO `image_blob` field.
+//
+// Logging (ADR-0014 / ADR-0016): only metadata (entity_id, scene_id, byte
+// length, mime, counts) is ever logged — the bytes themselves are creative
+// content. add + delete + reorder are INFO; get + list are DEBUG because they
+// fire on every scene render.
+
+#[tracing::instrument(
+    skip(state, image_base64),
+    fields(entity_id, scene_id = %scene_id)
+)]
+#[tauri::command]
+pub fn add_scene_image(
+    space_id: String,
+    world_id: String,
+    scene_id: String,
+    image_base64: String,
+    image_mime: String,
+    state: State<'_, DbManager>,
+) -> Result<SceneImageMeta, DbError> {
+    let bytes = decode_and_validate_image(&image_base64, &image_mime)?;
+    let id = new_id();
+    tracing::Span::current().record("entity_id", id.as_str());
+    let now = now_iso();
+    tracing::info!(
+        entity_id = %id,
+        scene_id = %scene_id,
+        image_bytes_len = bytes.len(),
+        image_mime = %image_mime,
+        "scene image added"
+    );
+    state.with_world(&space_id, &world_id, |conn| {
+        // Verify the parent scene exists first — a plain FK violation on
+        // INSERT would surface as an opaque SQLite error, but the contract
+        // here is a business-level NotFound so the frontend can branch on it.
+        conn.query_row(
+            "SELECT 1 FROM scenes WHERE id = ?1",
+            params![&scene_id],
+            |_| Ok(()),
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => DbError::NotFound("Scene", scene_id.clone()),
+            other => DbError::Sqlite(other),
+        })?;
+
+        let next_pos: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM scene_images WHERE scene_id = ?1",
+            params![&scene_id],
+            |row| row.get(0),
+        )?;
+
+        conn.execute(
+            "INSERT INTO scene_images (id, scene_id, position, image_blob, image_mime, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![&id, &scene_id, next_pos, &bytes, &image_mime, &now, &now],
+        )?;
+
+        let meta = conn.query_row(
+            "SELECT id, scene_id, position, created_at, updated_at FROM scene_images WHERE id = ?1",
+            params![&id],
+            |row| {
+                Ok(SceneImageMeta {
+                    id: row.get(0)?,
+                    scene_id: row.get(1)?,
+                    position: row.get(2)?,
+                    created_at: row.get(3)?,
+                    updated_at: row.get(4)?,
+                })
+            },
+        )?;
+        Ok(meta)
+    })
+}
+
+#[tracing::instrument(skip(state), fields(entity_id = %image_id))]
+#[tauri::command]
+pub fn delete_scene_image(
+    space_id: String,
+    world_id: String,
+    image_id: String,
+    state: State<'_, DbManager>,
+) -> Result<(), DbError> {
+    tracing::info!(entity_id = %image_id, "scene image deleted");
+    state.with_world(&space_id, &world_id, |conn| {
+        // Capture scene_id before delete so siblings can be renumbered.
+        let scene_id: String = conn
+            .query_row(
+                "SELECT scene_id FROM scene_images WHERE id = ?1",
+                params![&image_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => DbError::NotFound("Image", image_id.clone()),
+                other => DbError::Sqlite(other),
+            })?;
+
+        let tx = conn.transaction()?;
+        let deleted = tx.execute("DELETE FROM scene_images WHERE id = ?1", params![&image_id])?;
+        if deleted == 0 {
+            return Err(DbError::NotFound("Image", image_id.clone()));
+        }
+
+        // Renumber remaining siblings to keep positions contiguous (0..N-1).
+        // No UNIQUE(scene_id, position) constraint exists, so we can update
+        // rows in place without the temporary-shift dance reorder_scenes needs.
+        let remaining_ids: Vec<String> = {
+            let mut stmt = tx.prepare(
+                "SELECT id FROM scene_images WHERE scene_id = ?1 ORDER BY position ASC",
+            )?;
+            let rows = stmt.query_map(params![&scene_id], |row| row.get::<_, String>(0))?;
+            let mut v = Vec::new();
+            for r in rows {
+                v.push(r?);
+            }
+            v
+        };
+        for (i, rid) in remaining_ids.iter().enumerate() {
+            tx.execute(
+                "UPDATE scene_images SET position = ?1 WHERE id = ?2",
+                params![i as i64, rid],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    })
+}
+
+#[tracing::instrument(skip(state, image_ids), fields(scene_id = %scene_id))]
+#[tauri::command]
+pub fn reorder_scene_images(
+    space_id: String,
+    world_id: String,
+    scene_id: String,
+    image_ids: Vec<String>,
+    state: State<'_, DbManager>,
+) -> Result<(), DbError> {
+    state.with_world(&space_id, &world_id, |conn| {
+        let tx = conn.transaction()?;
+        // No UNIQUE(scene_id, position) constraint, so per-row updates can run
+        // directly without the temporary-shift that reorder_scenes needs.
+        for (i, img_id) in image_ids.iter().enumerate() {
+            let pos = i as i64;
+            let affected = tx.execute(
+                "UPDATE scene_images SET position = ?1 WHERE id = ?2 AND scene_id = ?3",
+                params![pos, img_id, &scene_id],
+            )?;
+            if affected == 0 {
+                return Err(DbError::NotFound("Image", img_id.clone()));
+            }
+        }
+        tx.commit()?;
+        tracing::info!(
+            scene_id = %scene_id,
+            image_count = image_ids.len(),
+            "scene images reordered"
+        );
+        Ok(())
+    })
+}
+
+#[tracing::instrument(skip(state), fields(entity_id = %image_id))]
+#[tauri::command]
+pub fn get_scene_image(
+    space_id: String,
+    world_id: String,
+    image_id: String,
+    state: State<'_, DbManager>,
+) -> Result<tauri::ipc::Response, DbError> {
+    tracing::debug!(entity_id = %image_id, "scene image fetched");
+    let bytes: Option<Vec<u8>> = state.with_world(&space_id, &world_id, |conn| {
+        conn.query_row(
+            "SELECT image_blob FROM scene_images WHERE id = ?1",
+            params![&image_id],
+            |row| row.get::<_, Option<Vec<u8>>>(0),
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => DbError::NotFound("Image", image_id.clone()),
+            other => DbError::Sqlite(other),
+        })
+    })?;
+    let bytes = bytes.ok_or_else(|| DbError::NotFound("Image", image_id))?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+#[tracing::instrument(skip(state), fields(scene_id = %scene_id))]
+#[tauri::command]
+pub fn list_scene_image_ids(
+    space_id: String,
+    world_id: String,
+    scene_id: String,
+    state: State<'_, DbManager>,
+) -> Result<Vec<SceneImageMeta>, DbError> {
+    let metas = state.with_world(&space_id, &world_id, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT id, scene_id, position, created_at, updated_at
+             FROM scene_images
+             WHERE scene_id = ?1
+             ORDER BY position ASC",
+        )?;
+        let rows = stmt.query_map(params![&scene_id], |row| {
+            Ok(SceneImageMeta {
+                id: row.get(0)?,
+                scene_id: row.get(1)?,
+                position: row.get(2)?,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        tracing::debug!(
+            scene_id = %scene_id,
+            image_count = out.len(),
+            "scene images listed"
+        );
+        Ok(out)
+    })?;
+    Ok(metas)
 }
