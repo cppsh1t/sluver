@@ -335,6 +335,14 @@ export class AgentLoop {
     // `responseMessages` from a result whose stream errored mid-flight.
     let result: ReturnType<typeof streamText<ToolSet>> | undefined;
 
+    // Accumulators for fallback message reconstruction. The SDK's
+    // `responseMessages` PromiseLike often rejects (or returns empty) after an
+    // aborted stream, so we keep a parallel record of the content that flowed
+    // through the stream and can rebuild a partial assistant message ourselves.
+    let textBuffer = "";
+    let reasoningBuffer = "";
+    const toolCalls: { toolCallId: string; toolName: string; input: unknown }[] = [];
+
     try {
       result = streamText({
         model: this.#options.model,
@@ -354,6 +362,7 @@ export class AgentLoop {
       for await (const part of result.stream) {
         switch (part.type) {
           case "text-delta":
+            textBuffer += part.text;
             emitter.emit({
               type: "text_delta",
               runId,
@@ -362,6 +371,7 @@ export class AgentLoop {
             });
             break;
           case "reasoning-delta":
+            reasoningBuffer += part.text;
             emitter.emit({
               type: "reasoning_delta",
               runId,
@@ -378,6 +388,11 @@ export class AgentLoop {
             });
             break;
           case "tool-call":
+            toolCalls.push({
+              toolCallId: part.toolCallId,
+              toolName: part.toolName,
+              input: part.input,
+            });
             emitter.emit({
               type: "tool_call",
               runId,
@@ -424,10 +439,18 @@ export class AgentLoop {
 
       // Stream drained. Decide before awaiting the PromiseLike results.
       if (abortedDuringStream || signal.aborted) {
-        // Best-effort: keep any partial response messages the model produced
-        // before the abort fired, so callers retain conversational state.
-        // Mirrors the error-path salvage below (ADR-0018 revised).
-        const partialMessages = await tryGetResponseMessages(result);
+        // Try the SDK's responseMessages first; if it rejects or returns
+        // empty (common on abort — the SDK doesn't guarantee resolution after
+        // an aborted stream), fall back to reconstructing a partial assistant
+        // message from the content that flowed through the stream.
+        let partialMessages = await tryGetResponseMessages(result);
+        if (!partialMessages || partialMessages.length === 0) {
+          partialMessages = reconstructPartialMessages(
+            textBuffer,
+            reasoningBuffer,
+            toolCalls,
+          );
+        }
         return { kind: "aborted", partialMessages };
       }
       if (stepError) {
@@ -588,6 +611,56 @@ function filterIncompleteToolCalls(messages: ModelMessage[]): ModelMessage[] {
     );
   }
   return result;
+}
+
+/**
+ * Reconstruct a partial assistant {@link ModelMessage} from accumulated stream
+ * content.
+ *
+ * Used as a fallback when the SDK's `responseMessages` PromiseLike rejects or
+ * returns nothing after an aborted stream (which it frequently does — the SDK
+ * does not guarantee `responseMessages` resolves when the `abortSignal` fires
+ * mid-stream).
+ *
+ * The content parts mirror the AI SDK's own assistant message structure:
+ * reasoning → text → tool-calls. The result is passed through {@link
+ * filterIncompleteToolCalls} so any tool-call whose tool never executed (no
+ * matching tool-result in this batch) is stripped before persistence. Tool
+ * results themselves are intentionally excluded — they require the SDK's
+ * `ToolResultOutput` discriminated union shape which is impractical to
+ * reconstruct here, and their loss only affects the aborted step's tool card
+ * (the text content is what matters).
+ *
+ * Returns `undefined` if no content was accumulated (e.g. the model had not
+ * produced any text/reasoning before the abort fired).
+ */
+function reconstructPartialMessages(
+  textBuffer: string,
+  reasoningBuffer: string,
+  toolCalls: { toolCallId: string; toolName: string; input: unknown }[],
+): ModelMessage[] | undefined {
+  // Build content parts in the canonical order: reasoning → text → tool-calls.
+  const content: Array<
+    | { type: "text"; text: string }
+    | { type: "reasoning"; text: string }
+    | { type: "tool-call"; toolCallId: string; toolName: string; input: unknown }
+  > = [];
+  if (reasoningBuffer.length > 0) {
+    content.push({ type: "reasoning", text: reasoningBuffer });
+  }
+  if (textBuffer.length > 0) {
+    content.push({ type: "text", text: textBuffer });
+  }
+  for (const tc of toolCalls) {
+    content.push({ type: "tool-call", ...tc });
+  }
+  if (content.length === 0) return undefined;
+
+  const messages: ModelMessage[] = [
+    { role: "assistant", content },
+  ];
+
+  return filterIncompleteToolCalls(messages);
 }
 
 /** Map an SDK per-step `FinishReason` onto the runtime's `AgentFinishReason`. */
