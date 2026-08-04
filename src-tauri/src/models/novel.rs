@@ -116,3 +116,19 @@ pub struct UpdateSceneInput {
     pub item_ids: Vec<String>,
     pub event_ids: Vec<String>,
 }
+
+/// SceneImageMeta — metadata for one image in a scene's gallery (1:N
+/// sidecar table `scene_images`, added by `WORLD_MIGRATION_008`). The
+/// `image_blob` column is deliberately absent: bytes flow only through
+/// `get_scene_image` (tauri::ipc::Response), never through this struct —
+/// carrying `Vec<u8>` here would hit the serde Vec<u8> → JSON-number-array
+/// encoding trap and bloat every list payload.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneImageMeta {
+    pub id: String,
+    pub scene_id: String,
+    pub position: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}

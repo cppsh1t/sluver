@@ -393,6 +393,38 @@ const WORLD_MIGRATION_007: &str = r#"
     ALTER TABLE character_phases ADD COLUMN conversation_style TEXT NOT NULL DEFAULT '';
 "#;
 
+/// Migration 8 for each world DB: per-Scene gallery image sidecar table
+/// (`scene_images`, 1:N). This is the N-image analog of the single-image
+/// `image_blob` / `image_mime` columns added by `WORLD_MIGRATION_006`: a
+/// scene can now hold an ordered gallery of images instead of just one.
+/// Image bytes flow ONLY through the dedicated `add_scene_image` /
+/// `get_scene_image` commands — the `Scene` struct and `load_scene` /
+/// `list_scenes` queries never touch this table (avoids a serde Vec<u8> →
+/// JSON-number-array encoding trap and keeps scene payloads light). Each
+/// row holds one image's raw bytes (`image_blob`, webp/jpeg/png only,
+/// ≤ 1 MiB) plus its MIME type and a `position` for ordering within the
+/// scene. There is intentionally NO `UNIQUE(scene_id, position)` constraint
+/// — it would complicate reordering (the per-row update path would need the
+/// temporary-shift dance `reorder_scenes` uses), and a plain index is
+/// sufficient for the gallery's ordered-list semantics. The
+/// `ON DELETE CASCADE` on `scene_id` means deleting a scene automatically
+/// removes its gallery. Added as a separate migration so existing world DB
+/// files get the table via `rusqlite_migration`'s incremental tracking —
+/// modifying the original `WORLD_SQL` would NOT re-run for already-migrated
+/// databases.
+const WORLD_MIGRATION_008: &str = r#"
+    CREATE TABLE IF NOT EXISTS scene_images (
+        id          TEXT PRIMARY KEY,
+        scene_id    TEXT NOT NULL REFERENCES scenes(id) ON DELETE CASCADE,
+        position    INTEGER NOT NULL,
+        image_blob  BLOB NOT NULL,
+        image_mime  TEXT NOT NULL,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_scene_images_scene ON scene_images(scene_id, position);
+"#;
+
 const WORLD_SLICE: &[M] = &[
     M::up(WORLD_SQL),
     M::up(WORLD_MIGRATION_002),
@@ -401,5 +433,6 @@ const WORLD_SLICE: &[M] = &[
     M::up(WORLD_MIGRATION_005),
     M::up(WORLD_MIGRATION_006),
     M::up(WORLD_MIGRATION_007),
+    M::up(WORLD_MIGRATION_008),
 ];
 pub const WORLD_MIGRATIONS: Migrations = Migrations::from_slice(WORLD_SLICE);
