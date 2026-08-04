@@ -103,7 +103,24 @@
       "deleteSuccess": "Scene deleted",
       "deleteFailed": "Failed to delete scene",
       "reorderSuccess": "Scenes reordered",
-      "reorderFailed": "Failed to reorder scenes"
+      "reorderFailed": "Failed to reorder scenes",
+      "imageAdded": "Image added",
+      "imageAddFailed": "Failed to add image",
+      "imageRemoved": "Image removed",
+      "imageRemoveFailed": "Failed to remove image",
+      "imageReorderFailed": "Failed to reorder images"
+    },
+    "images": {
+      "title": "Images",
+      "add": "Add image",
+      "empty": "No images yet",
+      "open": "Open image",
+      "delete": "Remove image",
+      "dragHandle": "Drag to reorder",
+      "lightboxTitle": "Image",
+      "prev": "Previous image",
+      "next": "Next image",
+      "counter": "{{current}} / {{total}}"
     }
   },
   "refs": {

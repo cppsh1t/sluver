@@ -32,6 +32,7 @@ import { CharacterRefPicker } from "@/components/worldbook/character-ref-picker"
 import { LocationRefPicker } from "@/components/worldbook/location-ref-picker";
 import { ItemMultiPicker } from "@/components/worldbook/item-multi-picker";
 import { EventMultiPicker } from "@/components/worldbook/event-multi-picker";
+import { SceneImageGallery } from "@/components/worldbook/scene-image-gallery";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Add01Icon,
@@ -604,6 +605,14 @@ function SceneCard({
         events={events}
         selectedIds={scene.eventIds}
         onCommit={(ids) => onFieldChange({ eventIds: ids as EventId[] })}
+      />
+
+      {/* Scene image gallery (edit mode — add / reorder / delete) */}
+      <SceneImageGallery
+        spaceId={spaceId}
+        worldId={worldId}
+        sceneId={scene.id}
+        mode="edit"
       />
 
       {/* Footer: word count */}

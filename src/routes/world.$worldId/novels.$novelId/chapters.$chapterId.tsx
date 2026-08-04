@@ -30,6 +30,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { SceneCard } from "@/components/worldbook/scene-card";
 import type { SaveStatus, ScenePatch } from "@/components/worldbook/scene-card";
+import { SceneImageGallery } from "@/components/worldbook/scene-image-gallery";
 import { SceneRefSidebar } from "@/components/worldbook/scene-ref-sidebar";
 import { toErrorPayload } from "@/api/client";
 import { translateError } from "@/i18n/errors";
@@ -488,6 +489,12 @@ function ChapterWorkspacePage() {
                       <p className="whitespace-pre-wrap text-base leading-loose">
                         {scene.content}
                       </p>
+                      <SceneImageGallery
+                        spaceId={spaceId}
+                        worldId={wid}
+                        sceneId={scene.id}
+                        mode="read"
+                      />
                     </div>
                   ))
                 )}
