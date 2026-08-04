@@ -1,0 +1,16 @@
+# Line-ending policy (single source of truth, overrides per-machine core.autocrlf)
+#
+# Background: Windows defaults to core.autocrlf=true, which converts LF<->CRLF
+# on checkout/commit. This caused phantom "modified" status on Cargo.toml
+# because Cargo / rust-analyzer rewrite the file as LF, fighting autocrlf's
+# expectation of CRLF in the working tree.
+#
+# Fix: force LF for all text files in BOTH the repo blob and the working tree.
+# This matches what Rust, Node, and the Vercel/Tauri toolchains emit, so tools
+# and git never disagree. Binary files (png/ico/etc.) are auto-detected and
+# left untouched.
+#
+# After changing this file, run:
+#   git add --renormalize .
+#   git checkout-index --force --all
+* text=auto eol=lf
