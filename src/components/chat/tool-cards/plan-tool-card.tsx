@@ -43,18 +43,46 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { HugeiconsIcon } from "@hugeicons/react";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
   Cancel01Icon,
   CheckListIcon,
   CheckmarkSquare02Icon,
   ChevronDownIcon,
-  Square01Icon,
 } from "@hugeicons/core-free-icons";
 
 import { cn } from "@/lib/utils";
 import type { ToolBlockData } from "../message-render";
 import { isRecord, unwrapToolOutput } from "../tool-summary";
+
+// ─── Empty checkbox glyph ──────────────────────────────────────────────────
+
+/**
+ * Unchecked-checkbox glyph — the read-only counterpart to
+ * {@link CheckmarkSquare02Icon} used for pending Plan items.
+ *
+ * `@hugeicons/core-free-icons` ships no plain "empty checkbox": the
+ * misleadingly named `Square01Icon` actually renders the mathematical **x²**
+ * (squared) symbol. Its three paths draw two crossing strokes (an `x`) plus a
+ * superscript `2` in the upper-right corner — `Square` here means "raised to
+ * the power of two", not a geometric square. Using it for pending items made
+ * every unchecked row read as x².
+ *
+ * This constant reuses the exact rounded-square outline path of
+ * {@link CheckmarkSquare02Icon} with the checkmark stroke omitted, so the
+ * checked/unchecked pair is pixel-identical in shape.
+ */
+const EMPTY_CHECKBOX_ICON: IconSvgElement = [
+  [
+    "path",
+    {
+      d: "M2.5 12C2.5 7.52166 2.5 5.28249 3.89124 3.89124C5.28249 2.5 7.52166 2.5 12 2.5C16.4783 2.5 18.7175 2.5 20.1088 3.89124C21.5 5.28249 21.5 7.52166 21.5 12C21.5 16.4783 21.5 18.7175 20.1088 20.1088C18.7175 21.5 16.4783 21.5 12 21.5C7.52166 21.5 5.28249 21.5 3.89124 20.1088C2.5 18.7175 2.5 16.4783 2.5 12Z",
+      stroke: "currentColor",
+      strokeWidth: "1.5",
+      key: "0",
+    },
+  ],
+];
 
 // ─── Defensive Plan narrowing ──────────────────────────────────────────────
 
@@ -124,7 +152,7 @@ function PlanItemRow({ item }: { readonly item: PlanItemView }) {
   return (
     <li className="flex items-start gap-1.5">
       <HugeiconsIcon
-        icon={done ? CheckmarkSquare02Icon : Square01Icon}
+        icon={done ? CheckmarkSquare02Icon : EMPTY_CHECKBOX_ICON}
         strokeWidth={2}
         aria-hidden
         className={cn(
