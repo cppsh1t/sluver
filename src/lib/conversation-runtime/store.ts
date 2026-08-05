@@ -366,12 +366,50 @@ async function constructAgent(
       `constructAgent: unknown agent config "${conversation.agentConfigName}" — no RoleBehavior registered.`,
     );
   }
+
+  // agentRef chicken-and-egg (ADR-0029 Negative): tools need ctx → ctx closes
+  // over planAccess → planAccess reaches into the Agent → the Agent needs
+  // tools (via the loop). The agentRef is initially `null` and is back-filled
+  // after `Agent.open()` returns. Tool execute closures read `agentRef.current`
+  // at EXECUTION time (not construction time), and the AgentLoop runs only
+  // after `Agent.open()` has fully resolved — so by the time any tool can
+  // execute, `agentRef.current` is guaranteed to be the live Agent.
+  //
+  // The ref is a local `const` (lexically scoped to constructAgent), NOT a
+  // module-level mutable — one independent ref per Agent. Once back-filled, it
+  // stays non-null for the Agent's lifetime.
+  const agentRef: { current: Agent | null } = { current: null };
+
   const ctx: ToolContext = {
     spaceId,
     worldId: worldId as WorldId,
     approvalGate,
     autoExecuteDangerousTools,
+    planAccess: {
+      // `get` reads the live `Agent.plan`. Used by the `plan` tool only to
+      // compute output counts at execute time — the Plan reminder that
+      // actually enters the model's input is snapshotted separately at
+      // `Agent.run()` entry via the pipeline's plan-injector (ADR-0028
+      // invariant 2). Returns `null` defensively if somehow observed before
+      // back-fill (should never happen in practice — see header comment).
+      get: () => agentRef.current?.getPlan() ?? null,
+      // `set` delegates to `Agent.setPlan`, which updates the in-memory value
+      // synchronously and fire-and-forget persists via the SessionStore. The
+      // synchronous throw guards against the (also-should-never-happen) case
+      // of a tool executing before Agent construction completes — per
+      // ADR-0029: "agentRef.current is null only between ctx construction and
+      // Agent.open() resolution; tools execute only after Agent construction".
+      set: (plan) => {
+        if (!agentRef.current) {
+          throw new Error(
+            "planAccess.set called before Agent construction completed — agentRef not back-filled (ADR-0029).",
+          );
+        }
+        return agentRef.current.setPlan(plan);
+      },
+    },
   };
+
   const tools = roleBehavior.buildTools(ctx);
   const loop = new AgentLoop({
     model,
@@ -382,13 +420,20 @@ async function constructAgent(
       ? { temperature: roleBehavior.temperature }
       : {}),
   });
-  const store = new TauriSessionStore({ spaceId, worldId });
-  return Agent.open({
+  const store = new TauriSessionStore({ spaceId, worldId, conversation });
+  const agent = await Agent.open({
     loop,
     store,
     sessionId: conversation.id,
+    roleStaticPrompt: roleBehavior.systemPrompt,
     onPersistError,
   });
+  // Back-fill — tools can now reach the live Agent via planAccess. This is the
+  // single assignment to agentRef.current; it stays non-null for the Agent's
+  // lifetime. Tools cannot execute before this point (AgentLoop runs only
+  // after Agent.open() resolves).
+  agentRef.current = agent;
+  return agent;
 }
 
 // ─── Store factory ────────────────────────────────────────────────────────

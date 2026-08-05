@@ -22,6 +22,7 @@
 
 import type { FlexibleSchema } from "ai";
 
+import type { Plan } from "@/lib/ai/session/plan";
 import { defineTool, type ToolSet } from "@/lib/ai";
 import type { SpaceId, WorldId } from "@/types";
 
@@ -103,12 +104,53 @@ export interface ApprovalGate {
   request(req: ApprovalRequest & { readonly abortSignal: AbortSignal }): Promise<boolean>;
 }
 
+// ─── Plan access ──────────────────────────────────────────────────────────
+
+/**
+ * Runtime access to the Agent's Plan state, used by tools that need to read
+ * or write the working agenda. Currently only the `plan` tool consumes this.
+ *
+ * Per ADR-0029 Phase 1, this is the ONLY new field on {@link ToolContext} for
+ * Plan mode. Phase 2 (Context mode, deferred) adds `threadLookup` separately.
+ *
+ * ## Purity
+ *
+ * The interface is pure (no React/IPC/store dependencies). The concrete
+ * implementation lives in the conversation-runtime layer, where it closes
+ * over the live `Agent` via an agentRef pattern (ADR-0029). Tools see only
+ * this narrow interface — they never touch the Agent directly.
+ *
+ * ## Snapshot semantics (CRITICAL — ADR-0028 invariant 2)
+ *
+ * `get()` returns the LIVE in-memory value of `Agent.plan`. This is safe
+ * because the `plan` tool uses `get()` only to compute output counts at the
+ * moment of execution (right after calling `set()`). The Plan reminder that
+ * enters the model's input is snapshotted separately at `Agent.run()` entry
+ * via the pipeline's plan-injector — `planAccess.get()` is NOT the path by
+ * which the model sees the Plan.
+ *
+ * `set()` mutates `Agent.plan` synchronously AND fire-and-forget persists it.
+ * Per ADR-0028 invariant 2, the new Plan takes effect on the NEXT
+ * `Agent.run()`, not the current one.
+ */
+export interface PlanAccess {
+  /** Read the current Plan (live value). */
+  get(): Plan | null;
+  /**
+   * Write a new Plan. Sets Agent state synchronously; persists
+   * fire-and-forget. Takes effect on the NEXT `Agent.run()` per
+   * ADR-0028 invariant 2.
+   */
+  set(plan: Plan): Promise<void>;
+}
+
 // ─── Tool context ─────────────────────────────────────────────────────────
 
 /**
  * Runtime context injected into every tool factory. Carries the identifiers
  * and infrastructure the tool needs to execute: the Space/World scope, the
- * approval gate, and the agent's consent configuration.
+ * approval gate, the agent's consent configuration, and (for the `plan`
+ * tool) access to the Agent's working Plan state.
  *
  * Constructed per-conversation in the conversation-runtime store and passed
  * to `RoleBehavior.buildTools(ctx)`.
@@ -118,6 +160,11 @@ export interface ToolContext {
   readonly worldId: WorldId;
   readonly approvalGate: ApprovalGate;
   readonly autoExecuteDangerousTools: boolean;
+  /**
+   * Access to the Agent's Plan state. Used by the `plan` tool. Phase 2
+   * adds `threadLookup` for Context mode (ADR-0029).
+   */
+  readonly planAccess: PlanAccess;
 }
 
 // ─── Declarative tool definition ──────────────────────────────────────────

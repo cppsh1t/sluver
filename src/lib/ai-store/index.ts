@@ -27,10 +27,12 @@ import {
   deleteConversation,
   listConversations,
   loadMessages,
+  updateConversationPlan,
 } from "@/api/conversation";
 import {
   toModelMessage,
   type ModelMessage,
+  type Plan,
   type SessionInit,
   type SessionMessage,
   type SessionRecord,
@@ -50,6 +52,19 @@ export interface TauriSessionStoreOptions {
   readonly spaceId: string;
   /** Plain (unbranded) World id from the route param. */
   readonly worldId: string;
+  /**
+   * The conversation this store is bound to. Captured at construction so
+   * {@link loadPlan} can read `meta.plan` straight from the in-memory
+   * {@link Conversation} object — no separate "read meta" IPC needed. The
+   * conversation-runtime always has a fully-resolved Conversation in hand
+   * when it constructs the store (it lives on
+   * `ConversationRuntimeData.conversation`), so passing it through is free.
+   *
+   * Note: the captured reference is the runtime's SNAPSHOT at construction
+   * time. {@link savePlan} deliberately does NOT keep it in sync with later
+   * IPC writes — see its docstring.
+   */
+  readonly conversation: Conversation;
 }
 
 // --- Meta shape (read defensively by createSession) -----------------------
@@ -162,6 +177,92 @@ export class TauriSessionStore implements SessionStore {
         conversationId: sessionId as ConversationId,
         messages: delta.map(sessionMessageToMessage),
       },
+    );
+  }
+
+  // -- Plan (ADR-0028, ADR-0029 Phase 1) --
+
+  /**
+   * Load the Plan for this conversation. The Plan is NOT a message — it lives
+   * at `conversation.meta.plan` and is re-injected into the Derived Model Input
+   * on every subsequent turn by the pipeline's plan-injector (ADR-0028).
+   *
+   * Reads straight from the {@link Conversation} captured at construction —
+   * no IPC round-trip. The `_sessionId` parameter is kept for
+   * {@link SessionStore} contract compliance; the data is already in memory,
+   * keyed by the conversation reference the runtime handed us.
+   *
+   * ## Defensive narrowing (never throws)
+   *
+   * The persisted `meta` could be from an older app version, partially
+   * migrated, or corrupted on disk. The contract says "Never throws — a
+   * missing or malformed Plan resolves to `null`", so every check is
+   * defensive: missing `meta`, non-object `meta`, missing `plan`, or a
+   * `plan` whose `items` is not an array all return `null`. A return of
+   * `null` means "no Plan to inject" — the agent starts with a clean slate.
+   *
+   * ## Boundary cast
+   *
+   * `Conversation.meta` is typed as {@link ConversationMeta} (a `{kind: …}`
+   * discriminable union); the optional `plan` field is written by our own
+   * `updateConversationPlan` IPC (T1). Reading `plan` requires projecting the
+   * typed meta through `Record<string, unknown>` and then casting the
+   * shape-verified candidate back to {@link Plan}. This mirrors the existing
+   * `message.body as ModelMessage` boundary cast below (same justification:
+   * our own IPC wrote it, so the cast is sound) and stays localized to this
+   * one readsite.
+   */
+  async loadPlan(_sessionId: string): Promise<Plan | null> {
+    const { meta } = this.options.conversation;
+    // Defensive: meta is typed ConversationMeta (always an object), but be
+    // resilient to malformed persisted rows from older app versions.
+    if (!meta || typeof meta !== "object") return null;
+    const candidate = (meta as Record<string, unknown>).plan;
+    if (candidate == null) return null;
+    // Shape check — never throw on malformed persisted data.
+    const items = (candidate as Record<string, unknown>).items;
+    if (!Array.isArray(items)) return null;
+    // Normalize empty Plan to `null` per the SessionStore contract:
+    // "Returns null if no Plan has been set OR if the persisted Plan is empty
+    // ({items: []})." Both cases produce no reminder injection. Without this,
+    // a cleared plan (savePlan({items: []})) round-trips as a truthy Plan
+    // with zero items — Agent.plan would be non-null when the contract
+    // promises null.
+    if (items.length === 0) return null;
+    // At this point we trust the shape (our own IPC wrote it). The cast is
+    // the sanctioned boundary cast for this module (mirrors the existing
+    // `message.body as ModelMessage` cast below).
+    return candidate as Plan;
+  }
+
+  /**
+   * Persist a new Plan, replacing any prior Plan wholesale. Routes to the
+   * `update_conversation_plan` IPC (T1), which writes `meta.plan` while
+   * preserving the other meta fields (`kind`, `chapterId`).
+   *
+   * Called by `Agent.setPlan` fire-and-forget — persistence errors route to
+   * `Agent.onPersistError`, never back to the caller. Per ADR-0028 invariant
+   * 2, the new Plan takes effect on the NEXT `Agent.run()` (which snapshots
+   * `Agent.plan` at entry); the in-memory `Agent.plan` was already updated
+   * synchronously by `Agent.setPlan` before this method runs.
+   *
+   * ## Why we don't mutate the captured conversation
+   *
+   * We deliberately do NOT write `this.options.conversation.meta.plan = plan`
+   * in memory. The captured {@link Conversation} is the runtime's snapshot
+   * from construction time; the source of truth for the persisted state is
+   * the DB, and the runtime reconstructs a fresh Conversation from the IPC
+   * layer on the next `list_conversations` / reopen. Mutating the cached
+   * object here would create drift between this cached view and the persisted
+   * truth. The live in-memory source of truth for the current session is
+   * `Agent.plan` — that's what the plan-injector reads at `run()` entry.
+   */
+  async savePlan(sessionId: string, plan: Plan): Promise<void> {
+    await updateConversationPlan(
+      this.options.spaceId,
+      this.options.worldId,
+      sessionId,
+      plan,
     );
   }
 }

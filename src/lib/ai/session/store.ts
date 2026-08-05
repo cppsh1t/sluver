@@ -12,6 +12,7 @@
  */
 
 import type { ModelMessage } from "@/lib/ai/loop";
+import type { Plan } from "./plan";
 
 // ─── Session message ─────────────────────────────────────────────────────
 
@@ -134,6 +135,32 @@ export interface SessionStore {
    * batch atomically and bump the session's `updatedAt`.
    */
   appendMessages(sessionId: string, delta: SessionMessage[]): Promise<void>;
+
+  // ── Plan (used by Agent — ADR-0028, ADR-0029 Phase 1) ──
+
+  /**
+   * Load the current Plan for a session. Returns `null` if no Plan has been set
+   * (the `meta.plan` field is absent) OR if the persisted Plan is empty
+   * (`{items: []}`). Both cases produce no reminder injection. Returns a real
+   * Plan object (possibly with empty items array) only when a non-empty Plan
+   * exists in storage. NOTE: distinguishing "field absent" from "empty items"
+   * is the store implementation's concern; this contract normalizes both to
+   * "no Plan to inject" for the consumer.
+   *
+   * Never throws — a missing or malformed Plan resolves to `null`.
+   */
+  loadPlan(sessionId: string): Promise<Plan | null>;
+
+  /**
+   * Persist a new Plan for a session, replacing any prior Plan wholesale.
+   * Called by the `plan` tool's execute path. The store SHOULD write the
+   * batch atomically and bump the conversation's `updatedAt`.
+   *
+   * Note there is intentionally NO `clearPlan` method — calling
+   * `savePlan({ items: [] })` covers the "agent actively cleared" case,
+   * and that path is good enough for v1 (YAGNI; see ADR-0028 Q5).
+   */
+  savePlan(sessionId: string, plan: Plan): Promise<void>;
 }
 
 // ─── Conversion helpers ──────────────────────────────────────────────────
