@@ -39,6 +39,7 @@ import {
   formatToolOutput,
   type ToolBlockData,
 } from "./message-render";
+import { PlanToolCard } from "./tool-cards/plan-tool-card";
 import { summarizeToolCall } from "./tool-summary";
 import { ToolBody, ToolSummaryLine } from "./tool-cards/tool-body";
 
@@ -46,6 +47,25 @@ interface ToolCardProps {
   readonly tool: ToolBlockData;
   readonly worldId: WorldId;
   readonly conversationId: ConversationId;
+}
+
+/**
+ * Tool-call dispatcher — routes to a dedicated renderer when one exists for the
+ * tool name, otherwise falls through to the generic {@link GenericToolCard}.
+ *
+ * This wrapper intentionally has NO hooks so the per-tool branch can early-
+ * return without violating the Rules of Hooks (a conditional return before a
+ * `useState`/`useTranslation` call in the generic path would be illegal). New
+ * special-case renderers are added as branches here; the generic path is never
+ * disturbed (additive only — Q7.2(a)(i) plan branch).
+ */
+export function ToolCard({ tool, worldId, conversationId }: ToolCardProps) {
+  if (tool.toolName === "plan") {
+    // Plan mode (ADR-0029): render the Plan as a read-only checklist instead
+    // of generic JSON — Q7.2(a)(i).
+    return <PlanToolCard tool={tool} />;
+  }
+  return <GenericToolCard tool={tool} worldId={worldId} conversationId={conversationId} />;
 }
 
 /** Status dot + label + spinner — the left-edge status indicator. */
@@ -131,7 +151,7 @@ function PayloadBlock({
   );
 }
 
-export function ToolCard({ tool, worldId, conversationId }: ToolCardProps) {
+function GenericToolCard({ tool, worldId, conversationId }: ToolCardProps) {
   const { t } = useTranslation("chat");
   const isPending = !!tool.pendingApproval;
   // Expanded by default while running or awaiting approval; collapsed when done.

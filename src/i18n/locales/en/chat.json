@@ -62,6 +62,12 @@
       "summary": "Summary",
       "count": "Count",
       "timezone": "Timezone"
+    },
+    "plan": {
+      "title": "Plan",
+      "progress": "{{done}} of {{total}} done",
+      "updating": "Updating…",
+      "empty": "Plan cleared"
     }
   },
   "consent": {

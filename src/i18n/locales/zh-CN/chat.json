@@ -62,6 +62,12 @@
       "summary": "摘要",
       "count": "数量",
       "timezone": "时区"
+    },
+    "plan": {
+      "title": "计划",
+      "progress": "已完成 {{done}}/{{total}}",
+      "updating": "更新中…",
+      "empty": "计划已清空"
     }
   },
   "consent": {
