@@ -77,6 +77,13 @@ base64 = { version = "0.22", default-features = false }
 # in the dependency tree).
 epub-builder = { version = "0.8", default-features = false, features = ["zip-library"] }
 
+# WebP → PNG transcoding at EPUB export time (src/export.rs). EPUB readers
+# have inconsistent WebP support, so WebP covers/illustrations are transcoded
+# to PNG before embedding. `default-features = false` + `webp` (decode) +
+# `png` (encode) keeps the compiled footprint minimal — no JPEG/GIF/BMP/etc
+# decoders are pulled in.
+image = { version = "0.25", default-features = false, features = ["webp", "png"] }
+
 [dev-dependencies]
 # Filesystem isolation for DbManager / command integration tests (T10 stress test).
 tempfile = "3"

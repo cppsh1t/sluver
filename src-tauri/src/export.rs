@@ -24,6 +24,7 @@
 //! `zip` binary). epub-builder 0.8 depends on `zip ^6`; this coexists with our
 //! direct `zip = "8"` dep (different major versions resolve as separate crates).
 //!
+use std::borrow::Cow;
 use std::io::{Seek, Write};
 
 use epub_builder::{EpubBuilder, EpubContent, ReferenceType, ZipLibrary};
@@ -72,10 +73,11 @@ pub struct ExportedNovel {
     /// Ordered chapters. In EPUB these become `chapter_1.xhtml`,
     /// `chapter_2.xhtml`, … (1-based file naming).
     pub chapters: Vec<ExportedChapter>,
-    /// Optional cover image. The EPUB renderer only accepts `image/jpeg` /
-    /// `image/png`; other mimes (e.g. `image/webp`) are silently skipped as
-    /// defense-in-depth (the caller is expected to filter too). Ignored by the
-    /// TXT renderer — TXT has no notion of a cover.
+    /// Optional cover image. The EPUB renderer accepts `image/jpeg` /
+    /// `image/png` (pass through) and `image/webp` (transcoded to PNG via
+    /// [`transcode_webp_to_png`]); any other mime is silently skipped as
+    /// defense-in-depth. Ignored by the TXT renderer — TXT has no notion of
+    /// a cover.
     pub cover: Option<CoverImage>,
 }
 
@@ -102,22 +104,23 @@ pub struct ExportedScene {
 /// Cover image payload. The caller is responsible for fetching/decoding the
 /// bytes; this struct only carries the raw payload + mime.
 pub struct CoverImage {
-    /// Raw encoded image bytes (JPEG or PNG — see [`Self::mime`]).
+    /// Raw encoded image bytes (WebP/JPEG/PNG — see [`Self::mime`]).
     pub bytes: Vec<u8>,
-    /// `"image/jpeg"` or `"image/png"`. Any other value (e.g. `image/webp`)
-    /// causes the EPUB renderer to silently skip the cover — EPUB readers have
-    /// inconsistent webp support.
+    /// `"image/webp"`, `"image/jpeg"`, or `"image/png"`. JPEG/PNG are embedded
+    /// as-is; WebP is transcoded to PNG by the EPUB renderer (EPUB readers
+    /// have inconsistent WebP support). Any other mime is silently skipped.
     pub mime: String,
 }
 
 /// One scene illustration. The caller (IPC command) loads these from the
 /// `scene_images` table (`image_blob` / `image_mime`, ordered by `position`).
-/// Only `image/jpeg` and `image/png` are embedded in EPUB; other mimes are
-/// silently skipped (same gating as [`CoverImage`]).
+/// JPEG/PNG are embedded directly in EPUB; WebP is transcoded to PNG; any
+/// other mime is silently skipped (same gating as [`CoverImage`]).
 pub struct ExportedImage {
-    /// Raw encoded image bytes (JPEG or PNG — see [`Self::mime`]).
+    /// Raw encoded image bytes (WebP/JPEG/PNG — see [`Self::mime`]).
     pub bytes: Vec<u8>,
-    /// `"image/jpeg"` or `"image/png"`. Other values → silently skipped.
+    /// `"image/webp"`, `"image/jpeg"`, or `"image/png"`. Other values →
+    /// silently skipped.
     pub mime: String,
 }
 
@@ -138,6 +141,9 @@ pub enum ExportError {
     /// `epub-builder` returned an error at any stage (metadata, content, zip,
     /// generate). The dynamic message is the only useful information.
     EpubBuild(String),
+    /// WebP → PNG transcode failed (malformed WebP bytes, decode error, or PNG
+    /// encode error). Carries a human-readable detail string.
+    ImageTranscode(String),
     /// Raw IO error writing to the caller-supplied sink. Preserved so callers
     /// can distinguish infrastructure failures from EPUB-structure failures.
     /// Currently unused — epub-builder wraps all IO into `EpubBuild` — but kept
@@ -150,6 +156,7 @@ impl std::fmt::Display for ExportError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ExportError::EpubBuild(msg) => write!(f, "epub build failed: {msg}"),
+            ExportError::ImageTranscode(msg) => write!(f, "image transcode failed: {msg}"),
             ExportError::Io(err) => write!(f, "io error during epub generation: {err}"),
         }
     }
@@ -237,14 +244,16 @@ pub fn generate_txt(novel: &ExportedNovel) -> String {
 ///
 /// Metadata: title (always), author ([`UNKNOWN_AUTHOR`] if empty),
 /// description (only if non-empty), language ([`EPUB_LANGUAGE`]). A cover image
-/// is attached iff `novel.cover` is `Some` AND its mime is `image/jpeg` /
-/// `image/png`; anything else (e.g. `image/webp`) is silently skipped. An
-/// inline TOC page is inserted at the front so the reader shows a navigable
-/// contents listing. Each chapter becomes one `chapter_{i}.xhtml` (1-based)
-/// containing an `<h1>` title, then per-scene paragraph-wrapped prose followed
-/// by any scene illustrations (each a `<p><img .../></p>` referencing an
-/// embedded resource at `images/ch{N}_sc{N}_{N}.{ext}`; non-jpeg/png images
-/// are silently skipped).
+/// is attached iff `novel.cover` is `Some` AND its mime is one of
+/// `image/jpeg` / `image/png` / `image/webp`; JPEG/PNG pass through directly,
+/// WebP is transcoded to PNG via [`transcode_webp_to_png`]. Any other mime is
+/// silently skipped. An inline TOC page is inserted at the front so the reader
+/// shows a navigable contents listing. Each chapter becomes one
+/// `chapter_{i}.xhtml` (1-based) containing an `<h1>` title, then per-scene
+/// paragraph-wrapped prose followed by any scene illustrations (each a
+/// `<p><img .../></p>` referencing an embedded resource at
+/// `images/ch{N}_sc{N}_{N}.{ext}`; JPEG/PNG pass through, WebP is transcoded
+/// to PNG, non-recognized mimes are silently skipped).
 pub fn generate_epub<W: Write + Seek>(novel: &ExportedNovel, w: W) -> Result<(), ExportError> {
     let zip = ZipLibrary::new()?;
     let mut builder = EpubBuilder::new(zip)?;
@@ -266,7 +275,7 @@ pub fn generate_epub<W: Write + Seek>(novel: &ExportedNovel, w: W) -> Result<(),
     // Stylesheet — linked by every chapter XHTML document.
     builder.stylesheet(MINIMAL_CSS.as_bytes())?;
 
-    // Cover image (jpeg/png only — webp etc. silently skipped).
+    // Cover image (jpeg/png pass through; webp transcoded to png; others skipped).
     if let Some(cover) = &novel.cover {
         match cover.mime.as_str() {
             "image/jpeg" => {
@@ -275,9 +284,15 @@ pub fn generate_epub<W: Write + Seek>(novel: &ExportedNovel, w: W) -> Result<(),
             "image/png" => {
                 builder.add_cover_image("cover.png", cover.bytes.as_slice(), "image/png")?;
             }
+            "image/webp" => {
+                // Transcode WebP → PNG (EPUB readers have inconsistent WebP
+                // support). The transcoded bytes replace the original; the
+                // manifest path is `cover.png`.
+                let png = transcode_webp_to_png(&cover.bytes)?;
+                builder.add_cover_image("cover.png", png.as_slice(), "image/png")?;
+            }
             _ => {
-                // Unsupported mime (e.g. image/webp) — skip. Defense-in-depth
-                // even though the IPC command is expected to filter too.
+                // Truly unsupported mime — skip. Defense-in-depth.
             }
         }
     }
@@ -311,12 +326,18 @@ pub fn generate_epub<W: Write + Seek>(novel: &ExportedNovel, w: W) -> Result<(),
             }
 
             for (img_idx, image) in scene.images.iter().enumerate() {
-                // Only jpeg/png are embedded; other mimes (e.g. webp) skipped.
-                let ext = match image.mime.as_str() {
-                    "image/jpeg" => "jpeg",
-                    "image/png" => "png",
+                // JPEG/PNG pass through (borrowed); WebP is transcoded to PNG
+                // (owned); any other mime is silently skipped.
+                let (embed_bytes, ext): (Cow<[u8]>, &str) = match image.mime.as_str() {
+                    "image/jpeg" => (Cow::Borrowed(image.bytes.as_slice()), "jpeg"),
+                    "image/png" => (Cow::Borrowed(image.bytes.as_slice()), "png"),
+                    "image/webp" => {
+                        let png = transcode_webp_to_png(&image.bytes)?;
+                        (Cow::Owned(png), "png")
+                    }
                     _ => continue,
                 };
+                let mime = if ext == "jpeg" { "image/jpeg" } else { "image/png" };
                 // Unique path across the whole book. epub-builder places
                 // resources under `OEBPS/` automatically, so the path is given
                 // WITHOUT an `OEBPS/` prefix; the `<img src>` is relative and
@@ -325,11 +346,7 @@ pub fn generate_epub<W: Write + Seek>(novel: &ExportedNovel, w: W) -> Result<(),
                 body.push_str("<p><img src=\"");
                 body.push_str(&img_path);
                 body.push_str("\" alt=\"\"/></p>\n");
-                builder.add_resource(
-                    img_path.as_str(),
-                    image.bytes.as_slice(),
-                    image.mime.as_str(),
-                )?;
+                builder.add_resource(img_path.as_str(), embed_bytes.as_ref(), mime)?;
             }
         }
 
@@ -345,6 +362,26 @@ pub fn generate_epub<W: Write + Seek>(novel: &ExportedNovel, w: W) -> Result<(),
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────
+
+/// Decode WebP bytes and re-encode as PNG.
+///
+/// Used by [`generate_epub`] to convert WebP covers / scene illustrations into
+/// PNG before embedding — EPUB readers have inconsistent WebP support, so the
+/// EPUB renderer only embeds JPEG/PNG resources. Rather than silently dropping
+/// WebP images (the previous behavior, which caused images to vanish from
+/// exports with zero diagnostic), this helper transcodes them to PNG at export
+/// time.
+///
+/// Errors are mapped to [`ExportError::ImageTranscode`] with a stage-tagged
+/// detail string (`"decode webp: …"` / `"encode png: …"`).
+fn transcode_webp_to_png(webp_bytes: &[u8]) -> Result<Vec<u8>, ExportError> {
+    let img = image::load_from_memory_with_format(webp_bytes, image::ImageFormat::WebP)
+        .map_err(|e| ExportError::ImageTranscode(format!("decode webp: {e}")))?;
+    let mut png_bytes = Vec::new();
+    img.write_to(&mut std::io::Cursor::new(&mut png_bytes), image::ImageFormat::Png)
+        .map_err(|e| ExportError::ImageTranscode(format!("encode png: {e}")))?;
+    Ok(png_bytes)
+}
 
 /// Wrap a pre-built `<body>` inner-HTML string in a complete XHTML document
 /// scaffold: XML declaration, root `<html>` (XHTML namespace), `<head>` with a
@@ -482,6 +519,24 @@ mod tests {
             ],
             cover: None,
         }
+    }
+
+    /// Generate a minimal valid WebP image (1×1 white pixel) for testing the
+    /// WebP → PNG transcode path. Uses the same `image` crate the production
+    /// transcoder uses, guaranteeing the output is decodable.
+    fn make_test_webp() -> Vec<u8> {
+        let img = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+            1,
+            1,
+            image::Rgba([255, 255, 255, 255]),
+        ));
+        let mut bytes = Vec::new();
+        img.write_to(
+            &mut std::io::Cursor::new(&mut bytes),
+            image::ImageFormat::WebP,
+        )
+        .expect("test fixture: encode webp");
+        bytes
     }
 
     // ─── escape_xhtml ───────────────────────────────────────────────────
@@ -758,17 +813,27 @@ mod tests {
     }
 
     #[test]
-    fn test_epub_skips_webp_cover_silently() {
+    fn test_epub_transcodes_webp_cover_to_png() {
+        // A WebP cover should be transcoded to PNG and embedded in the archive
+        // as `cover.png` — NOT silently skipped (the previous behavior).
         let mut novel = sample_novel();
         novel.cover = Some(CoverImage {
-            bytes: b"fake-webp-bytes-not-a-real-image".to_vec(),
+            bytes: make_test_webp(),
             mime: "image/webp".to_string(),
         });
         let mut sink = Cursor::new(Vec::<u8>::new());
-        // Must not panic / error — webp is silently skipped.
-        let result = generate_epub(&novel, &mut sink);
-        assert!(result.is_ok(), "webp cover should be skipped, not fatal");
-        assert!(sink.into_inner().starts_with(b"PK"));
+        generate_epub(&novel, &mut sink).expect("webp cover should be transcoded, not fail");
+        let bytes = sink.into_inner();
+        assert!(bytes.starts_with(b"PK"), "epub output must be a ZIP");
+
+        let archive =
+            ZipArchive::new(Cursor::new(bytes)).expect("output must be a readable zip");
+        let names: Vec<String> = archive.file_names().map(String::from).collect();
+        let has_cover_png = names.iter().any(|n| n.ends_with("cover.png"));
+        assert!(
+            has_cover_png,
+            "webp cover should be transcoded to cover.png; entries: {names:?}"
+        );
     }
 
     #[test]
@@ -838,10 +903,10 @@ mod tests {
 
     #[test]
     fn test_epub_embeds_scene_images_as_resources() {
-        // One chapter, one scene, three images (jpeg + png embedded, webp
-        // skipped). Verifies the EPUB archive actually contains the embedded
-        // image resources under their generated paths, and does NOT contain a
-        // webp entry.
+        // One chapter, one scene, three images (jpeg + png pass through, webp
+        // transcoded to png). Verifies the EPUB archive actually contains the
+        // embedded image resources under their generated paths, including the
+        // transcoded webp → png entry.
         let novel = ExportedNovel {
             title: "With Images".to_string(),
             author: String::new(),
@@ -860,7 +925,7 @@ mod tests {
                             mime: "image/png".to_string(),
                         },
                         ExportedImage {
-                            bytes: b"webp-bytes".to_vec(),
+                            bytes: make_test_webp(),
                             mime: "image/webp".to_string(),
                         },
                     ],
@@ -884,8 +949,17 @@ mod tests {
         assert!(has_jpeg, "jpeg image missing from zip; entries: {names:?}");
         assert!(has_png, "png image missing from zip; entries: {names:?}");
 
+        // The webp image (index 2) should be transcoded to PNG and appear at
+        // the same path slot with a `.png` extension — NOT silently dropped.
+        let has_transcoded_webp = names.iter().any(|n| n.ends_with("images/ch1_sc0_2.png"));
+        assert!(
+            has_transcoded_webp,
+            "webp image should be transcoded to png at ch1_sc0_2.png; entries: {names:?}"
+        );
+
+        // No raw .webp files should exist in the archive.
         let has_webp = names.iter().any(|n| n.ends_with(".webp"));
-        assert!(!has_webp, "webp image should be skipped; entries: {names:?}");
+        assert!(!has_webp, "no raw webp should be in the archive; entries: {names:?}");
     }
 
     #[test]
@@ -917,12 +991,15 @@ mod tests {
     fn test_export_error_displays() {
         let e1 = ExportError::EpubBuild("boom".to_string());
         assert!(e1.to_string().contains("boom"));
+        let e2 = ExportError::ImageTranscode("decode failed".to_string());
+        assert!(e2.to_string().contains("decode failed"));
         let io_err = std::io::Error::other("disk full");
-        let e2 = ExportError::Io(io_err);
-        assert!(e2.to_string().contains("disk full"));
+        let e3 = ExportError::Io(io_err);
+        assert!(e3.to_string().contains("disk full"));
         // It implements std::error::Error (compile-time check via trait method).
         fn _assert_error<T: std::error::Error>(_: &T) {}
         _assert_error(&e1);
         _assert_error(&e2);
+        _assert_error(&e3);
     }
 }
