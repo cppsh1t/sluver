@@ -1,9 +1,11 @@
 /**
- * AI module barrel — provider resolution + agent runtime + session layer.
+ * AI module barrel — provider resolution + agent runtime + session layer
+ * + pipeline (Derived Model Input transforms).
  *
  * - {@link ./provider} — `ResolvedModelConfig → LanguageModel` (provider 抹平层)
  * - {@link ./loop}     — `AgentLoop`: stateless single-run tool-calling loop over `streamText`
  * - {@link ./session}  — `Agent`: stateful multi-turn wrapper with conversation memory + persistence
+ * - {@link ./pipeline} — `composeSystemPrompt`: pure Plan-mode system-prompt injector (ADR-0028)
  */
 
 // ─── Provider ────────────────────────────────────────────────────────────
@@ -54,8 +56,16 @@ export {
   type AgentOptions,
   toModelMessage,
   toSessionMessage,
+  type Plan,
+  type PlanItem,
+  type PlanStatus,
   type SessionInit,
   type SessionMessage,
   type SessionRecord,
   type SessionStore,
 } from "./session";
+
+// ─── Pipeline (Derived Model Input transforms — ADR-0028) ────────────────
+
+export { composeSystemPrompt } from "./pipeline";
+export type { SystemPromptComposerInput } from "./pipeline";
