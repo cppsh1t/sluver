@@ -215,3 +215,52 @@ pub fn append_messages(
         Ok(())
     })
 }
+
+/// Set, replace, or clear a conversation's Plan — the per-Conversation
+/// working agenda stored at `meta.plan` (ADR-0028 / ADR-0029 Phase 1).
+///
+/// `Some(value)` writes `meta.plan` via SQLite `json_set` (other meta fields
+/// like `kind` / `chapterId` are preserved); `None` removes the key via
+/// `json_remove`. `updated_at` is bumped so `list_conversations` reorders.
+/// The Plan payload stays opaque JSON (`serde_json::Value`) — no typed Rust
+/// struct, continuing the "meta is opaque JSON" convention.
+// `plan` is skipped: it is user creative content (TODO items routinely
+// reference entity names, scene/chapter titles, plot points) and the
+// redaction policy classifies such content as TRACE-only or NEVER loggable.
+// Mirrors `append_messages` skipping `input` (commands/conversation.rs:184).
+#[tracing::instrument(skip(state, plan), fields(conversation_id))]
+#[tauri::command]
+pub fn update_conversation_plan(
+    space_id: String,
+    world_id: String,
+    conversation_id: String,
+    plan: Option<serde_json::Value>,
+    state: State<'_, DbManager>,
+) -> Result<(), DbError> {
+    tracing::Span::current().record("conversation_id", conversation_id.as_str());
+    let now = now_iso();
+
+    state.with_world(&space_id, &world_id, |conn| {
+        let affected = match &plan {
+            Some(value) => {
+                let plan_str = serde_json::to_string(value)?;
+                conn.execute(
+                    "UPDATE conversations
+                     SET meta = json_set(meta, '$.plan', ?1), updated_at = ?2
+                     WHERE id = ?3",
+                    params![plan_str, now, &conversation_id],
+                )?
+            }
+            None => conn.execute(
+                "UPDATE conversations
+                 SET meta = json_remove(meta, '$.plan'), updated_at = ?2
+                 WHERE id = ?3",
+                params![now, &conversation_id],
+            )?,
+        };
+        if affected == 0 {
+            return Err(DbError::NotFound("Conversation", conversation_id));
+        }
+        Ok(())
+    })
+}
