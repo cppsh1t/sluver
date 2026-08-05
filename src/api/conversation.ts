@@ -27,6 +27,26 @@ export function deleteConversation(spaceId: string, worldId: WorldId, id: Conver
   return call<void>('delete_conversation', { spaceId, worldId, id });
 }
 
+/**
+ * Update a conversation's Plan (the per-Conversation working agenda, ADR-0028).
+ * Pass `null` to remove the plan field; pass a Plan object to set/replace it.
+ * The Plan is stored at `meta.plan`; other meta fields (kind, chapterId) are preserved.
+ */
+// TODO: tighten to Plan type once src/lib/ai/session/plan.ts lands (T2).
+export function updateConversationPlan(
+  spaceId: string,
+  worldId: string,
+  conversationId: string,
+  plan: unknown | null,
+): Promise<void> {
+  return call<void>('update_conversation_plan', {
+    spaceId,
+    worldId,
+    conversationId,
+    plan,
+  });
+}
+
 // ─── Message ─────────────────────────────────────────────────────────────────
 
 export function loadMessages(
