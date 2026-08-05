@@ -112,6 +112,13 @@ export interface AgentLoopOptions {
 export interface AgentLoopRunInput {
   /** Conversation thread (no system message). Never mutated by the agent. */
   messages: ModelMessage[];
+  /**
+   * Optional per-run override of `AgentLoopOptions.systemPrompt`. Use when
+   * the system prompt depends on live session state (e.g. Plan mode
+   * reminder injection — ADR-0028). When omitted, the constructor's
+   * `systemPrompt` is used as the fallback.
+   */
+  systemPrompt?: string;
   /** Optional external abort signal; forwarded to the internal controller. */
   abortSignal?: AbortSignal;
 }

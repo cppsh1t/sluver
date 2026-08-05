@@ -232,6 +232,7 @@ export class AgentLoop {
           runId,
           signal,
           emitter,
+          input.systemPrompt,
         );
 
         if (outcome.kind === "aborted") {
@@ -328,6 +329,7 @@ export class AgentLoop {
     runId: string,
     signal: AbortSignal,
     emitter: AgentEmitter,
+    systemPrompt: string | undefined,
   ): Promise<StepOutcome> {
     let stepError: AgentError | undefined;
     let abortedDuringStream = false;
@@ -346,7 +348,7 @@ export class AgentLoop {
     try {
       result = streamText({
         model: this.#options.model,
-        system: this.#options.systemPrompt,
+        system: systemPrompt ?? this.#options.systemPrompt,
         messages,
         tools: this.#options.tools,
         stopWhen: isStepCount(1),
