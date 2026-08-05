@@ -106,6 +106,10 @@ _Avoid_: Chat, Thread, Session, Dialogue
 A single turn within a Conversation — the app-layer, typed counterpart of the library's `SessionMessage` (ADR-0020). Carries role (user / assistant / tool), content, identity (`id`), and timestamp. The atomic unit of a Conversation's history.
 _Avoid_: ChatMessage, StoredMessage, MessageRecord
 
+**Plan**:
+A persisted, Conversation-scoped working agenda authored by the Agent via the `plan` tool — an ordered TODO list that implicitly guides the Agent's subsequent turns within that Conversation. At most one **active Plan** per Conversation; calling the `plan` tool replaces the prior Plan wholesale (last-write-wins). Persistence is per-Conversation (lives in `conversations.meta.plan`); the Plan survives app restarts and Conversation switches. The Plan is **NOT** a Message — it is never appended to the persisted thread; instead it is re-injected into the Derived Model Input on every subsequent turn (see ADR-0028).
+_Avoid_: TodoList, Scratchpad, Agenda, Outline, Checklist
+
 **Launcher**:
 The app's anchor window outside any Space — the OS window whose label is the statically configured `"main"` (`tauri.conf.json`), rendering the Space picker / landing UI where Spaces are selected and created. Distinct from Space windows in two ways: it hides to tray on close (keeping the process alive) rather than being destroyed, and closing all Space windows does NOT auto-show it — the user returns to it via the tray menu or by relaunching the app (which auto-reopens `lastOpenedSpaceId`). Identity is its fixed label `"main"` (single instance).
 _Avoid_: Dashboard, Home, Welcome screen, Hub, Shell
@@ -115,6 +119,20 @@ _Avoid_: Dashboard, Home, Welcome screen, Hub, Shell
 **SessionMessage**:
 A persisted conversation message — a `ModelMessage` enriched with identity (`id`, UUID v7), session binding (`sessionId`), and timestamp (`createdAt`). The atomic unit of conversation history. The session layer converts freely between `SessionMessage` (persisted, UI-ready) and `ModelMessage` (SDK-internal) by adding or stripping the three metadata fields.
 _Avoid_: ChatMessage, StoredMessage, MessageRecord
+
+### Message layers
+
+**Persisted Thread**:
+The append-only, never-transformed conversation history owned by an Agent — the single source of truth for what was actually said in a Conversation. Physically `Agent.messages: SessionMessage[]`, mirrored row-for-row in the `messages` table. The user-visible message list renders this layer verbatim; the model NEVER sees it directly. (See ADR-0028.)
+_Avoid_: Source Thread, Conversation Thread, Message History
+
+**Derived Model Input**:
+The `ModelMessage[]` array actually passed to `AgentLoop.run` on each turn — a pure function of the Persisted Thread, recomputed from scratch every run. Composed by the derivation pipeline (Plan reminder injection, tool-call compaction). Never persisted. Never shown to the user. (See ADR-0028.)
+_Avoid_: Live Input, Effective Messages, Model Context
+
+**Run Delta**:
+The `responseMessages` slice returned by `AgentLoop` at run resolution — the model's new contributions for this turn. Appended verbatim to the Persisted Thread (no reverse-transform). Carries text, reasoning, tool-call, and tool-result parts exactly as the model produced them. (See ADR-0028.)
+_Avoid_: Response Delta, Turn Output
 
 ## Conventions
 

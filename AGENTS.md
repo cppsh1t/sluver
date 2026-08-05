@@ -33,6 +33,8 @@ Tauri v2 desktop app for **worldbuilding & novel writing**. React 19 + TypeScrip
 - [ADR-0025](./docs/adr/0025-tool-consent-execute-blocking-gate.md) — Tool consent via execute-blocking approval gate
 - [ADR-0026](./docs/adr/0026-timemapper-architecture.md) — TimeMapper: user-authored JS, output-only, Web Worker isolation
 - [ADR-0027](./docs/adr/0027-novel-export-epub-and-txt.md) — Novel export as EPUB + TXT (Rust-side generation, no MOBI); `Novel.author` field; single `export_novel` aggregation command
+- [ADR-0028](./docs/adr/0028-three-layer-message-model.md) — Three-layer message model (Persisted Thread / Derived Model Input / Run Delta) underpinning Plan and Context modes
+- [ADR-0029](./docs/adr/0029-toolcontext-extension-for-plan-and-context-modes.md) — ToolContext extension: `planAccess` (Phase 1, Plan mode) + `threadLookup` (Phase 2, Context mode — designed, deferred)
 
 ## Git commit style
 
