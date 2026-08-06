@@ -34,14 +34,16 @@ import {
   type AgentEvent,
   type AgentRunHandle,
   type LanguageModel,
+  type LanguageModelUsage,
   type SessionMessage,
 } from "@/lib/ai";
+import { loadMessages as loadMessagesIpc } from "@/api/conversation";
 import { createAgentEventLogger } from "@/lib/ai/agent-logging";
 import { getRoleBehavior } from "@/lib/ai-roles";
 import { TauriSessionStore } from "@/lib/ai-store";
 import { logger } from "@/lib/logger";
 import type { ApprovalGate, ConsentLevel, ToolContext } from "@/lib/tools/types";
-import type { Conversation, SpaceId, WorldId } from "@/types";
+import type { Conversation, Message, SpaceId, WorldId } from "@/types";
 
 // ─── Public types ─────────────────────────────────────────────────────────
 
@@ -154,10 +156,58 @@ export interface StreamState {
   readonly pendingApprovals: Record<string, PendingApproval>;
 }
 
+/**
+ * Per-message persisted token usage (ADR-0030). Surfaces `inputTokens` /
+ * `outputTokens` for a single message row — both nullable to preserve the
+ * "unknown" vs "real zero" distinction end to end (ADR-0030 §4). Only the
+ * turn's last assistant message carries non-null values; the rest are
+ * `null`/absent. Keyed by message id (NOT session/message index — message
+ * ids are stable UUID v4).
+ *
+ * This type lives on `view.messageUsages` (a separate channel from
+ * `view.messages`, which is `SessionMessage[]` — the pure library's
+ * `SessionMessage` shape stays usage-free per ADR-0019).
+ */
+export interface MessageUsage {
+  readonly inputTokens: number | null;
+  readonly outputTokens: number | null;
+}
+
 /** The reactive slice the UI renders for one conversation. */
 export interface ConversationView {
   /** Persisted thread (loaded on Agent open; refreshed after each run). */
   readonly messages: SessionMessage[];
+  /**
+   * Per-message token usage, keyed by message id (ADR-0030). Populated from
+   * the `messages.usage_input_tokens` / `usage_output_tokens` columns on
+   * Agent load and updated incrementally on each run's finalization. Only
+   * the turn's last assistant row has non-null values; other rows are
+   * absent from this map entirely (so "key not present" ⇒ "no usage for
+   * this message" — never confuse with a real zero). UI consumers SHOULD
+   * treat absence as "no data" and `null` as "provider reported unknown."
+   */
+  readonly messageUsages: Record<string, MessageUsage>;
+  /**
+   * Ephemeral token usage for the most recent turn (ADR-0030 §5/§6). Carries
+   * the full {@link LanguageModelUsage} shape — including cache/reasoning
+   * breakdowns that are NOT persisted but are useful for a live "this turn
+   * hit X% cache" indicator. Reset to `undefined` at the start of each
+   * `send` (cleared in the same patch that wipes `stream`) and re-set on
+   * run finalization. `undefined` for a freshly loaded conversation until
+   * the first message is sent.
+   */
+  readonly lastTurnUsage?: LanguageModelUsage;
+  /**
+   * Context-occupancy numerator (ADR-0030 §6): the LAST completed step's
+   * `inputTokens` — i.e. the live context size right now. Distinct from
+   * `lastTurnUsage.inputTokens`, which SUMS input across all steps of the
+   * turn (cost view, ~N× this value on an N-step turn) and is the WRONG
+   * number for occupancy. Sourced from `result.steps.at(-1)?.usage?.inputTokens`
+   * on run finalization. `undefined` under the same conditions as
+   * `lastTurnUsage` (fresh load, between turns, while streaming) and also
+   * when the last step reported no usage.
+   */
+  readonly lastStepInputTokens?: number;
   /** Live streaming state; `null` when idle. */
   readonly stream: StreamState | null;
   readonly isRunning: boolean;
@@ -230,12 +280,59 @@ export interface ConversationRuntimeState {
 /** Stable empty view for conversations not yet in the map (selector fallback). */
 export const EMPTY_VIEW: ConversationView = {
   messages: [],
+  messageUsages: {},
+  // lastTurnUsage intentionally omitted — `undefined` until first turn.
   stream: null,
   isRunning: false,
   error: null,
   stopReason: null,
   draft: "",
 };
+
+/**
+ * Build a `messageUsages` map from a fresh {@link Message} IPC payload.
+ *
+ * Only rows where BOTH usage columns are NULL are skipped — every row that
+ * carries at least one of `usageInputTokens` / `usageOutputTokens` lands in
+ * the map (so a partial provider report that omits one half still surfaces
+ * the half it reported). `null` is preserved verbatim (the UI distinguishes
+ * "provider reported unknown" from "no data"); an absent key means "no
+ * usage for this message" (never confuse with a real `0`).
+ *
+ * Per ADR-0030 §2, only the turn's last assistant message should carry
+ * non-null values — but this helper is defensive: it does not enforce that
+ * invariant, it merely reports whatever the columns hold.
+ */
+function buildMessageUsages(
+  messages: readonly Message[],
+): Record<string, MessageUsage> {
+  const map: Record<string, MessageUsage> = {};
+  for (const m of messages) {
+    const input = m.usageInputTokens ?? null;
+    const output = m.usageOutputTokens ?? null;
+    // Skip rows where the DB wrote NULL on both — they are the majority
+    // (every user / tool / non-last-assistant message). Keeping them out
+    // shrinks the map and gives UI consumers a clean "key present ⇒ data"
+    // signal.
+    if (input === null && output === null) continue;
+    map[m.id] = { inputTokens: input, outputTokens: output };
+  }
+  return map;
+}
+
+/**
+ * Find the id of the LAST `role === "assistant"` message in a list, or
+ * `null` if there is none. Used by run finalization to attach per-turn
+ * usage to the correct message id (ADR-0030 §2).
+ */
+function lastAssistantMessageId(
+  messages: readonly SessionMessage[],
+): string | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === "assistant") return messages[i].id;
+  }
+  return null;
+}
 
 function getData(
   state: ConversationRuntimeState,
@@ -580,11 +677,37 @@ export function createConversationRuntimeStore(
           gate,
           autoExecuteDangerousTools,
         );
+        // ADR-0030 read path — pull the persisted Message rows (with usage
+        // columns) STRAIGHT from the IPC, bypassing TauriSessionStore
+        // (which strips usage to keep SessionMessage pure-library — ADR-
+        // 0019). The two load paths are not redundant: SessionMessage[]
+        // feeds the Agent's in-memory thread (pure-lib contract), the
+        // usage columns feed `view.messageUsages` (app-layer UI surface).
+        const persistedMessages = await loadMessagesIpc(
+          spaceId,
+          worldId as WorldId,
+          data.conversation.id,
+        ).catch((e: unknown) => {
+          // Defensive: usage is best-effort UI metadata; a failure here
+          // MUST NOT block the runtime (the Agent already loaded its
+          // thread successfully). Log + fall back to an empty map.
+          logger.warn("conversation.usage.load_failed", {
+            conversation_id: data.conversation.id,
+            world_id: worldId,
+            error: e instanceof Error ? e.message : String(e),
+          });
+          return [] as Message[];
+        });
         patchData(worldId, conversationId, (d) => ({
           ...d,
           agent,
           agentLoading: false,
-          view: { ...d.view, messages: [...agent.getMessages()], error: null },
+          view: {
+            ...d.view,
+            messages: [...agent.getMessages()],
+            messageUsages: buildMessageUsages(persistedMessages),
+            error: null,
+          },
         }));
         return agent;
       } catch (e) {
@@ -642,9 +765,20 @@ export function createConversationRuntimeStore(
         if (!agent) return; // resolveAgent set view.error.
 
         // Clear error + flip to running. Stream is set after we have the runId.
+        // `lastTurnUsage` is reset here so the previous turn's value does not
+        // linger while the new run is in-flight (ADR-0030 — it gets re-set on
+        // finalization).
         patchData(worldId, conversationId, (d) => ({
           ...d,
-          view: { ...d.view, error: null, isRunning: true, stream: null, stopReason: null },
+          view: {
+            ...d.view,
+            error: null,
+            isRunning: true,
+            stream: null,
+            stopReason: null,
+            lastTurnUsage: undefined,
+            lastStepInputTokens: undefined,
+          },
         }));
 
         let handle: AgentRunHandle;
@@ -919,17 +1053,41 @@ export function createConversationRuntimeStore(
         // The result NEVER rejects (ADR-0018); the .catch is defensive.
         void handle.result
           .then((result) => {
-            patchData(worldId, conversationId, (d) => ({
-              ...d,
-              runHandle: null,
-              view: {
-                ...d.view,
-                messages: [...agent.getMessages()],
-                isRunning: false,
-                stream: null,
-                stopReason: result.finishReason === "aborted" ? "aborted" : null,
-              },
-            }));
+            // ADR-0030 — surface per-turn usage two ways:
+            //   1. `lastTurnUsage` = the full LanguageModelUsage (with
+            //      cache/reasoning breakdowns) for ephemeral live display.
+            //   2. `messageUsages[lastAssistantId]` = the persisted
+            //      input/output pair, attached to the turn's last assistant
+            //      message id. `undefined → null` per §4. Existing entries
+            //      for earlier messages are preserved (incremental update).
+            patchData(worldId, conversationId, (d) => {
+              const updatedMessages = [...agent.getMessages()];
+              const lastAssistantId = lastAssistantMessageId(updatedMessages);
+              const nextMessageUsages: Record<string, MessageUsage> = {
+                ...d.view.messageUsages,
+              };
+              if (lastAssistantId !== null) {
+                nextMessageUsages[lastAssistantId] = {
+                  inputTokens: result.totalUsage.inputTokens ?? null,
+                  outputTokens: result.totalUsage.outputTokens ?? null,
+                };
+              }
+              return {
+                ...d,
+                runHandle: null,
+                view: {
+                  ...d.view,
+                  messages: updatedMessages,
+                  messageUsages: nextMessageUsages,
+                  lastTurnUsage: result.totalUsage,
+                  lastStepInputTokens:
+                    result.steps[result.steps.length - 1]?.usage?.inputTokens,
+                  isRunning: false,
+                  stream: null,
+                  stopReason: result.finishReason === "aborted" ? "aborted" : null,
+                },
+              };
+            });
           })
           .catch((e) => {
             patchData(worldId, conversationId, (d) => ({
