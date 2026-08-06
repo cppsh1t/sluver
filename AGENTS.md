@@ -35,6 +35,7 @@ Tauri v2 desktop app for **worldbuilding & novel writing**. React 19 + TypeScrip
 - [ADR-0027](./docs/adr/0027-novel-export-epub-and-txt.md) — Novel export as EPUB + TXT (Rust-side generation, no MOBI); `Novel.author` field; single `export_novel` aggregation command
 - [ADR-0028](./docs/adr/0028-three-layer-message-model.md) — Three-layer message model (Persisted Thread / Derived Model Input / Run Delta) underpinning Plan and Context modes
 - [ADR-0029](./docs/adr/0029-toolcontext-extension-for-plan-and-context-modes.md) — ToolContext extension: `planAccess` (Phase 1, Plan mode) + `threadLookup` (Phase 2, Context mode — designed, deferred)
+- [ADR-0030](./docs/adr/0030-token-usage-persistence.md) — Token usage persistence through the SessionStore boundary (per-turn input/output on last assistant message; cache/occupancy kept ephemeral)
 
 ## Git commit style
 

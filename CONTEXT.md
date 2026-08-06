@@ -103,7 +103,7 @@ A persisted, World-scoped multi-turn chat history between the user and an Agent 
 _Avoid_: Chat, Thread, Session, Dialogue
 
 **Message**:
-A single turn within a Conversation — the app-layer, typed counterpart of the library's `SessionMessage` (ADR-0020). Carries role (user / assistant / tool), content, identity (`id`), and timestamp. The atomic unit of a Conversation's history.
+A single turn within a Conversation — the app-layer, typed counterpart of the library's `SessionMessage` (ADR-0020). Carries role (user / assistant / tool), content, identity (`id`), timestamp, and — for assistant messages — optional token-usage metadata recording what that turn cost (ADR-0030). The atomic unit of a Conversation's history.
 _Avoid_: ChatMessage, StoredMessage, MessageRecord
 
 **Plan**:
