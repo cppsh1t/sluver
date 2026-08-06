@@ -437,6 +437,25 @@ const WORLD_MIGRATION_009: &str = r#"
     ALTER TABLE novels ADD COLUMN author TEXT NOT NULL DEFAULT '';
 "#;
 
+/// Migration 10 for each world DB: per-turn token-usage columns on the
+/// `messages` table (ADR-0030). Two nullable `INTEGER` columns hold the
+/// turn's `inputTokens` / `outputTokens` (cross-step summed by `AgentLoop`'s
+/// `totalUsage`); both default to NULL — pre-migration rows and any turn
+/// where the provider did not report a value stay NULL, preserving the
+/// "unknown" vs "real zero" distinction end to end (ADR-0030 §4). Usage
+/// attaches to the turn's LAST `role = "assistant"` message row only
+/// (ADR-0030 §2); user / tool messages never carry it. Only `inputTokens` +
+/// `outputTokens` are persisted — `totalTokens` is redundant and cache/
+/// reasoning breakdowns are real-time signals not worth a column
+/// (ADR-0030 §5). Added as a separate migration so existing world DB files
+/// get the columns via `rusqlite_migration`'s incremental tracking —
+/// modifying the original `WORLD_SQL` would NOT re-run for already-migrated
+/// databases.
+const WORLD_MIGRATION_010: &str = r#"
+    ALTER TABLE messages ADD COLUMN usage_input_tokens INTEGER;
+    ALTER TABLE messages ADD COLUMN usage_output_tokens INTEGER;
+"#;
+
 const WORLD_SLICE: &[M] = &[
     M::up(WORLD_SQL),
     M::up(WORLD_MIGRATION_002),
@@ -447,5 +466,6 @@ const WORLD_SLICE: &[M] = &[
     M::up(WORLD_MIGRATION_007),
     M::up(WORLD_MIGRATION_008),
     M::up(WORLD_MIGRATION_009),
+    M::up(WORLD_MIGRATION_010),
 ];
 pub const WORLD_MIGRATIONS: Migrations = Migrations::from_slice(WORLD_SLICE);

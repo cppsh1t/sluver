@@ -48,6 +48,11 @@ fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<Message> {
         conversation_id: row.get("conversation_id")?,
         body: serde_json::from_str(&body_str).unwrap_or_default(),
         created_at: row.get("created_at")?,
+        // Both columns are nullable INTEGER (ADR-0030 §3); NULL → None,
+        // which serde omits from the JSON payload via
+        // `skip_serializing_if = "Option::is_none"` on the Message struct.
+        usage_input_tokens: row.get("usage_input_tokens")?,
+        usage_output_tokens: row.get("usage_output_tokens")?,
     })
 }
 
@@ -165,7 +170,7 @@ pub fn load_messages(
 ) -> Result<Vec<Message>, DbError> {
     state.with_world(&space_id, &world_id, |conn| {
         let mut stmt = conn.prepare(
-            "SELECT id, conversation_id, body, created_at
+            "SELECT id, conversation_id, body, created_at, usage_input_tokens, usage_output_tokens
              FROM messages
              WHERE conversation_id = ?1
              ORDER BY created_at ASC",
@@ -199,9 +204,16 @@ pub fn append_messages(
         for m in &input.messages {
             let body_str = serde_json::to_string(&m.body)?;
             tx.execute(
-                "INSERT INTO messages (id, conversation_id, body, created_at)
-                 VALUES (?1, ?2, ?3, ?4)",
-                params![m.id, &conversation_id, body_str, m.created_at],
+                "INSERT INTO messages (id, conversation_id, body, created_at, usage_input_tokens, usage_output_tokens)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    m.id,
+                    &conversation_id,
+                    body_str,
+                    m.created_at,
+                    m.usage_input_tokens,
+                    m.usage_output_tokens,
+                ],
             )?;
         }
 

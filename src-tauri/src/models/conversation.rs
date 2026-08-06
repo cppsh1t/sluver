@@ -28,6 +28,14 @@ pub struct Conversation {
 /// handles the round-trip into the `serde_json::Value` field. IDs come from
 /// the client (UUID v4 from the pure lib's `toSessionMessage`); messages are
 /// always ordered by `created_at`, never by id (ADR-0022 §2).
+///
+/// `usage_input_tokens` / `usage_output_tokens` carry the per-turn token
+/// usage (ADR-0030). Usage is a turn-level property; per the ADR's "attach
+/// to the last assistant message" convention (§2), only ONE row per turn
+/// (the last `role = "assistant"`) ever carries non-NULL values — user and
+/// tool messages, plus any assistant row that is not the turn's last, stay
+/// NULL. Both fields are independently NULL when the provider did not
+/// report that half (§4 — preserves "unknown" vs "real zero").
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Message {
@@ -35,6 +43,15 @@ pub struct Message {
     pub conversation_id: String,
     pub body: serde_json::Value,
     pub created_at: String,
+    /// Per-turn input-token count, attached to the turn's last assistant
+    /// message row (ADR-0030 §2). NULL on non-assistant rows, non-last
+    /// assistant rows, pre-migration rows, and any turn where the provider
+    /// omitted `inputTokens`. A real `0` is stored verbatim (§4).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage_input_tokens: Option<i64>,
+    /// Per-turn output-token count — see {@link usage_input_tokens}.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage_output_tokens: Option<i64>,
 }
 
 /// Input for `create_conversation`. The server builds `meta` from `kind` +
@@ -54,12 +71,22 @@ pub struct CreateConversationInput {
 /// A single message row supplied by the client for `append_messages`. The id
 /// is client-generated (UUID v4) and stored verbatim — see ADR-0022 for the
 /// v7/v4 id split rationale.
+///
+/// `usage_input_tokens` / `usage_output_tokens` are present ONLY on the
+/// turn's last assistant row (ADR-0030 §2); the client (`TauriSessionStore`)
+/// is responsible for attaching them to exactly one row and leaving them
+/// absent on the rest. `Option<i64>` mirrors {@link Message}; `None` here
+/// means "do not write a value" (the column defaults to NULL).
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageInput {
     pub id: String,
     pub body: serde_json::Value,
     pub created_at: String,
+    #[serde(default)]
+    pub usage_input_tokens: Option<i64>,
+    #[serde(default)]
+    pub usage_output_tokens: Option<i64>,
 }
 
 /// Input for `append_messages` — a batch of messages plus the target
