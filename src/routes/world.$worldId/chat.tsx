@@ -90,16 +90,18 @@ function ChatPage() {
               onPendingUserConsumed={() => setPendingUserText(null)}
             />
             <ConsentBanner worldId={wid} conversationId={selected.id} />
-            <TokenStatusBar
-              spaceId={sid}
-              worldId={wid}
-              conversationId={selected.id}
-              agentConfigName={selected.agentConfigName}
-            />
             <Composer
               worldId={wid}
               conversationId={selected.id}
               onUserSent={setPendingUserText}
+              prefix={
+                <TokenStatusBar
+                  spaceId={sid}
+                  worldId={wid}
+                  conversationId={selected.id}
+                  agentConfigName={selected.agentConfigName}
+                />
+              }
             />
           </>
         ) : (

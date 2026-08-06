@@ -1,6 +1,7 @@
 /**
- * TokenStatusBar — a thin, always-mounted (when there is data) context-
- * occupancy readout that sits directly above the Composer.
+ * TokenStatusBar — a compact context-occupancy readout rendered as a prefix
+ * inside the Composer's input row (left of the textarea). Returns `null`
+ * until there is data, so the slot is invisible on fresh load.
  *
  * Shows the current context-window occupancy for the resolved model, so the
  * user can see how much room is left BEFORE sending (ADR-0030 §6 — the "C1"
@@ -105,23 +106,26 @@ export function TokenStatusBar({
 
   const numerator = formatTokenCount(inputTokens);
 
+  // Rendered as a prefix inside the Composer's input row (left of the
+  // textarea). `shrink-0` + `whitespace-nowrap` keep the readout on one
+  // line and stop it from being squeezed by the flex-1 textarea; `pb-1`
+  // lifts it ~level with a single-line textarea's baseline (the row is
+  // `items-end`, so the readout otherwise bottom-aligns flush).
   return (
-    <div className="bg-background/80 backdrop-blur">
-      <div className="mx-auto flex w-full max-w-3xl items-center px-4 py-1 text-[0.6875rem] tabular-nums text-muted-foreground/60">
-        <span>{t("chat:token.context")}</span>
-        <span className="ml-1.5 font-medium text-muted-foreground/80">
-          {numerator}
-        </span>
-        {window !== null && (
-          <>
-            <span className="mx-1 text-muted-foreground/40">/</span>
-            <span>{formatTokenCount(window)}</span>
-            <span className="ml-1.5 text-muted-foreground/50">
-              ({Math.round((inputTokens / window) * 100)}%)
-            </span>
-          </>
-        )}
-      </div>
+    <div className="flex shrink-0 items-center whitespace-nowrap pb-1 text-[0.6875rem] tabular-nums text-muted-foreground/60">
+      <span>{t("chat:token.context")}</span>
+      <span className="ml-1.5 font-medium text-muted-foreground/80">
+        {numerator}
+      </span>
+      {window !== null && (
+        <>
+          <span className="mx-1 text-muted-foreground/40">/</span>
+          <span>{formatTokenCount(window)}</span>
+          <span className="ml-1.5 text-muted-foreground/50">
+            ({Math.round((inputTokens / window) * 100)}%)
+          </span>
+        </>
+      )}
     </div>
   );
 }

@@ -12,7 +12,7 @@
  * refreshes on run finalization).
  */
 
-import { useCallback, useTransition, type KeyboardEvent } from "react";
+import { useCallback, useTransition, type KeyboardEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -34,12 +34,17 @@ interface ComposerProps {
   readonly conversationId: ConversationId;
   /** Called with the just-sent text so the view can echo it optimistically. */
   readonly onUserSent: (text: string) => void;
+  /** Optional content rendered at the left of the input row, inside the
+   * bordered container (e.g. the context-occupancy readout). Renders
+   * `null` = no prefix, no extra gap. */
+  readonly prefix?: ReactNode;
 }
 
 export function Composer({
   worldId,
   conversationId,
   onUserSent,
+  prefix,
 }: ComposerProps) {
   const { t } = useTranslation("chat");
   const [draft, setDraft] = useDraft(worldId, conversationId);
@@ -76,40 +81,52 @@ export function Composer({
   return (
     <div className="border-t border-border bg-background/80 backdrop-blur">
       <div className="mx-auto w-full max-w-3xl px-4 py-3">
-        <div
-          className={cn(
-            "flex items-end gap-2 rounded-xl border border-input bg-input/20 px-2 py-1.5",
-            "focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30",
-          )}
-        >
-          <Textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder={t("chat:composer.placeholder")}
-            rows={1}
-            aria-label={t("chat:composer.placeholder")}
-            className="max-h-40 min-h-[1.5rem] flex-1 resize-none border-0 bg-transparent px-1 shadow-none focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent"
-          />
-          {isRunning ? (
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => abort(conversationId)}
-              aria-label={t("chat:composer.stop")}
-            >
-              <HugeiconsIcon icon={StopCircleIcon} strokeWidth={2} />
-            </Button>
-          ) : (
-            <Button
-              size="icon"
-              onClick={handleSend}
-              disabled={!canSend}
-              aria-label={t("chat:composer.send")}
-            >
-              <HugeiconsIcon icon={Sent02Icon} strokeWidth={2} />
-            </Button>
-          )}
+        {/* `prefix` (context-occupancy readout) is absolutely positioned in
+            the LEFT GUTTER of the centered input box — `right-full` places
+            its right edge at the input box's left edge, fully out of flow
+            so the input box keeps its full width. `bottom-1.5` aligns the
+            readout near the textarea baseline; `pr-2` is the gap. On narrow
+            viewports where the gutter collapses the readout overflows left
+            (acceptable — it's secondary metadata). */}
+        <div className="relative">
+          {prefix ? (
+            <div className="absolute bottom-1.5 right-full pr-2">{prefix}</div>
+          ) : null}
+          <div
+            className={cn(
+              "flex items-end gap-2 rounded-xl border border-input bg-input/20 px-2 py-1.5",
+              "focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30",
+            )}
+          >
+            <Textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder={t("chat:composer.placeholder")}
+              rows={1}
+              aria-label={t("chat:composer.placeholder")}
+              className="max-h-40 min-h-[1.5rem] flex-1 resize-none border-0 bg-transparent px-1 shadow-none focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent"
+            />
+            {isRunning ? (
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => abort(conversationId)}
+                aria-label={t("chat:composer.stop")}
+              >
+                <HugeiconsIcon icon={StopCircleIcon} strokeWidth={2} />
+              </Button>
+            ) : (
+              <Button
+                size="icon"
+                onClick={handleSend}
+                disabled={!canSend}
+                aria-label={t("chat:composer.send")}
+              >
+                <HugeiconsIcon icon={Sent02Icon} strokeWidth={2} />
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </div>
