@@ -85,12 +85,20 @@ export type AgentConfig = z.infer<typeof agentConfigSchema>;
 
 /**
  * A single model entry in the catalog. Only the fields the frontend needs
- * are surfaced; upstream extras (modalities, pricing, context window) are
- * dropped by the Rust adapter.
+ * are surfaced; other upstream extras (modalities, pricing) are dropped by
+ * the Rust adapter.
  */
 export const catalogModelSchema = z.object({
   id: z.string(),
   name: z.string(),
+  /**
+   * Maximum context window in tokens, surfaced from the upstream `limit`
+   * field by the Rust adapter (`context_window` → camelCase `contextWindow`).
+   * `null` when upstream omits it (common for self-hosted OpenAI-compatible
+   * providers). Consumed by the chat context-occupancy indicator
+   * (ADR-0030 §6). `undefined` only before the catalog query resolves.
+   */
+  contextWindow: z.number().nullable().optional(),
 });
 
 export type CatalogModel = z.infer<typeof catalogModelSchema>;
