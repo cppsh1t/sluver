@@ -86,12 +86,31 @@ pub(crate) struct RawProvider {
 pub(crate) struct RawModel {
     #[serde(default)]
     pub(crate) name: Option<String>,
-    /// Upstream models.dev field `limit` — the model's maximum context
-    /// window in tokens. `Option` because some upstream rows omit it; the
-    /// field name is a single word, so `rename_all = "camelCase"` is a
-    /// no-op here (it would only matter for multi-word fields).
+    /// Upstream models.dev field `limit` — an OBJECT, not a bare number:
+    ///   `"limit": { "context": 204800, "output": 131072 }`
+    /// `Option` because some upstream rows omit it. The field name is a
+    /// single word, so `rename_all = "camelCase"` is a no-op here. See
+    /// {@link RawModelLimit} for the inner shape; `parse_catalog` projects
+    /// `limit.context` -> `CatalogModel.context_window`.
     #[serde(default)]
-    pub(crate) limit: Option<u64>,
+    pub(crate) limit: Option<RawModelLimit>,
+}
+
+/// Inner shape of the upstream `limit` object. `context` is the maximum
+/// context window in tokens (the denominator for the context-occupancy
+/// indicator, ADR-0030 §6); `output` is the max completion length. Both
+/// `#[serde(default)]` so a row reporting only one half still parses.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RawModelLimit {
+    #[serde(default)]
+    pub(crate) context: Option<u64>,
+    /// Max completion length. Currently unread — kept to faithfully mirror
+    /// the upstream shape and document that the field exists (useful if a
+    /// future output-limit indicator needs it).
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub(crate) output: Option<u64>,
 }
 
 /// Persisted alongside the catalog JSON; records when the cached copy was

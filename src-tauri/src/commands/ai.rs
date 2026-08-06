@@ -493,10 +493,13 @@ fn parse_catalog(json: &str) -> Result<ModelsDevCatalog, DbError> {
                     CatalogModel {
                         id: mid.clone(),
                         name: name.unwrap_or(mid),
-                        // Surface the upstream `limit` as the semantic
-                        // `context_window` (renamed to `contextWindow` in
-                        // the JSON payload by serde `rename_all`).
-                        context_window: limit,
+                        // Surface the upstream `limit.context` as the
+                        // semantic `context_window` (renamed to
+                        // `contextWindow` in the JSON payload by serde
+                        // `rename_all`). `limit` is an object
+                        // `{ context, output }` upstream; we keep only the
+                        // context half.
+                        context_window: limit.and_then(|l| l.context),
                     }
                 })
                 .collect();
@@ -892,6 +895,43 @@ mod tests {
     fn parse_catalog_accepts_empty_object() {
         let cat = parse_catalog("{}").expect("empty catalog is valid");
         assert!(cat.providers.is_empty());
+    }
+
+    /// The upstream `limit` field is an OBJECT `{ context, output }`, not a
+    /// bare number. A previous regression typed it `Option<u64>` which made
+    /// `parse_catalog` reject EVERY real catalog (fresh fetch validation +
+    /// cached-file fallback both failed). This test pins the real shape so
+    /// it cannot regress again. Covers: object present, object omitted,
+    /// and object with only `output` (context should fall back to None).
+    #[test]
+    fn parse_catalog_handles_limit_object() {
+        let json = r#"{
+            "anthropic": {
+                "models": {
+                    "claude-sonnet-5": {
+                        "name": "Claude Sonnet 5",
+                        "limit": { "context": 200000, "output": 131072 }
+                    },
+                    "no-limit-model": {
+                        "name": "No Limit"
+                    },
+                    "output-only": {
+                        "name": "Output Only",
+                        "limit": { "output": 4096 }
+                    }
+                }
+            }
+        }"#;
+        let cat = parse_catalog(json).expect("real limit shape must parse");
+        let models = &cat.providers[0].models;
+        // Sorted by id: claude-sonnet-5, no-limit-model, output-only.
+        assert_eq!(models[0].context_window, Some(200000));
+        assert_eq!(models[1].context_window, None);
+        assert_eq!(
+            models[2].context_window,
+            None,
+            "limit with only `output` → context_window None"
+        );
     }
 
     /// Write a (catalog, meta) pair to a tempdir, then prove the disk loader
