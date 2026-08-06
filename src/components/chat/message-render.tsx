@@ -27,7 +27,8 @@
  */
 
 import type { PendingApproval, StreamState, ToolCallView } from "@/lib/conversation-runtime";
-import type { ModelMessage, SessionMessage } from "@/lib/ai";
+import type { MessageUsage } from "@/lib/conversation-runtime/store";
+import type { LanguageModelUsage, ModelMessage, SessionMessage } from "@/lib/ai";
 // ─── Block model ──────────────────────────────────────────────────────────
 
 /** Unified data shape for a single tool card (persisted or live). */
@@ -44,6 +45,34 @@ export interface ToolBlockData {
 }
 
 /**
+ * Persisted token-usage footer attached beneath an assistant message that
+ * carries usage (ADR-0030). Emitted only for the turn's last assistant row —
+ * user / tool / non-last-assistant messages have no usage entry and get no
+ * footer.
+ *
+ * `inputTokens` / `outputTokens` come from `view.messageUsages[messageId]`
+ * (persisted). `null` ⇒ "provider reported unknown" and renders as an em-dash;
+ * `0` ⇒ "real zero" and renders as `0` (ADR-0030 §4 — the distinction must
+ * survive end to end).
+ *
+ * `cacheReadTokens` / `cacheWriteTokens` are populated ONLY for the most
+ * recent assistant message AND only when `view.lastTurnUsage` is present
+ * (ephemeral, not persisted — ADR-0030 §5). Historical assistant footers omit
+ * them, so no cache annotation is shown for past turns.
+ */
+export interface TokenFooterBlock {
+  readonly kind: "token-footer";
+  readonly id: string;
+  readonly messageId: string;
+  readonly inputTokens: number | null;
+  readonly outputTokens: number | null;
+  /** Cache-read tokens; only on the last assistant of a finalized turn. */
+  readonly cacheReadTokens?: number;
+  /** Cache-write tokens (Anthropic); only on the last assistant. */
+  readonly cacheWriteTokens?: number;
+}
+
+/**
  * The discriminated union of renderable blocks. `id` is stable per block so
  * React can key a list without index fallbacks.
  */
@@ -53,6 +82,7 @@ export type RenderBlock =
   | { readonly kind: "reasoning"; readonly id: string; readonly text: string; readonly live: boolean }
   | { readonly kind: "tool"; readonly id: string; readonly tool: ToolBlockData }
   | { readonly kind: "step"; readonly id: string; readonly n: number }
+  | TokenFooterBlock
   | { readonly kind: "stopped"; readonly id: string };
 
 // ─── Content part narrowing (defensive) ───────────────────────────────────
@@ -158,8 +188,18 @@ function safeStringify(value: unknown): string {
  * A pre-pass scans every message for `tool-result` parts and builds a lookup
  * by `toolCallId`. Assistant `tool-call` parts then resolve their output from
  * that lookup; standalone `tool`-role messages are skipped (already consumed).
+ *
+ * A token-usage footer (ADR-0030) is appended after any assistant message
+ * that carries an entry in `messageUsages`. The cache-read / cache-write
+ * annotation is attached only to the turn's last assistant message, and only
+ * when `lastTurnUsage` is present (ephemeral — see {@link TokenFooterBlock}).
  */
-function blocksForMessages(messages: readonly SessionMessage[]): RenderBlock[] {
+function blocksForMessages(
+  messages: readonly SessionMessage[],
+  messageUsages: Record<string, MessageUsage>,
+  lastAssistantId: string | null,
+  lastTurnUsage: LanguageModelUsage | undefined,
+): RenderBlock[] {
   // Pre-pass: toolCallId → result output (scan tool-role msgs + any stray
   // tool-result parts on assistant messages).
   const results = new Map<string, unknown>();
@@ -197,46 +237,70 @@ function blocksForMessages(messages: readonly SessionMessage[]): RenderBlock[] {
               streaming: false,
             });
           }
-          continue;
-        }
-        for (const part of asParts(msg.content)) {
-          if (part.type === "text") {
-            const tp = part as TextPartLike;
-            if (tp.text.length > 0) {
+        } else {
+          for (const part of asParts(msg.content)) {
+            if (part.type === "text") {
+              const tp = part as TextPartLike;
+              if (tp.text.length > 0) {
+                blocks.push({
+                  kind: "assistant-text",
+                  id: `${msg.id}#text-${blocks.length}`,
+                  text: tp.text,
+                  streaming: false,
+                });
+              }
+            } else if (part.type === "reasoning") {
+              const rp = part as ReasoningPartLike;
+              if (rp.text.length > 0) {
+                blocks.push({
+                  kind: "reasoning",
+                  id: `${msg.id}#reasoning-${blocks.length}`,
+                  text: rp.text,
+                  live: false,
+                });
+              }
+            } else if (part.type === "tool-call") {
+              const tc = part as ToolCallPartLike;
               blocks.push({
-                kind: "assistant-text",
-                id: `${msg.id}#text-${blocks.length}`,
-                text: tp.text,
-                streaming: false,
+                kind: "tool",
+                id: `${msg.id}#tool-${tc.toolCallId}`,
+                tool: {
+                  toolCallId: tc.toolCallId,
+                  toolName: tc.toolName,
+                  input: tc.input,
+                  status: results.has(tc.toolCallId) ? "done" : "running",
+                  output: results.get(tc.toolCallId) ?? null,
+                  error: null,
+                },
               });
             }
-          } else if (part.type === "reasoning") {
-            const rp = part as ReasoningPartLike;
-            if (rp.text.length > 0) {
-              blocks.push({
-                kind: "reasoning",
-                id: `${msg.id}#reasoning-${blocks.length}`,
-                text: rp.text,
-                live: false,
-              });
-            }
-          } else if (part.type === "tool-call") {
-            const tc = part as ToolCallPartLike;
-            blocks.push({
-              kind: "tool",
-              id: `${msg.id}#tool-${tc.toolCallId}`,
-              tool: {
-                toolCallId: tc.toolCallId,
-                toolName: tc.toolName,
-                input: tc.input,
-                status: results.has(tc.toolCallId) ? "done" : "running",
-                output: results.get(tc.toolCallId) ?? null,
-                error: null,
-              },
-            });
+            // tool-result parts on an assistant message are folded into cards
+            // above; other part types are ignored gracefully.
           }
-          // tool-result parts on an assistant message are folded into cards
-          // above; other part types are ignored gracefully.
+        }
+        // Token-usage footer (ADR-0030). Only the turn's last assistant row
+        // carries an entry in `messageUsages`; absence ⇒ no footer. Cache
+        // breakdown is ephemeral (§5) — only the last assistant, only when
+        // `lastTurnUsage` is live.
+        const usage = messageUsages[msg.id];
+        if (usage) {
+          const details =
+            msg.id === lastAssistantId
+              ? lastTurnUsage?.inputTokenDetails
+              : undefined;
+          blocks.push({
+            kind: "token-footer",
+            id: `${msg.id}#usage`,
+            messageId: msg.id,
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+            ...(details?.cacheReadTokens !== undefined
+              ? { cacheReadTokens: details.cacheReadTokens }
+              : {}),
+            ...(details?.cacheWriteTokens !== undefined
+              ? { cacheWriteTokens: details.cacheWriteTokens }
+              : {}),
+          });
         }
         continue;
       }
@@ -280,6 +344,12 @@ function toolBlockFromLive(
  *   (`"aborted"`). Drives the "Stopped" marker both in the live-stream window
  *   (even when partial text exists) and after finalization (when the stream is
  *   gone but the persisted partial message remains).
+ * @param messageUsages persisted per-message token usage (ADR-0030). Drives
+ *   the `token-footer` block beneath assistant messages that carry an entry.
+ * @param lastTurnUsage ephemeral usage for the most recent finalized turn
+ *   (ADR-0030 §5/§6). Supplies the cache-read / cache-write annotation
+ *   attached to the turn's last assistant message; `undefined` between turns
+ *   and on first load ⇒ historical footers render without the cache paren.
  */
 export function buildBlocks(
   messages: readonly SessionMessage[],
@@ -287,8 +357,25 @@ export function buildBlocks(
   isRunning: boolean,
   pendingUserText: string | null,
   stopReason: "aborted" | null = null,
+  messageUsages: Record<string, MessageUsage> = {},
+  lastTurnUsage?: LanguageModelUsage,
 ): RenderBlock[] {
-  const blocks = blocksForMessages(messages);
+  // Last persisted assistant id — gates which footer (if any) gets the
+  // ephemeral cache annotation. Reverse scan; `null` when there is none.
+  let lastAssistantId: string | null = null;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === "assistant") {
+      lastAssistantId = messages[i].id;
+      break;
+    }
+  }
+
+  const blocks = blocksForMessages(
+    messages,
+    messageUsages,
+    lastAssistantId,
+    lastTurnUsage,
+  );
 
   // Optimistic user echo for the in-flight turn. The runtime appends the user
   // message to the Agent thread on send but `view.messages` only refreshes on

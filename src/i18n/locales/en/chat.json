@@ -83,5 +83,12 @@
   "view": {
     "empty": "Send a message to begin."
   },
+  "token": {
+    "input": "Input tokens",
+    "output": "Output tokens",
+    "cached": "{{count}} cached",
+    "cacheWriteHint": "{{count}} tokens written to cache this turn",
+    "context": "Context"
+  },
   "stopped": "Stopped"
 }

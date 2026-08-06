@@ -83,5 +83,12 @@
   "view": {
     "empty": "发送一条消息开始对话。"
   },
+  "token": {
+    "input": "输入 tokens",
+    "output": "输出 tokens",
+    "cached": "{{count}} 已缓存",
+    "cacheWriteHint": "本次写入缓存 {{count}} tokens",
+    "context": "上下文"
+  },
   "stopped": "已停止"
 }

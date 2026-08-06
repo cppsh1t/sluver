@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils";
 import type { Conversation, WorldId } from "@/types";
 
 import { Markdown } from "./markdown";
+import { MessageTokenFooter } from "./message-token-footer";
 import { buildBlocks, type RenderBlock } from "./message-render";
 import { ToolCard } from "./tool-card";
 
@@ -141,6 +142,16 @@ function renderBlock(
       );
     case "tool":
       return <ToolCard key={block.id} tool={block.tool} worldId={worldId} conversationId={conversationId} />;
+    case "token-footer":
+      return (
+        <MessageTokenFooter
+          key={block.id}
+          inputTokens={block.inputTokens}
+          outputTokens={block.outputTokens}
+          cacheReadTokens={block.cacheReadTokens}
+          cacheWriteTokens={block.cacheWriteTokens}
+        />
+      );
     case "step":
       return <StepDivider key={block.id} n={block.n} />;
     case "stopped":
@@ -213,6 +224,8 @@ export function ConversationView({
     view.isRunning,
     pendingUserText,
     view.stopReason,
+    view.messageUsages,
+    view.lastTurnUsage,
   );
 
   const isEmpty =
