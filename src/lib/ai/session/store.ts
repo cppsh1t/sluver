@@ -11,7 +11,7 @@
  * Related: ADR-0019 (library purity boundary), ADR-0020 (session layer).
  */
 
-import type { ModelMessage } from "@/lib/ai/loop";
+import type { LanguageModelUsage, ModelMessage } from "@/lib/ai/loop";
 import type { Plan } from "./plan";
 
 // ─── Session message ─────────────────────────────────────────────────────
@@ -130,11 +130,36 @@ export interface SessionStore {
   loadMessages(sessionId: string): Promise<SessionMessage[]>;
 
   /**
-   * Append new messages to a session. Called once per conversation turn with
-   * the delta (user message + assistant response). The store SHOULD write the
-   * batch atomically and bump the session's `updatedAt`.
-   */
-  appendMessages(sessionId: string, delta: SessionMessage[]): Promise<void>;
+    * Append new messages to a session. Called once per conversation turn with
+    * the delta (user message + assistant response). The store SHOULD write the
+    * batch atomically and bump the session's `updatedAt`.
+    *
+    * ## Token usage (ADR-0030)
+    *
+    * The optional `turnUsage` carries the run's summed `totalUsage`
+    * (`inputTokens` / `outputTokens` plus the cache/reasoning breakdowns
+    * surfaced live via `step_end.usage`). It is `undefined` for user-message
+    * persists (which happen BEFORE the run) and for stub/legacy store
+    * implementations — passing it is the caller's responsibility (the
+    * stateful `Agent` does so from its `handle.result.then`). The store
+    * implementation decides how (or whether) to persist it; the canonical
+    * `TauriSessionStore` attaches `inputTokens` / `outputTokens` to the
+    * delta's LAST `role === "assistant"` row (ADR-0030 §2 — every turn has
+    * at least one assistant message, so there is always a row to attach
+    * to). `totalTokens`, cache breakdowns, and reasoning breakdowns are NOT
+    * persisted (ADR-0030 §5); they remain available live via the reactive
+    * `view.lastTurnUsage` the runtime surfaces from this same value.
+    *
+    * `LanguageModelUsage` is the AI SDK's generic usage type, already in the
+    * library's type space — extending the interface with it stretches
+    * ADR-0019's letter by one optional parameter without violating its
+    * spirit (no React, no IPC, no logger coupling).
+    */
+  appendMessages(
+    sessionId: string,
+    delta: SessionMessage[],
+    turnUsage?: LanguageModelUsage,
+  ): Promise<void>;
 
   // ── Plan (used by Agent — ADR-0028, ADR-0029 Phase 1) ──
 

@@ -31,6 +31,7 @@ import {
 } from "@/api/conversation";
 import {
   toModelMessage,
+  type LanguageModelUsage,
   type ModelMessage,
   type Plan,
   type SessionInit,
@@ -169,13 +170,31 @@ export class TauriSessionStore implements SessionStore {
     return messages.map(messageToSessionMessage);
   }
 
-  async appendMessages(sessionId: string, delta: SessionMessage[]): Promise<void> {
+  async appendMessages(
+    sessionId: string,
+    delta: SessionMessage[],
+    turnUsage?: LanguageModelUsage,
+  ): Promise<void> {
     await appendMessagesApi(
       this.options.spaceId,
       this.options.worldId as WorldId,
       {
         conversationId: sessionId as ConversationId,
-        messages: delta.map(sessionMessageToMessage),
+        // ADR-0030 §2 — usage attaches to the LAST assistant row in the
+        // delta. Every turn has at least one assistant (the model is called
+        // at least once), so a non-`undefined` `turnUsage` always lands on
+        // a real row. We find the index by scanning backwards; if no
+        // assistant is found (defensive — should not happen for a real
+        // turn) `turnUsage` is silently dropped rather than crashing.
+        messages: delta.map((sm, i) => {
+          if (i === lastAssistantIndex(delta) && turnUsage) {
+            return sessionMessageToMessage(sm, {
+              inputTokens: turnUsage.inputTokens,
+              outputTokens: turnUsage.outputTokens,
+            });
+          }
+          return sessionMessageToMessage(sm);
+        }),
       },
     );
   }
@@ -306,15 +325,44 @@ function messageToSessionMessage(message: Message): SessionMessage {
 }
 
 /**
+ * Index of the LAST `role === "assistant"` message in `delta`, or `-1` if
+ * none (defensive — every real turn has at least one assistant). Used by
+ * {@link TauriSessionStore.appendMessages} to attach per-turn usage per
+ * ADR-0030 §2. Backwards scan so it stops on the first hit.
+ */
+function lastAssistantIndex(delta: readonly SessionMessage[]): number {
+  for (let i = delta.length - 1; i >= 0; i--) {
+    if (delta[i].role === "assistant") return i;
+  }
+  return -1;
+}
+
+/**
  * Project a {@link SessionMessage} onto the IPC {@link Message} shape. Strips
  * the three metadata fields (`id`, `sessionId`, `createdAt`) via
  * {@link toModelMessage} and carries them as sibling columns instead.
+ *
+ * `usage` (optional, ADR-0030) attaches per-turn `inputTokens` /
+ * `outputTokens` to this single row. `undefined → null` per ADR-0030 §4
+ * (preserves the "unknown" vs "real zero" distinction end to end); a real
+ * `0` is stored verbatim. When `usage` is omitted the resulting `Message`
+ * leaves both fields `undefined` so they are absent from the JSON payload
+ * and Rust writes NULL via the column default.
  */
-function sessionMessageToMessage(sessionMessage: SessionMessage): Message {
-  return {
+function sessionMessageToMessage(
+  sessionMessage: SessionMessage,
+  usage?: { inputTokens?: number; outputTokens?: number },
+): Message {
+  const base = {
     id: sessionMessage.id,
     conversationId: sessionMessage.sessionId,
     body: toModelMessage(sessionMessage),
     createdAt: sessionMessage.createdAt,
+  };
+  if (usage === undefined) return base;
+  return {
+    ...base,
+    usageInputTokens: usage.inputTokens ?? null,
+    usageOutputTokens: usage.outputTokens ?? null,
   };
 }

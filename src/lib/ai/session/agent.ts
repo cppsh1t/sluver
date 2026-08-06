@@ -29,6 +29,7 @@
 import {
   AgentLoop,
   type AgentRunHandle,
+  type LanguageModelUsage,
 } from "@/lib/ai/loop";
 import { composeSystemPrompt } from "@/lib/ai/pipeline";
 
@@ -232,6 +233,12 @@ export class Agent {
 
     // 5. On resolution (ALL terminations resolve — ADR-0018 revised),
     //    extract the delta, wrap as SessionMessage, persist.
+    //
+    //    `result.totalUsage` is forwarded as the optional `turnUsage` so the
+    //    store can attach `inputTokens` / `outputTokens` to the delta's last
+    //    assistant row (ADR-0030 §1/§2). Aborted runs still resolve with a
+    //    partial `totalUsage` (ADR-0018) — we persist it honestly so the
+    //    record of "what this interrupted turn cost" survives.
     void handle.result
       .then((result) => {
         const delta = result.messages.slice(inputLength);
@@ -240,7 +247,7 @@ export class Agent {
           toSessionMessage(m, this.sessionId),
         );
         this.messages.push(...sessionDelta);
-        this.#persist(sessionDelta);
+        this.#persist(sessionDelta, result.totalUsage);
       })
       .catch((e) => this.onPersistError?.(e));
 
@@ -248,12 +255,21 @@ export class Agent {
   }
 
   /**
-   * Fire-and-forget persist with error routing to {@link onPersistError}.
-   * Never throws — failures are surfaced via the callback if provided.
-   */
-  #persist(delta: SessionMessage[]): void {
-    void this.store.appendMessages(this.sessionId, delta).catch((e) => {
-      this.onPersistError?.(e);
-    });
+    * Fire-and-forget persist with error routing to {@link onPersistError}.
+    * Never throws — failures are surfaced via the callback if provided.
+    *
+    * `turnUsage` is forwarded straight to {@link SessionStore.appendMessages};
+    * `undefined` for the user-message persist (which precedes the run), the
+    * run's `result.totalUsage` for the response delta. See ADR-0030.
+    */
+  #persist(
+    delta: SessionMessage[],
+    turnUsage?: LanguageModelUsage,
+  ): void {
+    void this.store
+      .appendMessages(this.sessionId, delta, turnUsage)
+      .catch((e) => {
+        this.onPersistError?.(e);
+      });
   }
 }
