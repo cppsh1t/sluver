@@ -22,6 +22,7 @@ import { Composer } from "@/components/chat/composer";
 import { ConsentBanner } from "@/components/chat/consent-banner";
 import { ConversationList } from "@/components/chat/conversation-list";
 import { ConversationView } from "@/components/chat/conversation-view";
+import { TokenStatusBar } from "@/components/chat/token-status-bar";
 import { useConversations } from "@/hooks";
 import type { ConversationId, SpaceId, WorldId } from "@/types";
 
@@ -89,6 +90,12 @@ function ChatPage() {
               onPendingUserConsumed={() => setPendingUserText(null)}
             />
             <ConsentBanner worldId={wid} conversationId={selected.id} />
+            <TokenStatusBar
+              spaceId={sid}
+              worldId={wid}
+              conversationId={selected.id}
+              agentConfigName={selected.agentConfigName}
+            />
             <Composer
               worldId={wid}
               conversationId={selected.id}
