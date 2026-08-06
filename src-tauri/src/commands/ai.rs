@@ -489,10 +489,14 @@ fn parse_catalog(json: &str) -> Result<ModelsDevCatalog, DbError> {
             let mut models: Vec<CatalogModel> = models
                 .into_iter()
                 .map(|(mid, m)| {
-                    let RawModel { name } = m;
+                    let RawModel { name, limit } = m;
                     CatalogModel {
                         id: mid.clone(),
                         name: name.unwrap_or(mid),
+                        // Surface the upstream `limit` as the semantic
+                        // `context_window` (renamed to `contextWindow` in
+                        // the JSON payload by serde `rename_all`).
+                        context_window: limit,
                     }
                 })
                 .collect();

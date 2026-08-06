@@ -45,6 +45,12 @@ pub struct CatalogModel {
     pub id: String,
     /// Human-readable name. Falls back to `id` if upstream omits `name`.
     pub name: String,
+    /// Maximum context window in tokens, surfaced from the upstream `limit`
+    /// field. `None` when upstream omits it. Renamed to `contextWindow` in
+    /// the JSON payload (camelCase via `rename_all`) — the frontend cares
+    /// about the semantic "how big a context can this model hold," not the
+    /// upstream field name. Used by the UI's context-occupancy indicator.
+    pub context_window: Option<u64>,
 }
 
 // ─── intermediate parsing structs (private) ─────────────────────────────────
@@ -80,6 +86,12 @@ pub(crate) struct RawProvider {
 pub(crate) struct RawModel {
     #[serde(default)]
     pub(crate) name: Option<String>,
+    /// Upstream models.dev field `limit` — the model's maximum context
+    /// window in tokens. `Option` because some upstream rows omit it; the
+    /// field name is a single word, so `rename_all = "camelCase"` is a
+    /// no-op here (it would only matter for multi-word fields).
+    #[serde(default)]
+    pub(crate) limit: Option<u64>,
 }
 
 /// Persisted alongside the catalog JSON; records when the cached copy was
