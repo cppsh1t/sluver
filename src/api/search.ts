@@ -58,3 +58,18 @@ export function fetchUrl(
 ): Promise<FetchedPage> {
   return call<FetchedPage>('fetch_url', { url, locale, maxLength });
 }
+
+/**
+ * Fetch a URL using a hidden WebView2 browser engine. Slower than `fetchUrl`
+ * (~3-5s) but bypasses anti-bot protections (403, Cloudflare JS challenges)
+ * that block plain HTTP. Returns the same `FetchedPage` format.
+ *
+ * Windows-only — on other platforms the command returns an error.
+ */
+export function fetchUrlViaWebview(
+  url: string,
+  locale: string,
+  maxLength?: number,
+): Promise<FetchedPage> {
+  return call<FetchedPage>('fetch_url_via_webview', { url, locale, maxLength });
+}
