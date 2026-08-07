@@ -6,6 +6,7 @@ pub mod element;
 pub mod event;
 pub mod export_book;
 pub mod novel;
+pub mod search;
 pub mod session;
 pub mod setting;
 pub mod space;

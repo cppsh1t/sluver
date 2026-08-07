@@ -49,6 +49,13 @@ thiserror = "2.0.18"
 # NO `blocking` feature — catalog commands are async (see commands/ai.rs).
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 
+# Web search (commands/search.rs): HTML parsing of Bing's results page.
+# `url` is a transitive dep of reqwest but must be declared explicitly to use
+# `Url::parse` + `query_pairs()` for unwrapping Bing's `/ck/a?...&u=a1<base64url>`
+# tracking-redirect URLs.
+scraper = "0.23"
+url = "2"
+
 # Logging stack (ADR-0014): `tracing` ecosystem + `tracing-log` bridge so that
 # `log::*` emits from deps (tauri, rusqlite, reqwest, tokio) are captured by
 # the same subscriber that owns our structured JSON-lines file writer
