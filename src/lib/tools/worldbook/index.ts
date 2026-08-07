@@ -17,6 +17,7 @@ import type { ToolDef, ToolContext } from "../types";
 import { buildToolSet } from "../types";
 import { webFetchTools } from "../webfetch";
 import { webSearchTools } from "../websearch";
+import { webViewFetchTools } from "../webviewfetch";
 import { characterTools } from "./character";
 import { eventTools } from "./event";
 import { itemTools, locationTools, loreTools } from "./element";
@@ -61,10 +62,11 @@ export function buildExplorerTools(ctx: ToolContext): ToolSet {
       ...queryOnly(sceneTools()),
       // System
       ...systemTools(),
-      // Web search (read-only real-world lookups via DuckDuckGo)
       ...webSearchTools(),
       // Web fetch (read a specific URL's content via Readability)
       ...webFetchTools(),
+      // WebView fetch (browser-engine fallback for 403/anti-bot sites)
+      ...webViewFetchTools(),
     },
     ctx,
   );
@@ -89,10 +91,11 @@ export function buildWriterTools(ctx: ToolContext): ToolSet {
       ...queryOnly(eventTools()),
       // System
       ...systemTools(),
-      // Web search (read-only real-world lookups via DuckDuckGo)
       ...webSearchTools(),
       // Web fetch (read a specific URL's content via Readability)
       ...webFetchTools(),
+      // WebView fetch (browser-engine fallback for 403/anti-bot sites)
+      ...webViewFetchTools(),
     },
     ctx,
   );
