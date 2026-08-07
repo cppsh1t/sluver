@@ -1,7 +1,9 @@
-# Tauri + React + Typescript
+# sluver
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+Tauri v2 desktop app for **worldbuilding & novel writing**. React 19 + TypeScript frontend, Rust backend backed by SQLite. See [`AGENTS.md`](./AGENTS.md) for full architecture and conventions.
 
-## Recommended IDE Setup
+## Build Prerequisites
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+- Node.js LTS + pnpm
+- Rust (stable) → https://rustup.rs
+- MSVC Build Tools (Visual Studio 2022+, "Desktop development with C++" workload)
