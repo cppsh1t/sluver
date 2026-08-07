@@ -15,6 +15,7 @@ import type { ToolSet } from "@/lib/ai";
 import { systemTools } from "../system";
 import type { ToolDef, ToolContext } from "../types";
 import { buildToolSet } from "../types";
+import { webSearchTools } from "../websearch";
 import { characterTools } from "./character";
 import { eventTools } from "./event";
 import { itemTools, locationTools, loreTools } from "./element";
@@ -59,6 +60,8 @@ export function buildExplorerTools(ctx: ToolContext): ToolSet {
       ...queryOnly(sceneTools()),
       // System
       ...systemTools(),
+      // Web search (read-only real-world lookups via DuckDuckGo)
+      ...webSearchTools(),
     },
     ctx,
   );
@@ -83,6 +86,8 @@ export function buildWriterTools(ctx: ToolContext): ToolSet {
       ...queryOnly(eventTools()),
       // System
       ...systemTools(),
+      // Web search (read-only real-world lookups via DuckDuckGo)
+      ...webSearchTools(),
     },
     ctx,
   );
