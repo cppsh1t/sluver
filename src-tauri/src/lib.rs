@@ -252,6 +252,7 @@ pub fn run() {
             commands::ai::refresh_models_dev_catalog,
             // Web search (DuckDuckGo HTML scraping — no API key)
             commands::search::search_web,
+            commands::search::fetch_url,
             // Diagnostics (logging — ADR-0014 / ADR-0015)
             commands::diagnostics::frontend_log,
             commands::diagnostics::get_log_level,

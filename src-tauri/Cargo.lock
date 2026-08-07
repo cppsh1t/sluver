@@ -690,6 +690,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "crc"
+version = "3.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5eb8a2a1cd12ab0d987a5d5e825195d372001a4094a0376319d5a0ad71c1ba0d"
+dependencies = [
+ "crc-catalog",
+]
+
+[[package]]
+name = "crc-catalog"
+version = "2.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "217698eaf96b4a3f0bc4f3662aaa55bdf913cd54d7204591faa790070c6d0853"
+
+[[package]]
 name = "crc32fast"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1780,6 +1795,16 @@ dependencies = [
 
 [[package]]
 name = "html5ever"
+version = "0.36.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6452c4751a24e1b99c3260d505eaeee76a050573e61f30ac2c924ddc7236f01e"
+dependencies = [
+ "log",
+ "markup5ever 0.36.1",
+]
+
+[[package]]
+name = "html5ever"
 version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1054432bae2f14e0061e33d23402fbaa67a921d319d56adc6bcf887ddad1cbc2"
@@ -2228,6 +2253,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "kuchikikiki"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "14683223e533503d404478bfd32826a4cba1b4906034ff74135404372390e87b"
+dependencies = [
+ "bitflags 2.13.0",
+ "crc",
+ "cssparser 0.36.0",
+ "html5ever 0.36.1",
+ "indexmap 2.14.0",
+ "precomputed-hash",
+ "selectors 0.33.0",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2385,6 +2425,17 @@ dependencies = [
  "string_cache 0.8.9",
  "string_cache_codegen 0.5.4",
  "tendril 0.4.3",
+]
+
+[[package]]
+name = "markup5ever"
+version = "0.36.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c3294c4d74d0742910f8c7b466f44dda9eb2d5742c1e430138df290a1e8451c"
+dependencies = [
+ "log",
+ "tendril 0.4.3",
+ "web_atoms",
 ]
 
 [[package]]
@@ -3385,6 +3436,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20675572f6f24e9e76ef639bc5552774ed45f1c30e2951e1e99c59888861c539"
 
 [[package]]
+name = "readabilityrs"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d90c6e1dad698d9f3c80a8d91bc0efc8c2397cb5ca4bbffb9c0fb88a9a66e6b8"
+dependencies = [
+ "bitflags 2.13.0",
+ "kuchikikiki",
+ "once_cell",
+ "regex",
+ "scraper 0.25.0",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "url",
+ "v_htmlescape",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.5.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3765,6 +3834,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "scraper"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "93cecd86d6259499c844440546d02f55f3e17bd286e529e48d1f9f67e92315cb"
+dependencies = [
+ "cssparser 0.36.0",
+ "ego-tree",
+ "getopts",
+ "html5ever 0.36.1",
+ "precomputed-hash",
+ "selectors 0.33.0",
+ "tendril 0.4.3",
+]
+
+[[package]]
 name = "selectors"
 version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3779,6 +3863,25 @@ dependencies = [
  "phf 0.11.3",
  "phf_codegen 0.11.3",
  "precomputed-hash",
+ "servo_arc",
+ "smallvec",
+]
+
+[[package]]
+name = "selectors"
+version = "0.33.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "feef350c36147532e1b79ea5c1f3791373e61cbd9a6a2615413b3807bb164fb7"
+dependencies = [
+ "bitflags 2.13.0",
+ "cssparser 0.36.0",
+ "derive_more 2.1.1",
+ "log",
+ "new_debug_unreachable",
+ "phf 0.13.1",
+ "phf_codegen 0.13.1",
+ "precomputed-hash",
+ "rustc-hash",
  "servo_arc",
  "smallvec",
 ]
@@ -4046,10 +4149,11 @@ dependencies = [
  "epub-builder",
  "image",
  "password-hash",
+ "readabilityrs",
  "reqwest 0.12.28",
  "rusqlite",
  "rusqlite_migration",
- "scraper",
+ "scraper 0.23.1",
  "serde",
  "serde_json",
  "tauri",
@@ -5285,6 +5389,12 @@ dependencies = [
  "serde_core",
  "wasm-bindgen",
 ]
+
+[[package]]
+name = "v_htmlescape"
+version = "0.15.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e8257fbc510f0a46eb602c10215901938b5c2a7d5e70fc11483b1d3c9b5b18c"
 
 [[package]]
 name = "valuable"

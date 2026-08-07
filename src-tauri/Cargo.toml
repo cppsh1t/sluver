@@ -56,6 +56,11 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-feature
 scraper = "0.23"
 url = "2"
 
+# Web fetch (commands/search.rs::fetch_url): Mozilla Readability port for
+# extracting main article content from fetched HTML pages. Default features
+# include the HTML parser + metadata extraction.
+readabilityrs = "0.1.3"
+
 # Logging stack (ADR-0014): `tracing` ecosystem + `tracing-log` bridge so that
 # `log::*` emits from deps (tauri, rusqlite, reqwest, tokio) are captured by
 # the same subscriber that owns our structured JSON-lines file writer
