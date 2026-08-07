@@ -15,6 +15,7 @@ import type { ToolSet } from "@/lib/ai";
 import { systemTools } from "../system";
 import type { ToolDef, ToolContext } from "../types";
 import { buildToolSet } from "../types";
+import { webFetchTools } from "../webfetch";
 import { webSearchTools } from "../websearch";
 import { characterTools } from "./character";
 import { eventTools } from "./event";
@@ -62,6 +63,8 @@ export function buildExplorerTools(ctx: ToolContext): ToolSet {
       ...systemTools(),
       // Web search (read-only real-world lookups via DuckDuckGo)
       ...webSearchTools(),
+      // Web fetch (read a specific URL's content via Readability)
+      ...webFetchTools(),
     },
     ctx,
   );
@@ -88,6 +91,8 @@ export function buildWriterTools(ctx: ToolContext): ToolSet {
       ...systemTools(),
       // Web search (read-only real-world lookups via DuckDuckGo)
       ...webSearchTools(),
+      // Web fetch (read a specific URL's content via Readability)
+      ...webFetchTools(),
     },
     ctx,
   );
