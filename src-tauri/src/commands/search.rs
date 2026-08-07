@@ -8,12 +8,6 @@
 //     content via `readabilityrs` (Mozilla Readability port), returning
 //     plain text + metadata for the LLM.
 //
-// ## Why Bing
-//
-// Bing is one of the few international search engines accessible from
-// mainland China without VPN; chosen for that reason. DuckDuckGo is
-// GFW-blocked (DNS pollution) since September 2014.
-//
 // ## Redaction
 //
 // Search queries and fetched URLs are potentially user creative content /
@@ -34,6 +28,11 @@ use serde::Serialize;
 use url::Url;
 
 use crate::db::DbError;
+
+// `tauri::Manager` provides `app.get_webview_window()` — only needed by the
+// Windows path of `fetch_url_via_webview`.
+#[cfg(target_os = "windows")]
+use tauri::Manager;
 
 /// Bing search endpoint (GET with `q` + `adlt` query params).
 const BING_SEARCH_URL: &str = "https://www.bing.com/search";
@@ -416,4 +415,265 @@ fn extract_title(html: &str) -> Option<String> {
     } else {
         Some(title)
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// fetch_url_via_webview
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Fetch a URL using a hidden WebView2 browser engine, bypassing anti-bot
+/// protections that block plain HTTP requests (403 Forbidden, Cloudflare JS
+/// challenges, etc.). The fully rendered HTML is extracted via native
+/// `ICoreWebView2::ExecuteScript` and processed through the same Readability
+/// pipeline as [`fetch_url`].
+///
+/// **Windows-only.** On macOS/Linux, returns an "unsupported" error — the
+/// WebView2 COM interop has no WKWebView/WebKitGTK equivalent wired up yet.
+///
+/// The agent gets both `fetch_url` (fast HTTP) and this command (slower
+/// browser engine, ~3-5s per fetch). Use this when `fetch_url` returns an
+/// error or when the page requires JavaScript rendering. Following Cherry
+/// Studio's `@cherry/browser` model, this is an explicit peer tool — the
+/// agent decides when the expensive browser path is warranted, not an
+/// automatic fallback inside `fetch_url`.
+///
+/// **Flow:**
+/// 1. Create hidden window (main thread — avoid WebView2 deadlock, same
+///    pattern as `open_space_window`).
+/// 2. Wait for `PageLoadEvent::Finished` (30s timeout for anti-bot JS).
+/// 3. Extract HTML via `ExecuteScript`; retry up to 3× if the page looks
+///    like an anti-bot challenge interstitial (Cloudflare, PerimeterX, etc.).
+/// 4. Close window, run Readability extraction (reuse [`extract_page`]).
+///
+/// `locale` is accepted for API parity with [`fetch_url`] but not yet wired
+/// to WebView2's `Accept-Language` (requires `WebResourceRequested`
+/// interception — deferred for now).
+#[cfg(target_os = "windows")]
+#[tracing::instrument(skip_all, fields(url_length = url.len(), content_length))]
+#[tauri::command]
+pub async fn fetch_url_via_webview(
+    app: tauri::AppHandle,
+    url: String,
+    locale: Option<String>,
+    max_length: Option<usize>,
+) -> Result<FetchedPage, DbError> {
+    let _ = locale;
+    let char_limit = max_length.unwrap_or(10_000).min(50_000);
+    let target: Url = Url::parse(&url)
+        .map_err(|e| DbError::Internal(format!("invalid URL: {e}")))?;
+
+    // Restrict to http(s) — WebView2 will happily load file:/// and data:
+    // URLs, which could expose local file contents to the agent.
+    if !matches!(target.scheme(), "http" | "https") {
+        return Err(DbError::Internal("only http(s) URLs are supported".into()));
+    }
+
+    let label = format!("webview-fetcher-{}", crate::util::new_id());
+    let loaded = std::sync::Arc::new(tokio::sync::Notify::new());
+    let loaded_cb = loaded.clone();
+
+    // ── 1. Build hidden window on main thread (avoid WebView2 deadlock) ────
+    //
+    // Uses `tokio::sync::oneshot` (not `std::sync::mpsc`) so the build-wait
+    // is a non-blocking `.await` on the tokio runtime, not a blocking `recv()`
+    // that would park the worker thread.
+    let (build_tx, build_rx) = tokio::sync::oneshot::channel::<Result<(), DbError>>();
+    let app_for_main = app.clone();
+    let label_for_main = label.clone();
+    let target_for_build = target.clone();
+
+    app.run_on_main_thread(move || {
+        let result = tauri::WebviewWindowBuilder::new(
+            &app_for_main,
+            &label_for_main,
+            tauri::WebviewUrl::External(target_for_build),
+        )
+        .visible(false)
+        .skip_taskbar(true)
+        .inner_size(100.0, 100.0)
+        .decorations(false)
+        .resizable(false)
+        .on_page_load(move |_win, payload| {
+            if payload.event() == tauri::webview::PageLoadEvent::Finished {
+                loaded_cb.notify_one();
+            }
+        })
+        .build()
+        .map(|_| ())
+        .map_err(|e| DbError::Internal(format!("webview window build failed: {e}")));
+
+        let _ = build_tx.send(result);
+    })
+    .map_err(|e| DbError::Internal(format!("run_on_main_thread failed: {e}")))?;
+
+    build_rx.await.map_err(|_| {
+        DbError::Internal("main thread dropped channel before build result".into())
+    })??;
+
+    // ── 2. Get window handle ──────────────────────────────────────────────
+    let window = app
+        .get_webview_window(&label)
+        .ok_or_else(|| DbError::Internal("fetcher window not found after build".into()))?;
+
+    // ── 3. Wait for page load (anti-bot challenges can take 10-15s) ───────
+    let load_result = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        loaded.notified(),
+    )
+    .await;
+
+    if load_result.is_err() {
+        let _ = window.close();
+        return Err(DbError::Internal("webview page load timed out (30s)".into()));
+    }
+
+    // ── 4. Extract HTML with retry for anti-bot challenge pages ───────────
+    //
+    // Anti-bot challenges (Cloudflare, PerimeterX, etc.) fire `Finished` for
+    // the challenge interstitial FIRST, then redirect to the real page after
+    // 5-10s. Instead of a blind fixed delay, we extract immediately and retry
+    // if the result looks like a challenge page. Normal sites return on the
+    // first attempt with zero added latency.
+    let html = {
+        let mut attempts = 0u8;
+        loop {
+            match eval_rendered_html(&window).await {
+                Ok(h) if !looks_like_challenge(&h) => break h,
+                Ok(_) if attempts < 3 => {
+                    attempts += 1;
+                    tracing::debug!(
+                        attempt = attempts,
+                        "anti-bot challenge page detected, retrying"
+                    );
+                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                }
+                Ok(h) => break h, // give up retrying, return what we have
+                Err(e) => {
+                    let _ = window.close();
+                    return Err(e);
+                }
+            }
+        }
+    };
+
+    // ── 5. Always close the window ────────────────────────────────────────
+    let _ = window.close();
+
+    // ── 6. Run Readability extraction (reuse extract_page) ────────────────
+    let final_url = target.to_string();
+    let page = extract_page(&html, &final_url)?;
+    let truncated: String = page.content.chars().take(char_limit).collect();
+
+    tracing::Span::current().record("content_length", truncated.len());
+    tracing::debug!("webview fetch completed");
+
+    Ok(FetchedPage {
+        url: final_url,
+        title: page.title,
+        content: truncated,
+        author: page.author,
+        excerpt: page.excerpt,
+        published_at: page.published_at,
+    })
+}
+
+/// Extract rendered HTML from a WebView2 window via native `ExecuteScript`.
+///
+/// `WebviewWindow::eval` is fire-and-forget — it returns `Result<()>` and
+/// discards the JS return value. To get HTML back to Rust, we drop down to
+/// the platform webview via `with_webview` and invoke
+/// `ICoreWebView2::ExecuteScript`, which provides the result via a completion
+/// callback. The result arrives as a JSON-encoded string (double-quoted for a
+/// string return), which we unwrap via `serde_json`.
+///
+/// The `with_webview` closure runs synchronously on the webview thread; we
+/// bridge the `ExecuteScript` result back to the async caller via an
+/// `mpsc` channel consumed inside `spawn_blocking` (avoiding tokio block).
+#[cfg(target_os = "windows")]
+async fn eval_rendered_html(window: &tauri::WebviewWindow) -> Result<String, DbError> {
+    use std::sync::mpsc;
+    use webview2_com::ExecuteScriptCompletedHandler;
+    use windows::core::HSTRING;
+
+    let (tx, rx) = mpsc::channel::<Result<String, String>>();
+
+    window
+        .with_webview(move |wv: tauri::webview::PlatformWebview| {
+            let controller = wv.controller();
+            let core = match unsafe { controller.CoreWebView2() } {
+                Ok(c) => c,
+                Err(e) => {
+                    let _ = tx.send(Err(format!("CoreWebView2 access failed: {e}")));
+                    return;
+                }
+            };
+
+            let js = HSTRING::from("document.documentElement.outerHTML");
+            let handler = ExecuteScriptCompletedHandler::create(Box::new(
+                move |result: windows::core::Result<()>, json: String| {
+                    let value = result
+                        .map(|_| json)
+                        .map_err(|e| format!("ExecuteScript error: {e}"));
+                    let _ = tx.send(value);
+                    Ok(())
+                },
+            ));
+
+            let _ = unsafe { core.ExecuteScript(&js, Some(&handler)) };
+        })
+        .map_err(|e| DbError::Internal(format!("with_webview dispatch failed: {e}")))?;
+
+    // Bridge sync mpsc → async (avoid blocking the tokio runtime).
+    let raw_result = tokio::task::spawn_blocking(move || {
+        rx.recv_timeout(std::time::Duration::from_secs(15))
+            .map_err(|e| DbError::Internal(format!("ExecuteScript channel timed out: {e}")))
+    })
+    .await
+    .map_err(|e| DbError::Internal(format!("spawn_blocking join error: {e}")))??;
+
+    let json_string = raw_result.map_err(DbError::Internal)?;
+
+    // WebView2 returns the JS result as a JSON-encoded string.
+    // For `document.documentElement.outerHTML` (a string), the raw value is
+    // "\"<html>...</html>\"" — unwrap one JSON string layer.
+    if json_string.is_empty() {
+        return Err(DbError::Internal("ExecuteScript returned empty result".into()));
+    }
+
+    match serde_json::from_str::<serde_json::Value>(&json_string) {
+        Ok(serde_json::Value::String(s)) => Ok(s),
+        Ok(other) => Ok(other.to_string()),
+        Err(_) => Ok(json_string), // best-effort fallback
+    }
+}
+
+/// Heuristic check: does this HTML look like an anti-bot challenge page?
+///
+/// Returns `true` for common challenge interstitial markers (Cloudflare,
+/// Turnstile, PerimeterX/HUMAN). Used by the retry loop in
+/// [`fetch_url_via_webview`] to decide whether to wait and re-extract.
+/// False positives are unlikely (these strings are specific to challenge
+/// infrastructure); false negatives just mean we return the challenge page
+/// as-is (the retry gives up after 3 attempts).
+fn looks_like_challenge(html: &str) -> bool {
+    html.contains("challenge-platform") // Cloudflare
+    || html.contains("cf-turnstile")
+    || html.contains("Just a moment...")
+    || html.contains("Checking your browser") // Generic interstitials
+    || html.contains("Verifying you are human")
+    || html.contains("px-captcha") // PerimeterX / HUMAN
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tracing::instrument(skip_all, fields(url_length = url.len()))]
+#[tauri::command]
+pub async fn fetch_url_via_webview(
+    _app: tauri::AppHandle,
+    _url: String,
+    _locale: Option<String>,
+    _max_length: Option<usize>,
+) -> Result<FetchedPage, DbError> {
+    Err(DbError::Internal(
+        "webview fetch is currently only supported on Windows".into(),
+    ))
 }

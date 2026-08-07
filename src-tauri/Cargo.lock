@@ -4164,12 +4164,15 @@ dependencies = [
  "tauri-plugin-os",
  "tempfile",
  "thiserror 2.0.18",
+ "tokio",
  "tracing",
  "tracing-appender",
  "tracing-log",
  "tracing-subscriber",
  "url",
  "uuid",
+ "webview2-com",
+ "windows 0.61.3",
  "zip 8.6.0",
 ]
 
