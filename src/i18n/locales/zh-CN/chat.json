@@ -66,6 +66,7 @@
     "plan": {
       "title": "计划",
       "progress": "已完成 {{done}}/{{total}}",
+      "inProgress": "{{count}} 个进行中",
       "updating": "更新中…",
       "empty": "计划已清空"
     }

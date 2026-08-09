@@ -107,7 +107,7 @@ A single turn within a Conversation — the app-layer, typed counterpart of the 
 _Avoid_: ChatMessage, StoredMessage, MessageRecord
 
 **Plan**:
-A persisted, Conversation-scoped working agenda authored by the Agent via the `plan` tool — an ordered TODO list that implicitly guides the Agent's subsequent turns within that Conversation. At most one **active Plan** per Conversation; calling the `plan` tool replaces the prior Plan wholesale (last-write-wins). Persistence is per-Conversation (lives in `conversations.meta.plan`); the Plan survives app restarts and Conversation switches. The Plan is **NOT** a Message — it is never appended to the persisted thread; instead it is re-injected into the Derived Model Input on every subsequent turn (see ADR-0028).
+A persisted, Conversation-scoped working agenda authored by the Agent via the `plan` tool — an ordered TODO list that implicitly guides the Agent's subsequent turns within that Conversation. At most one **active Plan** per Conversation; calling the `plan` tool replaces the prior Plan wholesale (last-write-wins). Persistence is per-Conversation (lives in `conversations.meta.plan`); the Plan survives app restarts and Conversation switches. The Plan is **NOT** a Message — it is never appended to the persisted thread; instead it is re-injected into the Derived Model Input on every subsequent turn (see ADR-0028). Each Plan item carries a status of `pending` (not yet started), `in_progress` (an item the Agent has started but not yet finished), or `done` (completed).
 _Avoid_: TodoList, Scratchpad, Agenda, Outline, Checklist
 
 **Launcher**:

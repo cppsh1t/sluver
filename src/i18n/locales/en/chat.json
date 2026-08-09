@@ -66,6 +66,7 @@
     "plan": {
       "title": "Plan",
       "progress": "{{done}} of {{total}} done",
+      "inProgress": "{{count}} in progress",
       "updating": "Updating…",
       "empty": "Plan cleared"
     }

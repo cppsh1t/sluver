@@ -84,12 +84,50 @@ const EMPTY_CHECKBOX_ICON: IconSvgElement = [
   ],
 ];
 
+/**
+ * Half-filled checkbox glyph — the in-progress counterpart to
+ * {@link CheckmarkSquare02Icon} (done) and {@link EMPTY_CHECKBOX_ICON} (pending).
+ *
+ * `@hugeicons/core-free-icons` ships no half-filled / partially-completed
+ * checkbox: the closest stock glyph is a full check inside a square, which
+ * reads as "done" rather than "in progress". So this constant is hand-crafted
+ * alongside {@link EMPTY_CHECKBOX_ICON}.
+ *
+ * It reuses the exact rounded-square outline path of the other two glyphs (so
+ * the trio is pixel-identical in shape), plus a LEFT-HALF fill — a path that
+ * traces the vertical midpoint down, follows the bottom-left corner curves and
+ * left edge up, then closes back along the top-left corner curves. The half
+ * fill reads as "partially done / active" and is distinct from both the empty
+ * outline (pending) and the checked outline (done).
+ */
+const IN_PROGRESS_CHECKBOX_ICON: IconSvgElement = [
+  // Left-half fill (drawn first so the outline strokes sit on top).
+  [
+    "path",
+    {
+      d: "M12 2.5L12 21.5C7.52166 21.5 5.28249 21.5 3.89124 20.1088C2.5 18.7175 2.5 16.4783 2.5 12C2.5 7.52166 2.5 5.28249 3.89124 3.89124C5.28249 2.5 7.52166 2.5 12 2.5Z",
+      fill: "currentColor",
+      key: "0",
+    },
+  ],
+  // Rounded-square outline (identical to EMPTY_CHECKBOX_ICON).
+  [
+    "path",
+    {
+      d: "M2.5 12C2.5 7.52166 2.5 5.28249 3.89124 3.89124C5.28249 2.5 7.52166 2.5 12 2.5C16.4783 2.5 18.7175 2.5 20.1088 3.89124C21.5 5.28249 21.5 7.52166 21.5 12C21.5 16.4783 21.5 18.7175 20.1088 20.1088C18.7175 21.5 16.4783 21.5 12 21.5C7.52166 21.5 5.28249 21.5 3.89124 20.1088C2.5 18.7175 2.5 16.4783 2.5 12Z",
+      stroke: "currentColor",
+      strokeWidth: "1.5",
+      key: "1",
+    },
+  ],
+];
+
 // ─── Defensive Plan narrowing ──────────────────────────────────────────────
 
 /** A single normalized Plan item (defensive mirror of the library `PlanItem`). */
 interface PlanItemView {
   readonly text: string;
-  readonly status: "pending" | "done";
+  readonly status: "pending" | "in_progress" | "done";
 }
 
 /**
@@ -108,7 +146,12 @@ function normalizeItems(raw: unknown): PlanItemView[] | null {
     if (!isRecord(el)) continue;
     const text = typeof el.text === "string" ? el.text.trim() : "";
     if (text.length === 0) continue;
-    const status: PlanItemView["status"] = el.status === "done" ? "done" : "pending";
+    const status: PlanItemView["status"] =
+      el.status === "done"
+        ? "done"
+        : el.status === "in_progress"
+          ? "in_progress"
+          : "pending";
     items.push({ text, status });
   }
   return items;
@@ -143,29 +186,44 @@ function resolvePlanItems(tool: ToolBlockData): PlanItemView[] | null {
 /**
  * A single read-only checklist row.
  *
- * Done items render a checked square + strikethrough muted text; pending items
- * render an empty square + full-color text. The icons are decorative — there is
- * no interactive control (Q7.2(i)).
+ * Done items render a checked square + strikethrough muted text; in-progress
+ * items render a half-filled square in the accent color so they visually pop
+ * between muted-pending and muted-done; pending items render an empty square +
+ * full-color text. The icons are decorative — there is no interactive control
+ * (Q7.2(i)).
  */
 function PlanItemRow({ item }: { readonly item: PlanItemView }) {
-  const done = item.status === "done";
+  // Glyph + text classes branch by status so the in-progress row is the single
+  // accented element on the card (text-primary icon, full-foreground text).
+  let icon: typeof CheckmarkSquare02Icon | IconSvgElement;
+  let iconClass: string;
+  let textClass: string;
+  switch (item.status) {
+    case "done":
+      icon = CheckmarkSquare02Icon;
+      iconClass = "text-foreground";
+      textClass = "text-muted-foreground line-through";
+      break;
+    case "in_progress":
+      icon = IN_PROGRESS_CHECKBOX_ICON;
+      iconClass = "text-primary";
+      textClass = "text-foreground";
+      break;
+    case "pending":
+      icon = EMPTY_CHECKBOX_ICON;
+      iconClass = "text-muted-foreground/50";
+      textClass = "text-foreground";
+      break;
+  }
   return (
     <li className="flex items-start gap-1.5">
       <HugeiconsIcon
-        icon={done ? CheckmarkSquare02Icon : EMPTY_CHECKBOX_ICON}
+        icon={icon}
         strokeWidth={2}
         aria-hidden
-        className={cn(
-          "mt-[1px] size-3.5 shrink-0",
-          done ? "text-foreground" : "text-muted-foreground/50",
-        )}
+        className={cn("mt-[1px] size-3.5 shrink-0", iconClass)}
       />
-      <span
-        className={cn(
-          "text-[0.75rem] leading-relaxed",
-          done ? "text-muted-foreground line-through" : "text-foreground",
-        )}
-      >
+      <span className={cn("text-[0.75rem] leading-relaxed", textClass)}>
         {item.text}
       </span>
     </li>
@@ -191,18 +249,27 @@ export function PlanToolCard({ tool }: PlanToolCardProps) {
   const isError = tool.status === "error" && tool.error != null;
   const total = items?.length ?? 0;
   const doneCount = items?.filter((i) => i.status === "done").length ?? 0;
+  const inProgressCount =
+    items?.filter((i) => i.status === "in_progress").length ?? 0;
   const progressPct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
 
   // Right-aligned header status line — completion ratio when done, the live
   // "updating" label while running, "Error" on failure, or "Plan cleared" for
-  // an empty items array (the Agent set `items: []`).
+  // an empty items array (the Agent set `items: []`). The normal branch appends
+  // an in-progress count (separated by a middot) only when at least one item is
+  // in progress, so the default single-line layout is unchanged.
+  const progressLine = t("chat:tool.plan.progress", { done: doneCount, total });
   const statusLine = isError
     ? t("chat:tool.error")
     : isRunning
       ? t("chat:tool.plan.updating")
       : total === 0
         ? t("chat:tool.plan.empty")
-        : t("chat:tool.plan.progress", { done: doneCount, total });
+        : inProgressCount > 0
+          ? `${progressLine} · ${t("chat:tool.plan.inProgress", {
+              count: inProgressCount,
+            })}`
+          : progressLine;
 
   return (
     <div className="overflow-hidden rounded-lg border border-border/70 bg-muted/20">

@@ -14,13 +14,13 @@
  */
 
 /** Status of an individual Plan item. */
-export type PlanStatus = "pending" | "done";
+export type PlanStatus = "pending" | "in_progress" | "done";
 
 /** A single TODO item within a Plan. */
 export interface PlanItem {
     /** The TODO text (plain string; agent is instructed to keep it short). */
     readonly text: string;
-    /** Whether the item is still pending or completed. */
+    /** Whether the item is pending, in progress, or done. */
     readonly status: PlanStatus;
 }
 

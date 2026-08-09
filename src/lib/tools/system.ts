@@ -23,7 +23,7 @@ import type { ToolDef } from "./types";
  */
 interface PlanToolInput {
   /** The complete list of Plan items (replaces any prior Plan wholesale). */
-  readonly items: { readonly text: string; readonly status: "pending" | "done" }[];
+  readonly items: { readonly text: string; readonly status: "pending" | "in_progress" | "done" }[];
 }
 
 /**
@@ -36,6 +36,8 @@ interface PlanToolOutput {
   readonly plan: Plan;
   /** Count of items with status "pending". */
   readonly pendingCount: number;
+  /** Count of items with status "in_progress". */
+  readonly inProgressCount: number;
   /** Count of items with status "done". */
   readonly doneCount: number;
 }
@@ -72,7 +74,7 @@ export function systemTools(): Record<string, ToolDef> {
     // ── Plan (the Agent's working agenda — ADR-0028, ADR-0029 Phase 1) ──
     plan: {
       description:
-        "Set or update the working Plan for this conversation — an ordered TODO list that guides your subsequent turns. Each call REPLACES the prior Plan wholesale (last-write-wins); there is no partial update. Changes take effect on the NEXT turn (the current turn's reminder is already snapshotted). Use this to: (1) lay out a multi-step approach before starting work, (2) mark items done as you complete them, (3) add or remove items as the work evolves. An empty items array clears the Plan.",
+        "Set or update the working Plan for this conversation — an ordered TODO list that guides your subsequent turns. Each call REPLACES the prior Plan wholesale (last-write-wins); there is no partial update. Changes take effect on the NEXT turn (the current turn's reminder is already snapshotted). Use this to: (1) lay out a multi-step approach before starting work, (2) advance items through the pending → in_progress → done lifecycle as you work on them — mark an item in_progress when you begin it and done when finished, (3) add or remove items as the work evolves. An empty items array clears the Plan.",
       inputSchema: z.object({
         items: z
           .array(
@@ -81,7 +83,11 @@ export function systemTools(): Record<string, ToolDef> {
                 .string()
                 .min(1)
                 .describe("The TODO text. Keep it to one short sentence."),
-              status: z.enum(["pending", "done"]),
+              status: z
+                .enum(["pending", "in_progress", "done"])
+                .describe(
+                  "Item state. 'pending' = not yet started. 'in_progress' = an item you have started but not yet finished. 'done' = completed.",
+                ),
             }),
           )
           .describe("The complete list of Plan items. Replaces any prior Plan wholesale."),
@@ -100,8 +106,9 @@ export function systemTools(): Record<string, ToolDef> {
         // Model Input was already snapshotted at run entry).
         await ctx.planAccess.set(plan);
         const pendingCount = plan.items.filter((i) => i.status === "pending").length;
+        const inProgressCount = plan.items.filter((i) => i.status === "in_progress").length;
         const doneCount = plan.items.filter((i) => i.status === "done").length;
-        return { plan, pendingCount, doneCount };
+        return { plan, pendingCount, inProgressCount, doneCount };
       },
     },
   };

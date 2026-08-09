@@ -16,27 +16,34 @@
  *
  * ## Output format
  *
- * When the Plan has pending items, the reminder block appended to the static
- * prompt looks like:
+ * When the Plan has active (pending or in-progress) items, the reminder block
+ * appended to the static prompt looks like:
  *
  * ```
  * {staticPrompt}
  *
  * ---
  *
- * ## Current Plan ({doneCount} of {total} done)
+ * ## Current Plan ({doneCount} of {total} done[, {n} in progress])
  *
- * Continue working through the pending items below. Mark items done by calling
- * the `plan` tool with the updated list; add new items or reorder as needed.
+ * Items marked `[~]` are in progress — resume them and mark each `done` when
+ * finished, or re-plan if stale. Items marked `[ ]` are pending.
  *
+ * - [~] {in-progress item text}
  * - [ ] {pending item 1 text}
  * - [ ] {pending item 2 text}
  * ```
  *
- * - Only PENDING items are rendered as bullets (done items are hidden — the
- *   counts in the header convey their number).
+ * - ACTIVE items (in-progress + pending) are rendered as bullets in their
+ *   original Plan order. In-progress items use the `[~]` marker; pending items
+ *   use the `[ ]` marker. DONE items are hidden — the counts in the header
+ *   convey their number.
  * - `{doneCount}` = items with `status === "done"`.
- * - `{total}` = `items.length` (pending + done).
+ * - `{n}` = items with `status === "in_progress"` (shown only when > 0).
+ * - `{total}` = `items.length` (pending + in-progress + done).
+ * - When no item is in progress, the intro line reads "Continue working through
+ *   the pending items below. Mark items done by calling the `plan` tool with the
+ *   updated list; add new items or reorder as needed." instead.
  * - If ALL items are done, the header still appears, but the intro line reads
  *   "All items complete; consider whether a new Plan is needed." and no bullets
  *   follow.
@@ -73,27 +80,41 @@ export function composeSystemPrompt(
     const items = plan.items;
     const total = items.length;
     const doneCount = items.filter((item) => item.status === "done").length;
-    const pendingItems = items.filter((item) => item.status === "pending");
+    const inProgressItems = items.filter((item) => item.status === "in_progress");
+    // Active = not yet done. Rendered as bullets in original order so the
+    // model resumes an in-progress item rather than restarting it.
+    const activeItems = items.filter(
+        (item) => item.status === "in_progress" || item.status === "pending",
+    );
 
-    const header = `## Current Plan (${doneCount} of ${total} done)`;
+    let header = `## Current Plan (${doneCount} of ${total} done)`;
+    if (inProgressItems.length > 0) {
+        header += `, ${inProgressItems.length} in progress`;
+    }
 
     let intro: string;
-    // The block is assembled top-down; pending bullets are appended only when
-    // at least one pending item exists.
+    // The block is assembled top-down; active bullets are appended only when
+    // at least one active (pending or in-progress) item exists.
     const block: string[] = ["", "---", "", header, ""];
 
-    if (pendingItems.length === 0) {
+    if (activeItems.length === 0) {
         // All items done — keep the header (so the model knows a Plan existed)
         // but signal completion instead of listing bullets.
         intro =
             "All items complete; consider whether a new Plan is needed.";
         block.push(intro);
     } else {
-        intro =
-            "Continue working through the pending items below. Mark items done by calling the `plan` tool with the updated list; add new items or reorder as needed.";
+        if (inProgressItems.length > 0) {
+            intro =
+                "Items marked `[~]` are in progress — resume them and mark each `done` when finished, or re-plan if stale. Items marked `[ ]` are pending.";
+        } else {
+            intro =
+                "Continue working through the pending items below. Mark items done by calling the `plan` tool with the updated list; add new items or reorder as needed.";
+        }
         block.push(intro, "");
-        for (const item of pendingItems) {
-            block.push(`- [ ] ${item.text}`);
+        for (const item of activeItems) {
+            const marker = item.status === "in_progress" ? "- [~]" : "- [ ]";
+            block.push(`${marker} ${item.text}`);
         }
     }
 
