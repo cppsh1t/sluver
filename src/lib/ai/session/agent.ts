@@ -31,7 +31,15 @@ import {
   type AgentRunHandle,
   type LanguageModelUsage,
 } from "@/lib/ai/loop";
-import { composeSystemPrompt } from "@/lib/ai/pipeline";
+import {
+  compactToolCalls,
+  composeSystemPrompt,
+  type CompactionPolicy,
+} from "@/lib/ai/pipeline";
+import type {
+  ToolCallPart,
+  ToolResultPart,
+} from "ai";
 
 import type { Plan } from "./plan";
 import {
@@ -40,6 +48,20 @@ import {
   type SessionMessage,
   type SessionStore,
 } from "./store";
+
+// ─── Defaults ────────────────────────────────────────────────────────────
+
+/**
+ * The default {@link CompactionPolicy} used when a caller does not pass one
+ * (e.g. legacy consumers, tests). Matches ADR-0031 §1's recommended defaults
+ * — compaction OFF, threshold N = 3. The threshold is moot while `enabled`
+ * is `false` (the compactor short-circuits), but a sane value keeps the field
+ * non-zero for downstream consumers that read it for display.
+ */
+const DEFAULT_COMPACTION_POLICY: CompactionPolicy = {
+  enabled: false,
+  turnAge: 3,
+};
 
 // ─── Options ─────────────────────────────────────────────────────────────
 
@@ -72,6 +94,19 @@ export interface AgentOptions {
    * errors are silently swallowed.
    */
   readonly onPersistError?: (error: unknown) => void;
+  /**
+   * Per-role tool-call compaction policy (ADR-0031 Phase 1). When `enabled`,
+   * aged tool-call + tool-result pairs in the Derived Model Input are replaced
+   * with short text stubs at {@link Agent.run} entry. The original (uncompacted)
+   * pairs remain available via {@link Agent.findToolPair} for the
+   * `context_read` tool to expand on demand.
+   *
+   * Defaults to `{ enabled: false, turnAge: 3 }` (ADR-0031 §1) — compaction is
+   * opt-in per role. The policy is captured at Agent construction time; a
+   * config change takes effect the next time the Space window reopens and the
+   * Provider rebuilds the Agent (same lifecycle as model rebinding, ADR-0023).
+   */
+  readonly compactionPolicy?: CompactionPolicy;
 }
 
 // ─── Agent ───────────────────────────────────────────────────────────────
@@ -88,6 +123,7 @@ export class Agent {
   private readonly sessionId: string;
   private readonly roleStaticPrompt: string;
   private readonly onPersistError?: (error: unknown) => void;
+  private readonly compactionPolicy: CompactionPolicy;
   private messages: SessionMessage[] = [];
   /**
    * The current Plan for this session. Loaded from the store on `open()`;
@@ -103,6 +139,7 @@ export class Agent {
     this.sessionId = options.sessionId;
     this.roleStaticPrompt = options.roleStaticPrompt;
     this.onPersistError = options.onPersistError;
+    this.compactionPolicy = options.compactionPolicy ?? DEFAULT_COMPACTION_POLICY;
   }
 
   /**
@@ -147,6 +184,68 @@ export class Agent {
       .savePlan(this.sessionId, plan)
       .catch((e) => this.onPersistError?.(e));
     return Promise.resolve();
+  }
+
+  /**
+   * Find the original (uncompacted) tool-call + tool-result pair for a given
+   * `toolCallId` in the Persisted Thread (`this.messages`).
+   *
+   * Used by the `context_read` tool (ADR-0031 §5) via
+   * `ToolContext.threadLookup.findToolPair` to expand a compacted stub back to
+   * its full input/output on demand. Per ADR-0028 invariant 1, the Persisted
+   * Thread is the source of truth and ALWAYS carries the original, uncompacted
+   * content — compaction only reshapes the Derived Model Input (a copy), never
+   * the persisted thread.
+   *
+   * Returns `undefined` when no tool-call with the given id is found, or when
+   * the matching tool-result is missing (e.g. an in-flight call that hasn't
+   * produced a result yet, or a call whose result was never persisted).
+   *
+   * @param toolCallId The id printed in a `[tool_call {id}] …` stub.
+   */
+  findToolPair(toolCallId: string): {
+    readonly call: ToolCallPart;
+    readonly result: ToolResultPart;
+  } | undefined {
+    // Two-pass: collect the matching ToolCallPart (from any assistant message)
+    // and the matching ToolResultPart (from any tool message), then pair them.
+    // A given toolCallId has at most one of each across the whole thread
+    // (provider contract — one call, one result). Short-circuits as soon as
+    // both are found. Mirrors the pairing pattern of `filterIncompleteToolCalls`
+    // in `loop.ts` (the existing tool-call/result handling paradigm).
+    let call: ToolCallPart | undefined;
+    let result: ToolResultPart | undefined;
+    for (const msg of this.messages) {
+      // `role` narrows the discriminated union; content is then accessible in
+      // its role-specific shape. Skip role messages with string/absent content
+      // (they cannot carry tool parts).
+      if (msg.role === "assistant") {
+        const { content } = msg;
+        if (typeof content === "string" || !Array.isArray(content)) continue;
+        if (!call) {
+          for (const part of content) {
+            if (part.type === "tool-call" && part.toolCallId === toolCallId) {
+              call = part;
+              break;
+            }
+          }
+        }
+      } else if (msg.role === "tool") {
+        const { content } = msg;
+        if (!Array.isArray(content) || content.length === 0) continue;
+        if (!result) {
+          for (const part of content) {
+            if (part.type === "tool-result" && part.toolCallId === toolCallId) {
+              result = part;
+              break;
+            }
+          }
+        }
+      }
+      if (call && result) break;
+    }
+    if (!call || !result) return undefined;
+    return { call, result };
   }
 
   /**
@@ -207,7 +306,14 @@ export class Agent {
     );
 
     // 2. Build the full thread for the loop (spread — don't mutate).
-    const modelMessages = [...this.messages, userMessage].map(toModelMessage);
+    //    compactToolCalls (ADR-0031 Phase 1) reshapes the Derived Model Input
+    //    by stubbing aged tool-call + tool-result pairs. It is a PURE
+    //    transform (ADR-0028 invariant 2) — when the policy is disabled (the
+    //    default) it returns the input array verbatim (zero-cost no-op). When
+    //    enabled, it allocates a fresh array; the original Persisted Thread
+    //    (`this.messages`) is never mutated.
+    const rawMessages = [...this.messages, userMessage].map(toModelMessage);
+    const modelMessages = compactToolCalls(rawMessages, this.compactionPolicy);
     const inputLength = modelMessages.length;
 
     // 2b. Compose the per-run system prompt via the pipeline (ADR-0028). The

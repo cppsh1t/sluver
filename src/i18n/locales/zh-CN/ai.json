@@ -47,6 +47,14 @@
     "autoExecute": {
       "title": "自动执行工具",
       "description": "开启后，创建类工具将直接执行，无需每次确认。"
+    },
+    "contextCompaction": {
+      "title": "上下文压缩",
+      "description": "开启后，超过若干轮的旧工具调用将被压缩为摘要，可用 context_read 工具展开。",
+      "turnAge": {
+        "title": "压缩阈值（轮数）",
+        "description": "超过此轮数的工具调用会被压缩。默认 3。"
+      }
     }
   },
   "catalog": {

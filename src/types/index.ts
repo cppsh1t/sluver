@@ -42,6 +42,8 @@ export {
   type SetProviderCredentialInput,
   agentConfigSchema,
   type AgentConfig,
+  contextCompactionSchema,
+  type ContextCompaction,
   catalogModelSchema,
   type CatalogModel,
   catalogProviderSchema,

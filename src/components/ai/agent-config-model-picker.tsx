@@ -5,15 +5,37 @@ import { toast } from "sonner";
 import i18n from "@/i18n";
 import { translateError } from "@/i18n/errors";
 import { toErrorPayload } from "@/api/client";
-import { useUpdateAgentConfigAutoExecute, useUpdateAgentConfigModel } from "@/hooks";
+import {
+  useUpdateAgentConfigAutoExecute,
+  useUpdateAgentConfigContextCompaction,
+  useUpdateAgentConfigModel,
+} from "@/hooks";
 import { parseModelId } from "@/lib/ai";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectItemIndicator,
+  SelectItemText,
+  SelectList,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type {
   AgentConfig,
   CatalogProvider,
   ProviderCredential,
 } from "@/types";
 import { ModelCascadingSelect } from "./model-cascading-select";
+
+/**
+ * Preset turn-age thresholds offered in the UI (ADR-0031 §2 — default 3).
+ * If the stored `turnAge` ever falls outside this list (e.g. via direct DB
+ * edit or a future migration), it is merged in so the current value always
+ * remains selectable.
+ */
+const COMPACT_TURN_AGE_PRESETS = [3, 5, 8, 10] as const;
 
 /**
  * One row per agent config: a label (Explorer / Writer) on the left, the
@@ -39,6 +61,7 @@ export function AgentConfigModelPicker({
   const { t } = useTranslation("ai");
   const updateMut = useUpdateAgentConfigModel(spaceId);
   const autoExecMut = useUpdateAgentConfigAutoExecute(spaceId);
+  const compactionMut = useUpdateAgentConfigContextCompaction(spaceId);
 
   const [serverProvider, serverModel] = parseModelId(agentConfig.modelId);
   const [localProvider, setLocalProvider] = useState<string | null>(
@@ -70,6 +93,15 @@ export function AgentConfigModelPicker({
   }, [agentConfig.modelId]);
 
   const availableProviderIds = new Set(credentials.map((c) => c.providerId));
+
+  // Merge the stored turnAge into the preset list so the Select always has
+  // a matching item (defensive against non-preset values from the DB).
+  const presets: readonly number[] = COMPACT_TURN_AGE_PRESETS;
+  const turnAgeOptions: number[] = presets.includes(
+    agentConfig.contextCompaction.turnAge,
+  )
+    ? [...presets]
+    : [agentConfig.contextCompaction.turnAge, ...presets];
 
   async function persistModel(composite: string | null) {
     lastPersistedRef.current = composite;
@@ -115,6 +147,40 @@ export function AgentConfigModelPicker({
     }
   }
 
+  async function handleContextCompactionToggle(checked: boolean) {
+    try {
+      await compactionMut.mutateAsync({
+        id: agentConfig.id,
+        contextCompaction: {
+          enabled: checked,
+          turnAge: agentConfig.contextCompaction.turnAge,
+        },
+      });
+      toast.success(i18n.t("ai:agentConfigs.toast.updateSuccess"));
+    } catch (err) {
+      toast.error(i18n.t("ai:agentConfigs.toast.updateFailed"), {
+        description: translateError(toErrorPayload(err)),
+      });
+    }
+  }
+
+  async function handleTurnAgeChange(turnAge: number) {
+    try {
+      await compactionMut.mutateAsync({
+        id: agentConfig.id,
+        contextCompaction: {
+          enabled: agentConfig.contextCompaction.enabled,
+          turnAge,
+        },
+      });
+      toast.success(i18n.t("ai:agentConfigs.toast.updateSuccess"));
+    } catch (err) {
+      toast.error(i18n.t("ai:agentConfigs.toast.updateFailed"), {
+        description: translateError(toErrorPayload(err)),
+      });
+    }
+  }
+
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center justify-between gap-6 py-2.5">
@@ -146,6 +212,58 @@ export function AgentConfigModelPicker({
           disabled={disabled || autoExecMut.isPending}
         />
       </div>
+      <div className="flex items-center justify-between gap-6 py-1 pl-1">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-xs font-medium text-muted-foreground">
+            {t("ai:agentConfigs.contextCompaction.title")}
+          </span>
+          <span className="text-[0.6875rem] text-muted-foreground/70">
+            {t("ai:agentConfigs.contextCompaction.description")}
+          </span>
+        </div>
+        <Switch
+          checked={agentConfig.contextCompaction.enabled}
+          onCheckedChange={handleContextCompactionToggle}
+          disabled={disabled || compactionMut.isPending}
+        />
+      </div>
+      {agentConfig.contextCompaction.enabled && (
+        <div className="flex items-center justify-between gap-6 py-1 pl-1">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-xs font-medium text-muted-foreground">
+              {t("ai:agentConfigs.contextCompaction.turnAge.title")}
+            </span>
+            <span className="text-[0.6875rem] text-muted-foreground/70">
+              {t("ai:agentConfigs.contextCompaction.turnAge.description")}
+            </span>
+          </div>
+          <Select
+            value={String(agentConfig.contextCompaction.turnAge)}
+            onValueChange={(val) => {
+              if (typeof val === "string") {
+                handleTurnAgeChange(Number(val));
+              }
+            }}
+          >
+            <SelectTrigger
+              className="w-24"
+              disabled={disabled || compactionMut.isPending}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectList>
+                {turnAgeOptions.map((age) => (
+                  <SelectItem key={age} value={String(age)}>
+                    <SelectItemText>{String(age)}</SelectItemText>
+                    <SelectItemIndicator />
+                  </SelectItem>
+                ))}
+              </SelectList>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
     </div>
   );
 }

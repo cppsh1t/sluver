@@ -20,7 +20,7 @@
  * Related: ADR-0019 (library purity), ADR-0025 (execute-blocking gate).
  */
 
-import type { FlexibleSchema } from "ai";
+import type { FlexibleSchema, ToolCallPart, ToolResultPart } from "ai";
 
 import type { Plan } from "@/lib/ai/session/plan";
 import { defineTool, type ToolSet } from "@/lib/ai";
@@ -144,13 +144,59 @@ export interface PlanAccess {
   set(plan: Plan): Promise<void>;
 }
 
+// ─── Thread lookup (Context mode — ADR-0031 Phase 1) ───────────────────────
+
+/**
+ * Reverse channel into the Persisted Thread, used by the `context_read` tool
+ * to expand a compacted tool-call stub back to its original input + output on
+ * demand (ADR-0031 §5 — Refinement A).
+ *
+ * Per ADR-0028 invariant 1, the Persisted Thread (`Agent.messages`) is the
+ * source of truth and ALWAYS carries original, uncompacted content. Compaction
+ * only reshapes the Derived Model Input (a transient copy built at `run()`
+ * entry); it never mutates what `threadLookup` reads. So a tool that pulls via
+ * this interface always sees the real args and the real result, regardless of
+ * whether the model is currently looking at a stub.
+ *
+ * ## Purity
+ *
+ * The interface is pure (no React/IPC/store dependencies). The concrete
+ * implementation lives in the conversation-runtime layer, where it closes
+ * over the live `Agent` via the same agentRef chicken-and-egg pattern used by
+ * {@link PlanAccess} (ADR-0029 §Negative). Tools see only this narrow
+ * interface — they never touch the Agent directly.
+ *
+ * ## Why `findToolPair` and not `findToolResult`
+ *
+ * ADR-0029 §Phase 2 originally specified `findToolResult(toolCallId):
+ * ModelMessage | undefined` — returning only the result, not the call args.
+ * The actual requirement ("查参数和结果" — "look up params AND result") needs
+ * both. Refined to `findToolPair` returning the call + result together
+ * (ADR-0031 §5 Refinement A documents the change; ADR-0029 is not amended).
+ */
+export interface ThreadLookup {
+  /**
+   * Find the original (uncompacted) tool-call + tool-result pair for a given
+   * `toolCallId` in the Persisted Thread. Returns `undefined` when no such
+   * pair exists (wrong id, in-flight call without a result, etc.).
+   *
+   * @param toolCallId The id printed in a `[tool_call {id}] …` stub.
+   */
+  findToolPair(toolCallId: string): {
+    readonly call: ToolCallPart;
+    readonly result: ToolResultPart;
+  } | undefined;
+}
+
 // ─── Tool context ─────────────────────────────────────────────────────────
 
 /**
  * Runtime context injected into every tool factory. Carries the identifiers
  * and infrastructure the tool needs to execute: the Space/World scope, the
- * approval gate, the agent's consent configuration, and (for the `plan`
- * tool) access to the Agent's working Plan state.
+ * approval gate, the agent's consent configuration, access to the Agent's
+ * working Plan state (Plan mode — ADR-0029 Phase 1), and reverse-channel
+ * access to the Persisted Thread for stub expansion (Context mode — ADR-0031
+ * Phase 1).
  *
  * Constructed per-conversation in the conversation-runtime store and passed
  * to `RoleBehavior.buildTools(ctx)`.
@@ -161,10 +207,16 @@ export interface ToolContext {
   readonly approvalGate: ApprovalGate;
   readonly autoExecuteDangerousTools: boolean;
   /**
-   * Access to the Agent's Plan state. Used by the `plan` tool. Phase 2
-   * adds `threadLookup` for Context mode (ADR-0029).
+   * Access to the Agent's Plan state. Used by the `plan` tool (Plan mode —
+   * ADR-0029 Phase 1).
    */
   readonly planAccess: PlanAccess;
+  /**
+   * Reverse channel into the Persisted Thread. Used by the `context_read`
+   * tool (Context mode — ADR-0031 Phase 1) to expand compacted tool-call
+   * stubs back to their original input + output on demand.
+   */
+  readonly threadLookup: ThreadLookup;
 }
 
 // ─── Declarative tool definition ──────────────────────────────────────────

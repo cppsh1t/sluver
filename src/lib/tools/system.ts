@@ -1,14 +1,18 @@
 /**
- * System tools — time, the working Plan, and other non-domain utilities.
+ * System tools — time, the working Plan, Context-mode stub expansion, and
+ * other non-domain utilities.
  *
  * Consent level: `auto` throughout. The `plan` tool is `auto` because the
  * Plan is the Agent's own working memory (not user-authored data); the user
- * observes it in the UI but does not approve edits to it (ADR-0029 Q5.6).
+ * observes it in the UI but does not approve edits to it (ADR-0029 Q5.6). The
+ * `context_read` tool is `auto` because it is a read-only lookup into the
+ * Persisted Thread with no side effects (ADR-0031 §5).
  */
 
 import { z } from "zod";
 
 import type { Plan } from "@/lib/ai/session/plan";
+import { deriveStatus } from "@/lib/ai/pipeline";
 
 import { timemapperTools } from "./timemapper";
 import type { ToolDef } from "./types";
@@ -41,6 +45,44 @@ interface PlanToolOutput {
   /** Count of items with status "done". */
   readonly doneCount: number;
 }
+
+// ─── `context_read` tool types ────────────────────────────────────────────
+
+/**
+ * Input shape for the {@link systemTools `context_read`} tool. Mirrors the Zod
+ * schema 1:1; declared as a named type so the `execute` body can cast the
+ * widened `unknown` input back to a known shape.
+ */
+interface ContextReadInput {
+  /** The toolCallId printed in a `[tool_call {id}] …` stub. */
+  readonly toolCallId: string;
+}
+
+/**
+ * Output shape for the {@link systemTools `context_read`} tool. Two variants:
+ *
+ * - Success: the original toolName + args + output + status, mirroring what
+ *   the compactor collapsed into the stub.
+ * - Not-found: a structured `{ error: "not_found", toolCallId, message }`.
+ *   Returned (not thrown) when the id is wrong or the call was evicted — a
+ *   wrong id is a normal case, not an invocation error (ADR-0031 §5).
+ *
+ * `status` is derived via the same {@link deriveStatus} the compactor uses,
+ * so the expanded view is consistent with the stub's label.
+ */
+type ContextReadOutput =
+  | {
+      readonly toolName: string;
+      readonly input: unknown;
+      /** The original `ToolResultPart.output` (full, uncompacted). */
+      readonly output: unknown;
+      readonly status: "succeeded" | "failed" | "denied";
+    }
+  | {
+      readonly error: "not_found";
+      readonly toolCallId: string;
+      readonly message: string;
+    };
 
 /** All system-level tools, keyed by `snake_case` name (except `plan`). */
 export function systemTools(): Record<string, ToolDef> {
@@ -109,6 +151,46 @@ export function systemTools(): Record<string, ToolDef> {
         const inProgressCount = plan.items.filter((i) => i.status === "in_progress").length;
         const doneCount = plan.items.filter((i) => i.status === "done").length;
         return { plan, pendingCount, inProgressCount, doneCount };
+      },
+    },
+
+    // ── context_read (expand a compacted tool-call stub — ADR-0031 §5) ──
+    context_read: {
+      description:
+        "Expand a compacted tool-call stub to its original input and output. Use when you see a '[tool_call {id}] toolName \u2192 status' stub in older turns and need the full details. Recent tool calls are NOT compacted \u2014 do not call for them. Do not call to expand a previous context_read call (its result is already the expanded content).",
+      inputSchema: z.object({
+        toolCallId: z
+          .string()
+          .min(1)
+          .describe(
+            "The toolCallId from a `[tool_call {id}] \u2026` stub in an older turn.",
+          ),
+      }),
+      // `auto` per ADR-0031 §5: read-only lookup into the Persisted Thread,
+      // no side effects (the original tool already executed; this just
+      // re-surfaces its args + output to the model).
+      consentLevel: "auto",
+      execute: async (input, ctx): Promise<ContextReadOutput> => {
+        const { toolCallId } = input as ContextReadInput;
+        const pair = ctx.threadLookup.findToolPair(toolCallId);
+        if (!pair) {
+          // Structured not-found, NOT a throw — a wrong id is a normal case
+          // (the model may misremember), not an invocation error. Throwing
+          // would confuse the model into thinking its call shape was wrong.
+          return {
+            error: "not_found",
+            toolCallId,
+            message: `No tool call with id "${toolCallId}" in the thread. The id may be incorrect or the call evicted.`,
+          };
+        }
+        return {
+          toolName: pair.call.toolName,
+          input: pair.call.input,
+          output: pair.result.output,
+          // Same status derivation the compactor used to label the stub, so
+          // the expanded view stays consistent with the model's prior belief.
+          status: deriveStatus(pair.result),
+        };
       },
     },
   };

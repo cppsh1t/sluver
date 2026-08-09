@@ -248,6 +248,7 @@ pub fn run() {
             commands::ai::list_agent_configs,
             commands::ai::update_agent_config_model,
             commands::ai::update_agent_config_auto_execute,
+            commands::ai::update_agent_config_context_compaction,
             commands::ai::get_models_dev_catalog,
             commands::ai::refresh_models_dev_catalog,
             commands::search::search_web,

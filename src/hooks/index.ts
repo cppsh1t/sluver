@@ -93,6 +93,7 @@ export {
   useAgentConfigs,
   useUpdateAgentConfigModel,
   useUpdateAgentConfigAutoExecute,
+  useUpdateAgentConfigContextCompaction,
   useModelsDevCatalog,
   useRefreshModelsDevCatalog,
   useResolvedModelConfig,

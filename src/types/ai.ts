@@ -55,6 +55,36 @@ export const setProviderCredentialInputSchema = z.object({
 
 export type SetProviderCredentialInput = z.infer<typeof setProviderCredentialInputSchema>;
 
+// ─── Context compaction ─────────────────────────────────────────────────────
+
+/**
+ * Per-role Context-mode compaction config (ADR-0031 Phase 1).
+ *
+ * When `enabled`, the Derived Model Input pipeline replaces aged tool-call +
+ * tool-result pairs with short text stubs (scheme Z — see ADR-0031 §3). The
+ * `turnAge` threshold controls how many recent turns keep their full tool
+ * detail; turns older than the threshold are compacted. The original
+ * (uncompacted) pair is always recoverable by the model via the
+ * `context_read` tool.
+ *
+ * Defaults: `enabled = false`, `turnAge = 3`. Per-role opt-in matches the
+ * heterogeneous conversation lengths across roles (Writer runs long, Explorer
+ * runs short) — ADR-0031 §1.
+ */
+export const contextCompactionSchema = z.object({
+  /** Whether stub compaction is active for this role. Default `false`. */
+  enabled: z.boolean(),
+  /**
+   * Number of recent user-turns whose tool calls are kept verbatim. `turnAge`
+   * of 0 compacts every prior turn (only the current turn is preserved). Must
+   * be a positive integer in the schema; the ADR's "default 3" is enforced by
+   * the DB seed + the role's `CompactionPolicy`, not by this schema.
+   */
+  turnAge: z.number().int().positive(),
+});
+
+export type ContextCompaction = z.infer<typeof contextCompactionSchema>;
+
 // ─── AgentConfig ────────────────────────────────────────────────────────────
 
 /**
@@ -75,6 +105,13 @@ export const agentConfigSchema = z.object({
    * asking for confirmation each time. Defaults to `false`.
    */
   autoExecuteDangerousTools: z.boolean(),
+  /**
+   * Per-role Context-mode compaction config (ADR-0031 Phase 1). Controls
+   * whether aged tool-call + tool-result pairs are stubbed in the Derived
+   * Model Input. Read by the conversation-runtime at Agent construction time
+   * and converted to a library-side `CompactionPolicy`.
+   */
+  contextCompaction: contextCompactionSchema,
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });

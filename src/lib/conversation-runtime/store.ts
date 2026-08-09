@@ -33,6 +33,7 @@ import {
   AgentLoop,
   type AgentEvent,
   type AgentRunHandle,
+  type CompactionPolicy,
   type LanguageModel,
   type LanguageModelUsage,
   type SessionMessage,
@@ -43,7 +44,7 @@ import { getRoleBehavior } from "@/lib/ai-roles";
 import { TauriSessionStore } from "@/lib/ai-store";
 import { logger } from "@/lib/logger";
 import type { ApprovalGate, ConsentLevel, ToolContext } from "@/lib/tools/types";
-import type { Conversation, Message, SpaceId, WorldId } from "@/types";
+import type { Conversation, ContextCompaction, Message, SpaceId, WorldId } from "@/types";
 
 // ─── Public types ─────────────────────────────────────────────────────────
 
@@ -58,7 +59,13 @@ import type { Conversation, Message, SpaceId, WorldId } from "@/types";
  * construction time.
  */
 export type ResolvedModel =
-  | { readonly status: "ready"; readonly model: LanguageModel; readonly autoExecuteDangerousTools: boolean }
+  | {
+      readonly status: "ready";
+      readonly model: LanguageModel;
+      readonly autoExecuteDangerousTools: boolean;
+      /** Per-role Context-mode compaction config (ADR-0031 Phase 1). */
+      readonly contextCompaction: ContextCompaction;
+    }
   | { readonly status: "loading" }
   | { readonly status: "unconfigured" };
 
@@ -456,6 +463,7 @@ async function constructAgent(
   onPersistError: PersistErrorHandler,
   approvalGate: ApprovalGate,
   autoExecuteDangerousTools: boolean,
+  contextCompaction: ContextCompaction,
 ): Promise<Agent> {
   const roleBehavior = getRoleBehavior(conversation.agentConfigName);
   if (!roleBehavior) {
@@ -505,6 +513,17 @@ async function constructAgent(
         return agentRef.current.setPlan(plan);
       },
     },
+    // `threadLookup` is the reverse channel for Context-mode stub compaction
+    // (ADR-0031 §5). Used by the `context_read` tool to expand a compacted
+    // `[tool_call {id}] …` stub back to its original input + output. Unlike
+    // `planAccess`, this is READ-ONLY — no `set` — so there is no null-guard
+    // throw; an unresolved agentRef simply yields `undefined` (which the tool
+    // converts to a structured `not_found` result). In practice, tools never
+    // execute before Agent.open() resolves (same lifecycle guarantee as
+    // planAccess — see the header comment above).
+    threadLookup: {
+      findToolPair: (toolCallId) => agentRef.current?.findToolPair(toolCallId),
+    },
   };
 
   const tools = roleBehavior.buildTools(ctx);
@@ -518,12 +537,20 @@ async function constructAgent(
       : {}),
   });
   const store = new TauriSessionStore({ spaceId, worldId, conversation });
+  // Convert the persisted per-role config (ADR-0012) into the library-side
+  // policy. The library stays free of the `ContextCompaction` app type
+  // (ADR-0019 purity); the conversion happens here at the app boundary.
+  const compactionPolicy: CompactionPolicy = {
+    enabled: contextCompaction.enabled,
+    turnAge: contextCompaction.turnAge,
+  };
   const agent = await Agent.open({
     loop,
     store,
     sessionId: conversation.id,
     roleStaticPrompt: roleBehavior.systemPrompt,
     onPersistError,
+    compactionPolicy,
   });
   // Back-fill — tools can now reach the live Agent via planAccess. This is the
   // single assignment to agentRef.current; it stays non-null for the Agent's
@@ -664,7 +691,7 @@ export function createConversationRuntimeStore(
         return null;
       }
 
-      const { model, autoExecuteDangerousTools } = resolved;
+      const { model, autoExecuteDangerousTools, contextCompaction } = resolved;
       const gate = createGate(worldId, conversationId);
       patchData(worldId, conversationId, (d) => ({ ...d, agentLoading: true }));
       try {
@@ -676,6 +703,7 @@ export function createConversationRuntimeStore(
           onPersistError,
           gate,
           autoExecuteDangerousTools,
+          contextCompaction,
         );
         // ADR-0030 read path — pull the persisted Message rows (with usage
         // columns) STRAIGHT from the IPC, bypassing TauriSessionStore

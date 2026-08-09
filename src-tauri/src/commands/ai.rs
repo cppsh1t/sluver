@@ -25,7 +25,7 @@ use rusqlite::params;
 use tauri::State;
 
 use crate::db::{DbError, DbManager};
-use crate::models::agent_config::AgentConfig;
+use crate::models::agent_config::{AgentConfig, ContextCompaction};
 use crate::models::catalog::{CatalogMeta, CatalogModel, CatalogProvider, ModelsDevCatalog, RawCatalog, RawModel, RawProvider};
 use crate::models::provider_credential::{ProviderCredential, SetProviderCredentialInput};
 use crate::util::{new_id, now_iso};
@@ -59,6 +59,10 @@ fn row_to_agent_config(row: &rusqlite::Row) -> rusqlite::Result<AgentConfig> {
         name: row.get("name")?,
         model_id: row.get("model_id")?,
         auto_execute_dangerous_tools: row.get("auto_execute_dangerous_tools")?,
+        context_compaction: ContextCompaction {
+            enabled: row.get("context_compaction_enabled")?,
+            turn_age: row.get("context_compaction_turn_age")?,
+        },
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
     })
@@ -219,7 +223,9 @@ pub(crate) fn do_list_agent_configs(
 ) -> Result<Vec<AgentConfig>, DbError> {
     mgr.with_space(space_id, |conn| {
         let mut stmt = conn.prepare(
-            "SELECT id, name, model_id, auto_execute_dangerous_tools, created_at, updated_at
+            "SELECT id, name, model_id, auto_execute_dangerous_tools,
+                    context_compaction_enabled, context_compaction_turn_age,
+                    created_at, updated_at
              FROM agent_configs ORDER BY created_at",
         )?;
         let rows = stmt
@@ -257,7 +263,9 @@ pub(crate) fn do_update_agent_config_model(
         }
         // Read back the canonical row (AGENTS.md: read after mutation).
         conn.query_row(
-            "SELECT id, name, model_id, auto_execute_dangerous_tools, created_at, updated_at
+            "SELECT id, name, model_id, auto_execute_dangerous_tools,
+                    context_compaction_enabled, context_compaction_turn_age,
+                    created_at, updated_at
              FROM agent_configs WHERE id = ?1",
             params![id],
             row_to_agent_config,
@@ -299,7 +307,68 @@ pub(crate) fn do_update_agent_config_auto_execute(
         }
         // Read back the canonical row (AGENTS.md: read after mutation).
         conn.query_row(
-            "SELECT id, name, model_id, auto_execute_dangerous_tools, created_at, updated_at
+            "SELECT id, name, model_id, auto_execute_dangerous_tools,
+                    context_compaction_enabled, context_compaction_turn_age,
+                    created_at, updated_at
+             FROM agent_configs WHERE id = ?1",
+            params![id],
+            row_to_agent_config,
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                DbError::AgentConfigNotFound(id.to_string())
+            }
+            other => DbError::Sqlite(other),
+        })
+    })
+}
+
+#[tracing::instrument(skip(state, id, context_compaction), fields(entity_id = %id))]
+#[tauri::command]
+pub fn update_agent_config_context_compaction(
+    space_id: String,
+    id: String,
+    context_compaction: ContextCompaction,
+    state: State<'_, DbManager>,
+) -> Result<AgentConfig, DbError> {
+    do_update_agent_config_context_compaction(&state, &space_id, &id, context_compaction)
+}
+
+pub(crate) fn do_update_agent_config_context_compaction(
+    mgr: &DbManager,
+    space_id: &str,
+    id: &str,
+    context_compaction: ContextCompaction,
+) -> Result<AgentConfig, DbError> {
+    // Guard: turn_age must be a positive integer. The frontend Zod schema
+    // (types/ai.ts) enforces this on the happy path, but a direct IPC call or
+    // manual DB edit could bypass it. Reject early so a bad value can never
+    // reach SQLite (where it would silently disable or over-compact: a value
+    // ≤ 0 compacts every turn including the current one).
+    if context_compaction.turn_age <= 0 {
+        return Err(DbError::InvalidInput(format!(
+            "context_compaction.turn_age must be a positive integer, got {}",
+            context_compaction.turn_age
+        )));
+    }
+    let now = now_iso();
+    mgr.with_space(space_id, |conn| {
+        let affected = conn.execute(
+            "UPDATE agent_configs
+             SET context_compaction_enabled = ?1,
+                 context_compaction_turn_age = ?2,
+                 updated_at = ?3
+             WHERE id = ?4",
+            params![context_compaction.enabled, context_compaction.turn_age, now, id],
+        )?;
+        if affected == 0 {
+            return Err(DbError::AgentConfigNotFound(id.to_string()));
+        }
+        // Read back the canonical row (AGENTS.md: read after mutation).
+        conn.query_row(
+            "SELECT id, name, model_id, auto_execute_dangerous_tools,
+                    context_compaction_enabled, context_compaction_turn_age,
+                    created_at, updated_at
              FROM agent_configs WHERE id = ?1",
             params![id],
             row_to_agent_config,
@@ -1034,14 +1103,26 @@ mod tests {
             name: "explorer".into(),
             model_id: Some("anthropic/claude-sonnet-5".into()),
             auto_execute_dangerous_tools: false,
+            context_compaction: ContextCompaction {
+                enabled: false,
+                turn_age: 3,
+            },
             created_at: "2026-01-01T00:00:00.000Z".into(),
             updated_at: "2026-01-01T00:00:00.000Z".into(),
         };
         let json = serde_json::to_string(&a).expect("serialize");
         assert!(json.contains("\"modelId\":\"anthropic/claude-sonnet-5\""), "camelCase: {json}");
         assert!(json.contains("\"autoExecuteDangerousTools\":false"), "camelCase: {json}");
+        assert!(
+            json.contains("\"contextCompaction\":{\"enabled\":false,\"turnAge\":3}"),
+            "camelCase contextCompaction: {json}"
+        );
         assert!(!json.contains("model_id"), "snake_case leak: {json}");
         assert!(!json.contains("auto_execute_dangerous_tools"), "snake_case leak: {json}");
+        assert!(
+            !json.contains("context_compaction") && !json.contains("turn_age"),
+            "snake_case leak: {json}"
+        );
     }
 
     /// SetProviderCredentialInput deserializes from camelCase frontend input.

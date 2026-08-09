@@ -134,6 +134,14 @@ _Avoid_: Live Input, Effective Messages, Model Context
 The `responseMessages` slice returned by `AgentLoop` at run resolution — the model's new contributions for this turn. Appended verbatim to the Persisted Thread (no reverse-transform). Carries text, reasoning, tool-call, and tool-result parts exactly as the model produced them. (See ADR-0028.)
 _Avoid_: Response Delta, Turn Output
 
+**Context Compaction** (informally: **Context mode**):
+A per-role-configurable pipeline transform (ADR-0031) that replaces aged tool-call + tool-result pairs in the Derived Model Input with short **Stubs**, while leaving the Persisted Thread untouched. Fires at `Agent.run()` entry; a tool pair is compacted when its containing user-turn's age (0-indexed from the current turn) is at least the role's configured `turnAge` (default 3). The model can expand any Stub back to its original input and output via the `context_read` tool, which reads from the Persisted Thread through `ToolContext.threadLookup`. Per-role opt-in (lives on `AgentConfig.contextCompaction`); roles with short conversations (e.g. Explorer) typically disable it to preserve prompt cache hit rate. Distinct from the future **semantic compaction** (Phase 2, deferred) — semantic compaction requires an LLM call and therefore cannot be a Derived Input pipeline transform under ADR-0028 invariant 2.
+_Avoid_: Summarization, Compression, Eviction, Pruning
+
+**Stub**:
+The short text replacement produced by **Context Compaction** for an aged tool-call + tool-result pair. Format: `[tool_call {toolCallId}] {toolName} → {status}` where status is `succeeded`, `failed`, or `denied` (the last from `ToolDeniedError` at the consent gate, ADR-0025). Lives only in the Derived Model Input — the Persisted Thread retains the original content verbatim. Self-contained (carries the `toolCallId` the model needs to call `context_read`), but does not embed the tool's arguments or output (pull-on-demand per Pi ch.8 §八.3, not push).
+_Avoid_: Summary, Marker, Placeholder, Reference, Snippet
+
 ## Conventions
 
 **Name uniqueness**: Within each scope, the `name` or `title` field is unique — `Space.name` across the Space registry; `World.name` within its Space; `Character.name`, `Location.name`, `Item.name`, `Lore.name`, `Event.name`, `Novel.title` within their World; `CharacterPhase.name` within their Character; `Chapter.title` within their Novel; `Scene.title` within their Chapter. Identity is always by `id` (UUID v7); the display label is scoped-unique.

@@ -9,10 +9,11 @@ import {
   refreshModelsDevCatalog,
   setProviderCredential,
   updateAgentConfigAutoExecute,
+  updateAgentConfigContextCompaction,
   updateAgentConfigModel,
 } from "@/api";
 import { parseModelId, type ResolvedModelConfig } from "@/lib/ai";
-import type { ProviderCredentialId, SpaceId } from "@/types";
+import type { ContextCompaction, ProviderCredentialId, SpaceId } from "@/types";
 
 // Hooks are toast-free on purpose: components own success/error UX so the
 // same hook is reusable across pages that surface errors differently. The
@@ -108,6 +109,20 @@ export const useUpdateAgentConfigAutoExecute = (spaceId: SpaceId) => {
   });
 };
 
+export const useUpdateAgentConfigContextCompaction = (spaceId: SpaceId) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      contextCompaction,
+    }: {
+      id: string;
+      contextCompaction: ContextCompaction;
+    }) => updateAgentConfigContextCompaction(spaceId, id, contextCompaction),
+    onSuccess: () => qc.invalidateQueries({ queryKey: aiConfigKeys.agentConfigs(spaceId) }),
+  });
+};
+
 // ─── Models.dev catalog (global) ─────────────────────────────────────────────
 
 /**
@@ -162,6 +177,8 @@ export function useResolvedModelConfig(
 ): {
   config: ResolvedModelConfig | null;
   autoExecuteDangerousTools: boolean;
+  /** Per-role Context-mode compaction config (ADR-0031 Phase 1). */
+  contextCompaction: ContextCompaction;
   isLoading: boolean;
   error: Error | null;
 } {
@@ -176,10 +193,23 @@ export function useResolvedModelConfig(
 
     const agentConfig = agentConfigs.data?.find((a) => a.name === agentConfigName);
     const autoExecuteDangerousTools = agentConfig?.autoExecuteDangerousTools ?? false;
+    // Per-role Context-mode compaction config (ADR-0031 Phase 1). Defaults to
+    // disabled when the agent config hasn't resolved yet — the Agent will be
+    // (re)built once config lands (same lifecycle as model rebinding).
+    const contextCompaction: ContextCompaction = agentConfig?.contextCompaction ?? {
+      enabled: false,
+      turnAge: 3,
+    };
     const [providerId, modelId] = parseModelId(agentConfig?.modelId ?? null);
 
     if (!providerId || !modelId) {
-      return { config: null, autoExecuteDangerousTools, isLoading, error };
+      return {
+        config: null,
+        autoExecuteDangerousTools,
+        contextCompaction,
+        isLoading,
+        error,
+      };
     }
 
     const credential = credentials.data?.find(
@@ -199,7 +229,13 @@ export function useResolvedModelConfig(
       credential.apiKey.trim() === "" ||
       !catalogProvider?.npm
     ) {
-      return { config: null, autoExecuteDangerousTools, isLoading, error };
+      return {
+        config: null,
+        autoExecuteDangerousTools,
+        contextCompaction,
+        isLoading,
+        error,
+      };
     }
 
     return {
@@ -212,6 +248,7 @@ export function useResolvedModelConfig(
           : {}),
       },
       autoExecuteDangerousTools,
+      contextCompaction,
       isLoading,
       error,
     };

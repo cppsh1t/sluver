@@ -5,7 +5,7 @@
  * - {@link ./provider} — `ResolvedModelConfig → LanguageModel` (provider 抹平层)
  * - {@link ./loop}     — `AgentLoop`: stateless single-run tool-calling loop over `streamText`
  * - {@link ./session}  — `Agent`: stateful multi-turn wrapper with conversation memory + persistence
- * - {@link ./pipeline} — `composeSystemPrompt`: pure Plan-mode system-prompt injector (ADR-0028)
+ * - {@link ./pipeline} — `composeSystemPrompt` (Plan mode) + `compactToolCalls` (Context mode, ADR-0031)
  */
 
 // ─── Provider ────────────────────────────────────────────────────────────
@@ -67,5 +67,5 @@ export {
 
 // ─── Pipeline (Derived Model Input transforms — ADR-0028) ────────────────
 
-export { composeSystemPrompt } from "./pipeline";
-export type { SystemPromptComposerInput } from "./pipeline";
+export { composeSystemPrompt, compactToolCalls, deriveStatus } from "./pipeline";
+export type { SystemPromptComposerInput, CompactionPolicy } from "./pipeline";

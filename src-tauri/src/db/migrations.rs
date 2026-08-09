@@ -113,6 +113,21 @@ const SPACE_MIGRATION_004: &str = r#"
     ALTER TABLE worlds ADD COLUMN image_mime TEXT;
 "#;
 
+/// Migration 5 for `space.db`: per-role context-compaction columns on
+/// `agent_configs` (ADR-0031 Phase 1 §1). Two scalar columns back the new
+/// `ContextCompaction { enabled, turn_age }` field on `AgentConfig`:
+/// `context_compaction_enabled` is a boolean (INTEGER 0/1, defaults to 0 =
+/// off — compaction is opt-in per ADR-0031 §1), `context_compaction_turn_age`
+/// is the user-turn age threshold (INTEGER, defaults to 3 per ADR-0031 §2).
+/// Existing rows pick up both DEFAULTs. Added as a separate migration so
+/// existing `space.db` files get the columns via `rusqlite_migration`'s
+/// incremental tracking — modifying `SPACE_SQL`, `SPACE_MIGRATION_002`, or
+/// `SPACE_MIGRATION_003` would NOT re-run for already-migrated databases.
+const SPACE_MIGRATION_005: &str = r#"
+    ALTER TABLE agent_configs ADD COLUMN context_compaction_enabled INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE agent_configs ADD COLUMN context_compaction_turn_age INTEGER NOT NULL DEFAULT 3;
+"#;
+
 // ─── world DB schema ────────────────────────────────────────────────────────
 // Tier 3 of the three-database design (ADR-0007). One file per World at
 // `spaces/{spaceId}/worlds/{worldId}.db`. Schema is byte-for-byte identical
@@ -272,6 +287,7 @@ const SPACE_SLICE: &[M] = &[
     M::up(SPACE_MIGRATION_002),
     M::up(SPACE_MIGRATION_003),
     M::up(SPACE_MIGRATION_004),
+    M::up(SPACE_MIGRATION_005),
 ];
 pub const SPACE_MIGRATIONS: Migrations = Migrations::from_slice(SPACE_SLICE);
 

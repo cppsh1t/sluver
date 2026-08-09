@@ -9,7 +9,12 @@
  * model accepts this because the Space is already behind an argon2id gate.
  */
 
-import type { AgentConfig, ModelsDevCatalog, ProviderCredential } from "@/types";
+import type {
+  AgentConfig,
+  ContextCompaction,
+  ModelsDevCatalog,
+  ProviderCredential,
+} from "@/types";
 import { call } from "./client";
 
 // ─── Provider credentials (Space-scoped) ────────────────────────────────────
@@ -73,6 +78,24 @@ export function updateAgentConfigAutoExecute(
     spaceId,
     id,
     autoExecute,
+  });
+}
+
+/**
+ * Update an agent config's Context-mode compaction settings (ADR-0031 Phase 1).
+ * `contextCompaction.enabled` toggles stub compaction of aged tool calls;
+ * `contextCompaction.turnAge` is the user-turn age threshold (default 3).
+ * Returns the updated agent config.
+ */
+export function updateAgentConfigContextCompaction(
+  spaceId: string,
+  id: string,
+  contextCompaction: ContextCompaction,
+): Promise<AgentConfig> {
+  return call<AgentConfig>("update_agent_config_context_compaction", {
+    spaceId,
+    id,
+    contextCompaction,
   });
 }
 
