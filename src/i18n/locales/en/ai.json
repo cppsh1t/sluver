@@ -30,12 +30,17 @@
     }
   },
   "agentConfigs": {
-    "title": "Agent Models",
-    "description": "Choose a model for each agent. Only providers with a configured key are shown.",
+    "title": "Agent settings",
+    "description": "Click each agent's configure icon to adjust its model, tool execution, and system prompt.",
     "providerPlaceholder": "Select provider",
     "modelPlaceholder": "Select model",
+    "modelLabel": "Model",
     "modelNone": "No model selected",
     "nonePlaceholder": "None",
+    "configure": "Configure",
+    "dialog": {
+      "description": "Adjust this agent's model, tool execution, and system prompt."
+    },
     "toast": {
       "updateSuccess": "Agent model updated",
       "updateFailed": "Failed to update model"

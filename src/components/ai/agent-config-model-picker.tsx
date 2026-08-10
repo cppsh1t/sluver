@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Settings02Icon } from "@hugeicons/core-free-icons";
 
 import i18n from "@/i18n";
 import { translateError } from "@/i18n/errors";
@@ -16,6 +18,14 @@ import { getRoleBehavior } from "@/lib/ai-roles";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -42,12 +52,14 @@ import { ModelCascadingSelect } from "./model-cascading-select";
 const COMPACT_TURN_AGE_PRESETS = [3, 5, 8, 10] as const;
 
 /**
- * One row per agent config: a label (Explorer / Writer) on the left, the
- * cascading provider→model selector on the right.
+ * One row per agent config: a label (Explorer / Writer) on the left, a brief
+ * model summary in the middle, and a config (gear) icon button on the right
+ * that opens a dialog hosting the full set of per-agent settings — model,
+ * auto-execute, context compaction, and system prompt override.
  *
- * Model changes are committed immediately via `updateAgentConfigModel` — no
- * explicit save button. The mutation invalidates the agent config query, so
- * the row reflects the server's response after the round trip.
+ * All settings still commit immediately on change (no explicit save button);
+ * the mutations invalidate the agent config query, so the row + dialog reflect
+ * the server's response after each round trip.
  */
 export function AgentConfigModelPicker({
   spaceId,
@@ -194,10 +206,13 @@ export function AgentConfigModelPicker({
     }
   }
 
-  async function handleSystemPromptBlur() {
+  async function commitPromptIfDirty() {
     // Only commit if the value actually changed. Prompts are long; committing
     // on every blur would waste round trips when the user clicked away without
-    // editing.
+    // editing. This is also called from the Dialog's onOpenChange when the
+    // dialog closes — close paths (ESC / X / backdrop) aren't guaranteed to
+    // fire the textarea's onBlur before the content unmounts, so an explicit
+    // close-time commit is the safety net that prevents silent data loss.
     if (localPrompt === agentConfig.systemPrompt) return;
     try {
       await systemPromptMut.mutateAsync({
@@ -231,132 +246,202 @@ export function AgentConfigModelPicker({
     }
   }
 
+  // Resolve human-readable provider/model names for the compact row summary.
+  // Falls back to raw ids if the catalog entry is missing (e.g. provider was
+  // removed but the binding lingered), and to a localized "none" hint when
+  // no model is bound at all. Reuses the serverProvider/serverModel parse
+  // from the initial-state block above.
+  const summary = useMemo(() => {
+    if (!serverProvider || !serverModel) return null;
+    const provider = providers.find((p) => p.id === serverProvider);
+    const providerName = provider?.name ?? serverProvider;
+    const modelName =
+      provider?.models.find((m) => m.id === serverModel)?.name ?? serverModel;
+    return `${providerName} · ${modelName}`;
+  }, [providers, serverProvider, serverModel]);
+
   return (
-    <div className="flex flex-col gap-1">
-      <div className="flex items-center justify-between gap-6 py-2.5">
-        <span className="text-sm font-medium">
-          {t(`ai:agentConfigs.name.${agentConfig.name}`, { defaultValue: agentConfig.name })}
-        </span>
-        <ModelCascadingSelect
-          providers={providers}
-          availableProviderIds={availableProviderIds}
-          selectedProviderId={localProvider}
-          selectedModelId={localModel}
-          disabled={disabled || updateMut.isPending}
-          onProviderChange={handleProviderChange}
-          onModelChange={handleModelChange}
-        />
-      </div>
-      <div className="flex items-center justify-between gap-6 py-1 pl-1">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-xs font-medium text-muted-foreground">
-            {t("ai:agentConfigs.autoExecute.title")}
+    <Dialog
+      onOpenChange={(nextOpen) => {
+        // Commit an in-progress system-prompt edit when the dialog closes —
+        // see commitPromptIfDirty for why this is needed in addition to blur.
+        if (!nextOpen) void commitPromptIfDirty();
+      }}
+    >
+      {/* Compact row: name + model summary + config (gear) icon button.
+          The whole row is a direct child of the section's divide-y list. */}
+      <div className="flex items-center justify-between gap-4 py-2.5">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className="truncate text-sm font-medium">
+            {t(`ai:agentConfigs.name.${agentConfig.name}`, { defaultValue: agentConfig.name })}
           </span>
-          <span className="text-[0.6875rem] text-muted-foreground/70">
-            {t("ai:agentConfigs.autoExecute.description")}
-          </span>
+          {summary ? (
+            <span className="truncate text-xs text-muted-foreground/70">
+              {summary}
+            </span>
+          ) : (
+            <span className="truncate text-xs italic text-muted-foreground/60">
+              {t("ai:agentConfigs.modelNone")}
+            </span>
+          )}
         </div>
-        <Switch
-          checked={agentConfig.autoExecuteDangerousTools}
-          onCheckedChange={handleAutoExecuteToggle}
-          disabled={disabled || autoExecMut.isPending}
-        />
+        <DialogTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              disabled={disabled}
+              aria-label={t("ai:agentConfigs.configure")}
+            />
+          }
+        >
+          <HugeiconsIcon icon={Settings02Icon} strokeWidth={2} />
+        </DialogTrigger>
       </div>
-      <div className="flex items-center justify-between gap-6 py-1 pl-1">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-xs font-medium text-muted-foreground">
-            {t("ai:agentConfigs.contextCompaction.title")}
-          </span>
-          <span className="text-[0.6875rem] text-muted-foreground/70">
-            {t("ai:agentConfigs.contextCompaction.description")}
-          </span>
-        </div>
-        <Switch
-          checked={agentConfig.contextCompaction.enabled}
-          onCheckedChange={handleContextCompactionToggle}
-          disabled={disabled || compactionMut.isPending}
-        />
-      </div>
-      {agentConfig.contextCompaction.enabled && (
-        <div className="flex items-center justify-between gap-6 py-1 pl-1">
-          <div className="flex flex-col gap-0.5">
+
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
+            {t(`ai:agentConfigs.name.${agentConfig.name}`, { defaultValue: agentConfig.name })}
+          </DialogTitle>
+          <DialogDescription>
+            {t("ai:agentConfigs.dialog.description")}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex flex-col gap-4">
+          {/* Model binding */}
+          <div className="flex flex-col gap-1.5">
             <span className="text-xs font-medium text-muted-foreground">
-              {t("ai:agentConfigs.contextCompaction.turnAge.title")}
+              {t("ai:agentConfigs.modelLabel")}
             </span>
-            <span className="text-[0.6875rem] text-muted-foreground/70">
-              {t("ai:agentConfigs.contextCompaction.turnAge.description")}
-            </span>
+            <ModelCascadingSelect
+              providers={providers}
+              availableProviderIds={availableProviderIds}
+              selectedProviderId={localProvider}
+              selectedModelId={localModel}
+              disabled={disabled || updateMut.isPending}
+              onProviderChange={handleProviderChange}
+              onModelChange={handleModelChange}
+            />
           </div>
-          <Select
-            value={String(agentConfig.contextCompaction.turnAge)}
-            onValueChange={(val) => {
-              if (typeof val === "string") {
-                handleTurnAgeChange(Number(val));
-              }
-            }}
-          >
-            <SelectTrigger
-              className="w-24"
+
+          {/* Auto-execute */}
+          <div className="flex items-center justify-between gap-6">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-xs font-medium text-muted-foreground">
+                {t("ai:agentConfigs.autoExecute.title")}
+              </span>
+              <span className="text-[0.6875rem] text-muted-foreground/70">
+                {t("ai:agentConfigs.autoExecute.description")}
+              </span>
+            </div>
+            <Switch
+              checked={agentConfig.autoExecuteDangerousTools}
+              onCheckedChange={handleAutoExecuteToggle}
+              disabled={disabled || autoExecMut.isPending}
+            />
+          </div>
+
+          {/* Context compaction */}
+          <div className="flex items-center justify-between gap-6">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-xs font-medium text-muted-foreground">
+                {t("ai:agentConfigs.contextCompaction.title")}
+              </span>
+              <span className="text-[0.6875rem] text-muted-foreground/70">
+                {t("ai:agentConfigs.contextCompaction.description")}
+              </span>
+            </div>
+            <Switch
+              checked={agentConfig.contextCompaction.enabled}
+              onCheckedChange={handleContextCompactionToggle}
               disabled={disabled || compactionMut.isPending}
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectList>
-                {turnAgeOptions.map((age) => (
-                  <SelectItem key={age} value={String(age)}>
-                    <SelectItemText>{String(age)}</SelectItemText>
-                    <SelectItemIndicator />
-                  </SelectItem>
-                ))}
-              </SelectList>
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-      {/* System prompt override */}
-      <div className="flex flex-col gap-2 py-2 pl-1">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex flex-col gap-0.5">
-            <span className="text-xs font-medium text-muted-foreground">
-              {t("ai:agentConfigs.systemPrompt.title")}
-            </span>
-            <span className="text-[0.6875rem] text-muted-foreground/70">
-              {t("ai:agentConfigs.systemPrompt.description")}
-            </span>
+            />
           </div>
-          <div className="flex items-center gap-2">
-            {agentConfig.systemPrompt.trim() ? (
-              <span className="text-[0.6875rem] text-muted-foreground/70">
-                {t("ai:agentConfigs.systemPrompt.usingCustom")}
-              </span>
-            ) : (
-              <span className="text-[0.6875rem] text-muted-foreground/70">
-                {t("ai:agentConfigs.systemPrompt.usingDefault")}
-              </span>
-            )}
-            {agentConfig.systemPrompt.trim() && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 text-xs"
-                onClick={handleResetPrompt}
-                disabled={disabled || systemPromptMut.isPending}
+          {agentConfig.contextCompaction.enabled && (
+            <div className="flex items-center justify-between gap-6">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {t("ai:agentConfigs.contextCompaction.turnAge.title")}
+                </span>
+                <span className="text-[0.6875rem] text-muted-foreground/70">
+                  {t("ai:agentConfigs.contextCompaction.turnAge.description")}
+                </span>
+              </div>
+              <Select
+                value={String(agentConfig.contextCompaction.turnAge)}
+                onValueChange={(val) => {
+                  if (typeof val === "string") {
+                    handleTurnAgeChange(Number(val));
+                  }
+                }}
               >
-                {t("ai:agentConfigs.systemPrompt.resetToDefault")}
-              </Button>
-            )}
+                <SelectTrigger
+                  className="w-24"
+                  disabled={disabled || compactionMut.isPending}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectList>
+                    {turnAgeOptions.map((age) => (
+                      <SelectItem key={age} value={String(age)}>
+                        <SelectItemText>{String(age)}</SelectItemText>
+                        <SelectItemIndicator />
+                      </SelectItem>
+                    ))}
+                  </SelectList>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* System prompt override */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {t("ai:agentConfigs.systemPrompt.title")}
+                </span>
+                <span className="text-[0.6875rem] text-muted-foreground/70">
+                  {t("ai:agentConfigs.systemPrompt.description")}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {agentConfig.systemPrompt.trim() ? (
+                  <span className="text-[0.6875rem] text-muted-foreground/70">
+                    {t("ai:agentConfigs.systemPrompt.usingCustom")}
+                  </span>
+                ) : (
+                  <span className="text-[0.6875rem] text-muted-foreground/70">
+                    {t("ai:agentConfigs.systemPrompt.usingDefault")}
+                  </span>
+                )}
+                {agentConfig.systemPrompt.trim() && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={handleResetPrompt}
+                    disabled={disabled || systemPromptMut.isPending}
+                  >
+                    {t("ai:agentConfigs.systemPrompt.resetToDefault")}
+                  </Button>
+                )}
+              </div>
+            </div>
+            <Textarea
+              value={localPrompt}
+              onChange={(e) => setLocalPrompt(e.currentTarget.value)}
+              onBlur={commitPromptIfDirty}
+              placeholder={getRoleBehavior(agentConfig.name)?.systemPrompt ?? ""}
+              className="min-h-24 text-xs"
+              disabled={disabled || systemPromptMut.isPending}
+            />
           </div>
         </div>
-        <Textarea
-          value={localPrompt}
-          onChange={(e) => setLocalPrompt(e.currentTarget.value)}
-          onBlur={handleSystemPromptBlur}
-          placeholder={getRoleBehavior(agentConfig.name)?.systemPrompt ?? ""}
-          className="min-h-24 text-xs"
-          disabled={disabled || systemPromptMut.isPending}
-        />
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

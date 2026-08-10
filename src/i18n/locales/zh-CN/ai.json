@@ -30,12 +30,17 @@
     }
   },
   "agentConfigs": {
-    "title": "Agent 模型",
-    "description": "为每个 Agent 选择模型。仅显示已配置密钥的服务商。",
+    "title": "Agent 设置",
+    "description": "点击每个 Agent 的配置图标，调整其模型、工具执行策略与系统提示词。",
     "providerPlaceholder": "选择服务商",
     "modelPlaceholder": "选择模型",
+    "modelLabel": "模型",
     "modelNone": "未选择模型",
     "nonePlaceholder": "无",
+    "configure": "配置",
+    "dialog": {
+      "description": "调整此 Agent 的模型、工具执行策略与系统提示词。"
+    },
     "toast": {
       "updateSuccess": "Agent 模型已更新",
       "updateFailed": "更新模型失败"
