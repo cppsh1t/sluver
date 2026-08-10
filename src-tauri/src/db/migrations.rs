@@ -128,6 +128,16 @@ const SPACE_MIGRATION_005: &str = r#"
     ALTER TABLE agent_configs ADD COLUMN context_compaction_turn_age INTEGER NOT NULL DEFAULT 3;
 "#;
 
+/// Migration 6 for `space.db`: per-role system prompt override on
+/// `agent_configs`. Empty string (the DEFAULT) means "use the code-defined
+/// default prompt" (see `src/lib/ai-roles/index.ts`); a non-empty value
+/// overrides it. Existing rows pick up DEFAULT ''. Added as a separate
+/// migration so existing `space.db` files get the new column via
+/// `rusqlite_migration`'s incremental tracking.
+const SPACE_MIGRATION_006: &str = r#"
+    ALTER TABLE agent_configs ADD COLUMN system_prompt TEXT NOT NULL DEFAULT '';
+"#;
+
 // ─── world DB schema ────────────────────────────────────────────────────────
 // Tier 3 of the three-database design (ADR-0007). One file per World at
 // `spaces/{spaceId}/worlds/{worldId}.db`. Schema is byte-for-byte identical
@@ -288,6 +298,7 @@ const SPACE_SLICE: &[M] = &[
     M::up(SPACE_MIGRATION_003),
     M::up(SPACE_MIGRATION_004),
     M::up(SPACE_MIGRATION_005),
+    M::up(SPACE_MIGRATION_006),
 ];
 pub const SPACE_MIGRATIONS: Migrations = Migrations::from_slice(SPACE_SLICE);
 

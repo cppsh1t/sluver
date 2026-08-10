@@ -125,6 +125,7 @@ export function ConversationRuntimeProvider({
           model: createLanguageModel(cfg.config),
           autoExecuteDangerousTools: cfg.autoExecuteDangerousTools,
           contextCompaction: cfg.contextCompaction,
+          systemPrompt: cfg.systemPrompt,
         };
       } catch (e) {
         // Provider package not installed / factory mismatch — surface as

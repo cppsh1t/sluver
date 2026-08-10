@@ -25,6 +25,11 @@ pub struct AgentConfig {
     /// `context_compaction_turn_age`); defaults to disabled (`enabled = false`,
     /// `turn_age = 3`) on seed and on migration of pre-existing rows.
     pub context_compaction: ContextCompaction,
+    /// Per-role system prompt override. Empty string = use the code-defined
+    /// default (see `src/lib/ai-roles/index.ts` `ROLE_BEHAVIOR`). A non-empty
+    /// value overrides the role's system prompt for this Space. Defaults to
+    /// empty on seed and on migration of pre-existing rows.
+    pub system_prompt: String,
     pub created_at: String,
     pub updated_at: String,
 }

@@ -55,6 +55,17 @@
         "title": "Compaction threshold (turns)",
         "description": "Tool calls older than this many turns are compacted. Default 3."
       }
+    },
+    "systemPrompt": {
+      "title": "System prompt",
+      "description": "Customize the instructions sent to this agent. Leave empty to use the default.",
+      "usingDefault": "Using default",
+      "usingCustom": "Custom",
+      "resetToDefault": "Reset to default",
+      "toast": {
+        "updateSuccess": "System prompt updated",
+        "updateFailed": "Failed to update system prompt"
+      }
     }
   },
   "catalog": {

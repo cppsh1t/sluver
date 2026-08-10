@@ -99,6 +99,22 @@ export function updateAgentConfigContextCompaction(
   });
 }
 
+/**
+ * Update an agent config's system prompt override. Pass an empty string to
+ * reset to the code-defined default. Returns the updated agent config.
+ */
+export function updateAgentConfigSystemPrompt(
+  spaceId: string,
+  id: string,
+  systemPrompt: string,
+): Promise<AgentConfig> {
+  return call<AgentConfig>("update_agent_config_system_prompt", {
+    spaceId,
+    id,
+    systemPrompt,
+  });
+}
+
 // ─── Models.dev catalog (global, not Space-scoped) ──────────────────────────
 
 /**

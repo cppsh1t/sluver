@@ -9,9 +9,13 @@ import {
   useUpdateAgentConfigAutoExecute,
   useUpdateAgentConfigContextCompaction,
   useUpdateAgentConfigModel,
+  useUpdateAgentConfigSystemPrompt,
 } from "@/hooks";
 import { parseModelId } from "@/lib/ai";
+import { getRoleBehavior } from "@/lib/ai-roles";
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -62,6 +66,8 @@ export function AgentConfigModelPicker({
   const updateMut = useUpdateAgentConfigModel(spaceId);
   const autoExecMut = useUpdateAgentConfigAutoExecute(spaceId);
   const compactionMut = useUpdateAgentConfigContextCompaction(spaceId);
+  const systemPromptMut = useUpdateAgentConfigSystemPrompt(spaceId);
+  const [localPrompt, setLocalPrompt] = useState(agentConfig.systemPrompt);
 
   const [serverProvider, serverModel] = parseModelId(agentConfig.modelId);
   const [localProvider, setLocalProvider] = useState<string | null>(
@@ -91,6 +97,13 @@ export function AgentConfigModelPicker({
     setLocalProvider(p);
     setLocalModel(m);
   }, [agentConfig.modelId]);
+
+  // Re-sync local prompt state whenever the server-side systemPrompt changes
+  // (mutation result, external update, etc.). Keyed on the raw string so a
+  // no-op server response doesn't clobber mid-edit.
+  useEffect(() => {
+    setLocalPrompt(agentConfig.systemPrompt);
+  }, [agentConfig.systemPrompt]);
 
   const availableProviderIds = new Set(credentials.map((c) => c.providerId));
 
@@ -181,6 +194,43 @@ export function AgentConfigModelPicker({
     }
   }
 
+  async function handleSystemPromptBlur() {
+    // Only commit if the value actually changed. Prompts are long; committing
+    // on every blur would waste round trips when the user clicked away without
+    // editing.
+    if (localPrompt === agentConfig.systemPrompt) return;
+    try {
+      await systemPromptMut.mutateAsync({
+        id: agentConfig.id,
+        systemPrompt: localPrompt,
+      });
+      toast.success(i18n.t("ai:agentConfigs.systemPrompt.toast.updateSuccess"));
+    } catch (err) {
+      toast.error(i18n.t("ai:agentConfigs.systemPrompt.toast.updateFailed"), {
+        description: translateError(toErrorPayload(err)),
+      });
+      // Revert local state on failure so the field reflects the server truth.
+      setLocalPrompt(agentConfig.systemPrompt);
+    }
+  }
+
+  async function handleResetPrompt() {
+    setLocalPrompt("");
+    try {
+      await systemPromptMut.mutateAsync({
+        id: agentConfig.id,
+        systemPrompt: "",
+      });
+      toast.success(i18n.t("ai:agentConfigs.systemPrompt.toast.updateSuccess"));
+    } catch (err) {
+      toast.error(i18n.t("ai:agentConfigs.systemPrompt.toast.updateFailed"), {
+        description: translateError(toErrorPayload(err)),
+      });
+      // Revert local state on failure — mirror handleSystemPromptBlur.
+      setLocalPrompt(agentConfig.systemPrompt);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center justify-between gap-6 py-2.5">
@@ -264,6 +314,49 @@ export function AgentConfigModelPicker({
           </Select>
         </div>
       )}
+      {/* System prompt override */}
+      <div className="flex flex-col gap-2 py-2 pl-1">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-xs font-medium text-muted-foreground">
+              {t("ai:agentConfigs.systemPrompt.title")}
+            </span>
+            <span className="text-[0.6875rem] text-muted-foreground/70">
+              {t("ai:agentConfigs.systemPrompt.description")}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            {agentConfig.systemPrompt.trim() ? (
+              <span className="text-[0.6875rem] text-muted-foreground/70">
+                {t("ai:agentConfigs.systemPrompt.usingCustom")}
+              </span>
+            ) : (
+              <span className="text-[0.6875rem] text-muted-foreground/70">
+                {t("ai:agentConfigs.systemPrompt.usingDefault")}
+              </span>
+            )}
+            {agentConfig.systemPrompt.trim() && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={handleResetPrompt}
+                disabled={disabled || systemPromptMut.isPending}
+              >
+                {t("ai:agentConfigs.systemPrompt.resetToDefault")}
+              </Button>
+            )}
+          </div>
+        </div>
+        <Textarea
+          value={localPrompt}
+          onChange={(e) => setLocalPrompt(e.currentTarget.value)}
+          onBlur={handleSystemPromptBlur}
+          placeholder={getRoleBehavior(agentConfig.name)?.systemPrompt ?? ""}
+          className="min-h-24 text-xs"
+          disabled={disabled || systemPromptMut.isPending}
+        />
+      </div>
     </div>
   );
 }

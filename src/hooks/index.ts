@@ -94,6 +94,7 @@ export {
   useUpdateAgentConfigModel,
   useUpdateAgentConfigAutoExecute,
   useUpdateAgentConfigContextCompaction,
+  useUpdateAgentConfigSystemPrompt,
   useModelsDevCatalog,
   useRefreshModelsDevCatalog,
   useResolvedModelConfig,

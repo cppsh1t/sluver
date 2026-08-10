@@ -11,6 +11,7 @@ import {
   updateAgentConfigAutoExecute,
   updateAgentConfigContextCompaction,
   updateAgentConfigModel,
+  updateAgentConfigSystemPrompt,
 } from "@/api";
 import { parseModelId, type ResolvedModelConfig } from "@/lib/ai";
 import type { ContextCompaction, ProviderCredentialId, SpaceId } from "@/types";
@@ -123,6 +124,20 @@ export const useUpdateAgentConfigContextCompaction = (spaceId: SpaceId) => {
   });
 };
 
+export const useUpdateAgentConfigSystemPrompt = (spaceId: SpaceId) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      systemPrompt,
+    }: {
+      id: string;
+      systemPrompt: string;
+    }) => updateAgentConfigSystemPrompt(spaceId, id, systemPrompt),
+    onSuccess: () => qc.invalidateQueries({ queryKey: aiConfigKeys.agentConfigs(spaceId) }),
+  });
+};
+
 // ─── Models.dev catalog (global) ─────────────────────────────────────────────
 
 /**
@@ -179,6 +194,8 @@ export function useResolvedModelConfig(
   autoExecuteDangerousTools: boolean;
   /** Per-role Context-mode compaction config (ADR-0031 Phase 1). */
   contextCompaction: ContextCompaction;
+  /** Per-role system prompt override. Empty string = code-defined default. */
+  systemPrompt: string;
   isLoading: boolean;
   error: Error | null;
 } {
@@ -200,6 +217,7 @@ export function useResolvedModelConfig(
       enabled: false,
       turnAge: 3,
     };
+    const systemPrompt = agentConfig?.systemPrompt ?? "";
     const [providerId, modelId] = parseModelId(agentConfig?.modelId ?? null);
 
     if (!providerId || !modelId) {
@@ -207,6 +225,7 @@ export function useResolvedModelConfig(
         config: null,
         autoExecuteDangerousTools,
         contextCompaction,
+        systemPrompt,
         isLoading,
         error,
       };
@@ -233,6 +252,7 @@ export function useResolvedModelConfig(
         config: null,
         autoExecuteDangerousTools,
         contextCompaction,
+        systemPrompt,
         isLoading,
         error,
       };
@@ -249,6 +269,7 @@ export function useResolvedModelConfig(
       },
       autoExecuteDangerousTools,
       contextCompaction,
+      systemPrompt,
       isLoading,
       error,
     };

@@ -65,6 +65,12 @@ export type ResolvedModel =
       readonly autoExecuteDangerousTools: boolean;
       /** Per-role Context-mode compaction config (ADR-0031 Phase 1). */
       readonly contextCompaction: ContextCompaction;
+      /**
+       * Per-role system prompt override from the Space's AgentConfig.
+       * Empty string = use the code-defined default (ai-roles/index.ts).
+       * Non-empty = replace the role's system prompt.
+       */
+      readonly systemPrompt: string;
     }
   | { readonly status: "loading" }
   | { readonly status: "unconfigured" };
@@ -464,6 +470,7 @@ async function constructAgent(
   approvalGate: ApprovalGate,
   autoExecuteDangerousTools: boolean,
   contextCompaction: ContextCompaction,
+  systemPromptOverride: string,
 ): Promise<Agent> {
   const roleBehavior = getRoleBehavior(conversation.agentConfigName);
   if (!roleBehavior) {
@@ -527,9 +534,14 @@ async function constructAgent(
   };
 
   const tools = roleBehavior.buildTools(ctx);
+  // Apply the DB-stored system prompt override. Empty string = use the code
+  // default from ROLE_BEHAVIOR. This lets users customize per-role prompts
+  // from the Space config page without code changes.
+  const effectiveSystemPrompt =
+    systemPromptOverride.trim() || roleBehavior.systemPrompt;
   const loop = new AgentLoop({
     model,
-    systemPrompt: roleBehavior.systemPrompt,
+    systemPrompt: effectiveSystemPrompt,
     tools,
     maxSteps: roleBehavior.maxSteps,
     ...(roleBehavior.temperature !== undefined
@@ -548,7 +560,7 @@ async function constructAgent(
     loop,
     store,
     sessionId: conversation.id,
-    roleStaticPrompt: roleBehavior.systemPrompt,
+    roleStaticPrompt: effectiveSystemPrompt,
     onPersistError,
     compactionPolicy,
   });
@@ -691,7 +703,7 @@ export function createConversationRuntimeStore(
         return null;
       }
 
-      const { model, autoExecuteDangerousTools, contextCompaction } = resolved;
+      const { model, autoExecuteDangerousTools, contextCompaction, systemPrompt } = resolved;
       const gate = createGate(worldId, conversationId);
       patchData(worldId, conversationId, (d) => ({ ...d, agentLoading: true }));
       try {
@@ -704,6 +716,7 @@ export function createConversationRuntimeStore(
           gate,
           autoExecuteDangerousTools,
           contextCompaction,
+          systemPrompt,
         );
         // ADR-0030 read path — pull the persisted Message rows (with usage
         // columns) STRAIGHT from the IPC, bypassing TauriSessionStore

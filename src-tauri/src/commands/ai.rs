@@ -63,6 +63,7 @@ fn row_to_agent_config(row: &rusqlite::Row) -> rusqlite::Result<AgentConfig> {
             enabled: row.get("context_compaction_enabled")?,
             turn_age: row.get("context_compaction_turn_age")?,
         },
+        system_prompt: row.get("system_prompt")?,
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
     })
@@ -225,7 +226,7 @@ pub(crate) fn do_list_agent_configs(
         let mut stmt = conn.prepare(
             "SELECT id, name, model_id, auto_execute_dangerous_tools,
                     context_compaction_enabled, context_compaction_turn_age,
-                    created_at, updated_at
+                    system_prompt, created_at, updated_at
              FROM agent_configs ORDER BY created_at",
         )?;
         let rows = stmt
@@ -265,7 +266,7 @@ pub(crate) fn do_update_agent_config_model(
         conn.query_row(
             "SELECT id, name, model_id, auto_execute_dangerous_tools,
                     context_compaction_enabled, context_compaction_turn_age,
-                    created_at, updated_at
+                    system_prompt, created_at, updated_at
              FROM agent_configs WHERE id = ?1",
             params![id],
             row_to_agent_config,
@@ -309,7 +310,7 @@ pub(crate) fn do_update_agent_config_auto_execute(
         conn.query_row(
             "SELECT id, name, model_id, auto_execute_dangerous_tools,
                     context_compaction_enabled, context_compaction_turn_age,
-                    created_at, updated_at
+                    system_prompt, created_at, updated_at
              FROM agent_configs WHERE id = ?1",
             params![id],
             row_to_agent_config,
@@ -368,7 +369,51 @@ pub(crate) fn do_update_agent_config_context_compaction(
         conn.query_row(
             "SELECT id, name, model_id, auto_execute_dangerous_tools,
                     context_compaction_enabled, context_compaction_turn_age,
-                    created_at, updated_at
+                    system_prompt, created_at, updated_at
+             FROM agent_configs WHERE id = ?1",
+            params![id],
+            row_to_agent_config,
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                DbError::AgentConfigNotFound(id.to_string())
+            }
+            other => DbError::Sqlite(other),
+        })
+    })
+}
+
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
+#[tauri::command]
+pub fn update_agent_config_system_prompt(
+    space_id: String,
+    id: String,
+    system_prompt: String,
+    state: State<'_, DbManager>,
+) -> Result<AgentConfig, DbError> {
+    do_update_agent_config_system_prompt(&state, &space_id, &id, system_prompt)
+}
+
+pub(crate) fn do_update_agent_config_system_prompt(
+    mgr: &DbManager,
+    space_id: &str,
+    id: &str,
+    system_prompt: String,
+) -> Result<AgentConfig, DbError> {
+    let now = now_iso();
+    mgr.with_space(space_id, |conn| {
+        let affected = conn.execute(
+            "UPDATE agent_configs SET system_prompt = ?1, updated_at = ?2 WHERE id = ?3",
+            params![system_prompt, now, id],
+        )?;
+        if affected == 0 {
+            return Err(DbError::AgentConfigNotFound(id.to_string()));
+        }
+        // Read back the canonical row (AGENTS.md: read after mutation).
+        conn.query_row(
+            "SELECT id, name, model_id, auto_execute_dangerous_tools,
+                    context_compaction_enabled, context_compaction_turn_age,
+                    system_prompt, created_at, updated_at
              FROM agent_configs WHERE id = ?1",
             params![id],
             row_to_agent_config,
@@ -1107,6 +1152,7 @@ mod tests {
                 enabled: false,
                 turn_age: 3,
             },
+            system_prompt: "".into(),
             created_at: "2026-01-01T00:00:00.000Z".into(),
             updated_at: "2026-01-01T00:00:00.000Z".into(),
         };
@@ -1117,12 +1163,14 @@ mod tests {
             json.contains("\"contextCompaction\":{\"enabled\":false,\"turnAge\":3}"),
             "camelCase contextCompaction: {json}"
         );
+        assert!(json.contains("\"systemPrompt\":\"\""), "camelCase systemPrompt: {json}");
         assert!(!json.contains("model_id"), "snake_case leak: {json}");
         assert!(!json.contains("auto_execute_dangerous_tools"), "snake_case leak: {json}");
         assert!(
             !json.contains("context_compaction") && !json.contains("turn_age"),
             "snake_case leak: {json}"
         );
+        assert!(!json.contains("system_prompt"), "snake_case leak: {json}");
     }
 
     /// SetProviderCredentialInput deserializes from camelCase frontend input.

@@ -55,6 +55,17 @@
         "title": "压缩阈值（轮数）",
         "description": "超过此轮数的工具调用会被压缩。默认 3。"
       }
+    },
+    "systemPrompt": {
+      "title": "系统提示词",
+      "description": "自定义发送给此 Agent 的指令。留空使用默认值。",
+      "usingDefault": "使用默认",
+      "usingCustom": "自定义",
+      "resetToDefault": "恢复默认",
+      "toast": {
+        "updateSuccess": "系统提示词已更新",
+        "updateFailed": "更新系统提示词失败"
+      }
     }
   },
   "catalog": {

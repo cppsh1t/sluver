@@ -112,6 +112,12 @@ export const agentConfigSchema = z.object({
    * and converted to a library-side `CompactionPolicy`.
    */
   contextCompaction: contextCompactionSchema,
+  /**
+   * Per-role system prompt override. Empty string = use the code-defined
+   * default (see `src/lib/ai-roles/index.ts` `ROLE_BEHAVIOR`). A non-empty
+   * value replaces the role's system prompt for this Space.
+   */
+  systemPrompt: z.string(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
