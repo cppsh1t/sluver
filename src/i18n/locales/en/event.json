@@ -40,6 +40,7 @@
   },
   "detail": {
     "editBasics": "Edit basic info",
+    "viewImage": "View image",
     "participants": {
       "title": "Participants",
       "add": "Add participant",

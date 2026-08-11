@@ -40,6 +40,7 @@
   },
   "detail": {
     "editBasics": "编辑基础信息",
+    "viewImage": "查看大图",
     "participants": {
       "title": "参与者",
       "add": "添加参与者",

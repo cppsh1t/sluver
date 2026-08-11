@@ -18,9 +18,13 @@ import { LocationRefPicker } from "@/components/worldbook/location-ref-picker";
 import { EventFormDialog } from "@/components/worldbook/event-form-dialog";
 import { ParticipantCard } from "@/components/worldbook/participant-card";
 import { EntityCard } from "@/components/worldbook/entity-card";
+import { EntityAvatar } from "@/components/ui/entity-avatar";
+import { ImageLightbox } from "@/components/ui/image-lightbox";
+import { useBlobUrl } from "@/components/worldbook/scene-image-lightbox";
 import { FormattedTime } from "@/components/timemapper/formatted-time";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowLeft02Icon, PencilEdit01Icon } from "@hugeicons/core-free-icons";
+import { ArrowLeft02Icon, Calendar03Icon, PencilEdit01Icon, ZoomIcon } from "@hugeicons/core-free-icons";
+import { cn } from "@/lib/utils";
 import { toErrorPayload } from "@/api/client";
 import { translateError } from "@/i18n/errors";
 import {
@@ -28,6 +32,7 @@ import {
   useEvent,
   useLocations,
   useUpdateEvent,
+  useEntityImageBytes,
 } from "@/hooks";
 import type { UpdateEventInput } from "@/api";
 import type {
@@ -35,6 +40,7 @@ import type {
   CharacterRef,
   Event as EventType,
   EventId,
+  SpaceId,
   WorldId,
 } from "@/types";
 
@@ -72,7 +78,17 @@ function EventDetailPage() {
   const { data: locations } = useLocations(spaceId, wid);
   const updateMut = useUpdateEvent(spaceId, wid);
 
+  // Image bytes for the lightbox — shares cache with the EntityAvatar below.
+  const { data: eventImageBytes } = useEntityImageBytes(
+    "event",
+    spaceId as SpaceId,
+    wid,
+    eid,
+  );
+  const eventImageUrl = useBlobUrl(eventImageBytes);
+
   const [editOpen, setEditOpen] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   // Lookup map for resolving participant chip names.
   const charMap = useMemo(() => {
@@ -250,33 +266,70 @@ function EventDetailPage() {
 
         {/* Identity header */}
         <div className="flex items-start justify-between gap-4">
-          <div className="flex flex-col gap-1">
-            <h1 className="font-heading text-2xl font-semibold">
-              {event.name}
-            </h1>
-            {event.description && (
-              <p className="text-sm text-muted-foreground">
-                {event.description}
-              </p>
-            )}
-            <p className="text-sm text-muted-foreground">{timeLabelNode}</p>
-            {event.tags.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {visibleTags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
-                  >
-                    {tag}
-                  </span>
-                ))}
-                {extraTags > 0 && (
-                  <span className="px-1.5 py-0.5 text-xs text-muted-foreground/70">
-                    +{extraTags}
-                  </span>
-                )}
-              </div>
-            )}
+          <div className="flex items-start gap-5">
+            <button
+              type="button"
+              disabled={!eventImageUrl}
+              onClick={() => eventImageUrl && setLightboxOpen(true)}
+              aria-label={t("event:detail.viewImage")}
+              className={cn(
+                "group relative shrink-0 rounded-lg",
+                eventImageUrl && "cursor-zoom-in",
+              )}
+            >
+              <EntityAvatar
+                kind="event"
+                spaceId={spaceId as SpaceId}
+                worldId={wid}
+                id={eid}
+                alt={event.name}
+                fallbackIcon={
+                  <HugeiconsIcon
+                    icon={Calendar03Icon}
+                    strokeWidth={2}
+                    className="size-10 text-muted-foreground"
+                  />
+                }
+                className="w-32 shrink-0 rounded-lg"
+              />
+              {eventImageUrl && (
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-black/0 transition-colors group-hover:bg-black/20">
+                  <HugeiconsIcon
+                    icon={ZoomIcon}
+                    strokeWidth={2}
+                    className="size-8 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                  />
+                </div>
+              )}
+            </button>
+            <div className="flex flex-col gap-1">
+              <h1 className="font-heading text-2xl font-semibold">
+                {event.name}
+              </h1>
+              {event.description && (
+                <p className="text-sm text-muted-foreground">
+                  {event.description}
+                </p>
+              )}
+              <p className="text-sm text-muted-foreground">{timeLabelNode}</p>
+              {event.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {visibleTags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                  {extraTags > 0 && (
+                    <span className="px-1.5 py-0.5 text-xs text-muted-foreground/70">
+                      +{extraTags}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
           <Button
             variant="outline"
@@ -435,6 +488,13 @@ function EventDetailPage() {
         }
         key={`event-edit-${event.id ?? "closed"}`}
         onSubmit={handleUpdateBasics}
+      />
+
+      <ImageLightbox
+        open={lightboxOpen}
+        onOpenChange={setLightboxOpen}
+        src={eventImageUrl}
+        alt={event.name}
       />
     </div>
   );
