@@ -59,6 +59,8 @@ interface EntityCardProps {
   entityType: "location" | "item" | "lore";
   onEdit?: () => void;
   onDelete?: () => void;
+  /** Non-selectable click handler (opens detail dialog). Ignored when `selectable`. */
+  onClick?: () => void;
   selectable?: boolean;
   selected?: boolean;
   onSelect?: () => void;
@@ -76,6 +78,7 @@ function EntityCard({
   entityType,
   onEdit,
   onDelete,
+  onClick,
   selectable,
   selected,
   onSelect,
@@ -89,38 +92,70 @@ function EntityCard({
   const visibleTags = tags.slice(0, 3);
   const extraCount = tags.length - 3;
 
+  // In selectable mode the card selects on click; otherwise the body click
+  // opens the detail dialog (when an onClick handler is provided).
+  const interactive = selectable || !!onClick;
+
+  function handleCardClick() {
+    if (selectable) {
+      onSelect?.();
+    } else {
+      onClick?.();
+    }
+  }
+
+  function handleCardKeyDown(e: React.KeyboardEvent) {
+    if (!interactive) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      handleCardClick();
+    }
+  }
+
   return (
     <>
       <Card
-        onClick={selectable ? onSelect : undefined}
+        role={interactive ? "button" : undefined}
+        tabIndex={interactive ? 0 : undefined}
+        onClick={interactive ? handleCardClick : undefined}
+        onKeyDown={interactive ? handleCardKeyDown : undefined}
         className={cn(
-          selectable && "relative cursor-pointer",
+          "pt-0",
+          interactive && "cursor-pointer",
+          selectable && "relative",
           selected && "ring-2 ring-primary",
         )}
       >
+        {/* Image banner. Wrapped in a div so the Card's banner auto-rules
+            (has-[>img:first-child]:pt-0) don't cause a layout shift when the
+            image bytes arrive and EntityAvatar swaps from <Skeleton>/<div>
+            to <img>. pt-0 on the Card keeps the layout identical across all
+            three EntityAvatar render states. overflow-hidden on Card clips
+            the banner to the rounded top corners. */}
+        <div>
+          <EntityAvatar
+            kind={entityType}
+            spaceId={spaceId as SpaceId}
+            worldId={worldId}
+            id={id}
+            alt={name}
+            fallbackIcon={
+              <HugeiconsIcon
+                icon={Icon}
+                strokeWidth={2}
+                className="size-12 text-muted-foreground"
+              />
+            }
+            className="w-full h-40"
+          />
+        </div>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <EntityAvatar
-              kind={entityType}
-              spaceId={spaceId as SpaceId}
-              worldId={worldId}
-              id={id}
-              alt={name}
-              fallbackIcon={
-                <HugeiconsIcon
-                  icon={Icon}
-                  strokeWidth={2}
-                  className="size-5 text-muted-foreground"
-                />
-              }
-              className="size-9 shrink-0 rounded-md"
-            />
-            <span className="truncate">{name}</span>
-          </CardTitle>
+          <CardTitle className="truncate">{name}</CardTitle>
           {!selectable && (
             <CardAction>
               <DropdownMenu>
                 <DropdownMenuTrigger
+                  onClick={(e) => e.stopPropagation()}
                   render={
                     <Button variant="ghost" size="icon-sm" />
                   }
@@ -129,14 +164,22 @@ function EntityCard({
                   <span className="sr-only">{t("common:actions.moreActions")}</span>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={onEdit}>
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEdit?.();
+                    }}
+                  >
                     <HugeiconsIcon icon={PencilEdit01Icon} strokeWidth={2} />
                     {t("worldbook:card.editAction")}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     variant="destructive"
-                    onClick={() => setConfirmOpen(true)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfirmOpen(true);
+                    }}
                   >
                     <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
                     {t("worldbook:card.deleteAction")}

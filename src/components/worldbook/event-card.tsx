@@ -90,30 +90,32 @@ function EventCard({
   const card = (
     <Card
       className={cn(
-        "h-full",
+        "h-full pt-0",
         selectable && "relative cursor-pointer",
         selected && "ring-2 ring-primary",
       )}
     >
+      {/* Image banner. Wrapped in a div so the Card's banner auto-rules
+          don't cause a layout shift when the image bytes arrive. */}
+      <div>
+        <EntityAvatar
+          kind="event"
+          spaceId={spaceId as SpaceId}
+          worldId={worldId}
+          id={event.id}
+          alt={event.name}
+          fallbackIcon={
+            <HugeiconsIcon
+              icon={Calendar03Icon}
+              strokeWidth={2}
+              className="size-12 text-muted-foreground"
+            />
+          }
+          className="w-full h-40"
+        />
+      </div>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <EntityAvatar
-            kind="event"
-            spaceId={spaceId as SpaceId}
-            worldId={worldId}
-            id={event.id}
-            alt={event.name}
-            fallbackIcon={
-              <HugeiconsIcon
-                icon={Calendar03Icon}
-                strokeWidth={2}
-                className="size-5 text-muted-foreground"
-              />
-            }
-            className="size-9 shrink-0 rounded-md"
-          />
-          <span className="truncate">{event.name}</span>
-        </CardTitle>
+        <CardTitle className="truncate">{event.name}</CardTitle>
         {!selectable && (
           <CardAction>
             <DropdownMenu>
