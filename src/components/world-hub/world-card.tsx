@@ -57,27 +57,45 @@ function WorldCard({ spaceId, world, onOpen, onUpdate, onDelete }: WorldCardProp
     await onUpdate(world, input);
   }
 
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onOpen(world);
+    }
+  }
+
   return (
     <>
-      <Card className="cursor-pointer transition-shadow hover:shadow-md">
+      <Card
+        role="button"
+        tabIndex={0}
+        onClick={() => onOpen(world)}
+        onKeyDown={handleKeyDown}
+        className="cursor-pointer pt-0 transition-shadow hover:shadow-md"
+      >
+        {/* Image banner. Wrapped in a div so the Card's banner auto-rules
+            (has-[>img:first-child]:pt-0) don't cause a layout shift when the
+            image bytes arrive and EntityAvatar swaps from <Skeleton>/<div>
+            to <img>. pt-0 on the Card keeps the layout identical across all
+            three EntityAvatar render states. */}
+        <div>
+          <EntityAvatar
+            kind="world"
+            spaceId={spaceId as SpaceId}
+            worldId={world.id}
+            alt={world.name}
+            fallbackIcon={
+              <HugeiconsIcon
+                icon={Globe02Icon}
+                strokeWidth={2}
+                className="size-12 text-muted-foreground"
+              />
+            }
+            className="h-40 w-full"
+          />
+        </div>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <EntityAvatar
-              kind="world"
-              spaceId={spaceId as SpaceId}
-              worldId={world.id}
-              alt={world.name}
-              fallbackIcon={
-                <HugeiconsIcon
-                  icon={Globe02Icon}
-                  strokeWidth={2}
-                  className="size-5 text-muted-foreground"
-                />
-              }
-              className="size-9 shrink-0 rounded-md"
-            />
-            <span className="truncate">{world.name}</span>
-          </CardTitle>
+          <CardTitle className="truncate">{world.name}</CardTitle>
           <CardAction>
             <DropdownMenu>
               <DropdownMenuTrigger
@@ -117,10 +135,7 @@ function WorldCard({ spaceId, world, onOpen, onUpdate, onDelete }: WorldCardProp
             </DropdownMenu>
           </CardAction>
         </CardHeader>
-        <CardContent
-          className="flex flex-1 flex-col gap-2"
-          onClick={() => onOpen(world)}
-        >
+        <CardContent className="flex flex-1 flex-col gap-2">
           <p className="line-clamp-2 min-h-8 flex-1 text-muted-foreground">
             {world.description || t("world:card.noDescription")}
           </p>
