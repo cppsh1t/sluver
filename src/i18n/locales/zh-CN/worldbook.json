@@ -40,6 +40,12 @@
     "deleteTitle": "删除{{entity}}",
     "deleteDescription": "确定要删除「{{name}}」吗？此操作无法撤销。"
   },
+  "detail": {
+    "createdAtLabel": "创建于",
+    "updatedAtLabel": "更新于",
+    "noNotes": "暂无备注",
+    "viewImage": "查看大图"
+  },
   "toast": {
     "createSuccess": "{{entity}}创建成功",
     "createFailed": "创建失败",

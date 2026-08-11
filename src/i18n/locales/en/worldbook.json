@@ -40,6 +40,12 @@
     "deleteTitle": "Delete {{entity}}",
     "deleteDescription": "Are you sure you want to delete \"{{name}}\"? This cannot be undone."
   },
+  "detail": {
+    "createdAtLabel": "Created",
+    "updatedAtLabel": "Updated",
+    "noNotes": "No notes",
+    "viewImage": "View image"
+  },
   "toast": {
     "createSuccess": "{{entity}} created",
     "createFailed": "Failed to create",
