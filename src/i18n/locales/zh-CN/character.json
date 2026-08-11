@@ -54,7 +54,8 @@
     "addPhase": "添加阶段",
     "emptyPhasesTitle": "还没有阶段",
     "emptyPhasesDescription": "为这个角色添加生命阶段，记录不同时期的状态与变化。",
-    "emptyPhasesCta": "添加阶段"
+    "emptyPhasesCta": "添加阶段",
+    "viewImage": "查看大图"
   },
   "phase": {
     "save": "保存",

@@ -54,7 +54,8 @@
     "addPhase": "Add phase",
     "emptyPhasesTitle": "No phases yet",
     "emptyPhasesDescription": "Add life phases to this character to record their state and changes across different periods.",
-    "emptyPhasesCta": "Add phase"
+    "emptyPhasesCta": "Add phase",
+    "viewImage": "View image"
   },
   "phase": {
     "save": "Save",

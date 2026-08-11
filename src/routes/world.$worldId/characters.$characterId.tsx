@@ -32,8 +32,11 @@ import {
 import { CharacterFormDialog } from "@/components/worldbook/character-form-dialog";
 import { PhaseCard } from "@/components/worldbook/phase-card";
 import { EntityAvatar } from "@/components/ui/entity-avatar";
+import { ImageLightbox } from "@/components/ui/image-lightbox";
+import { useBlobUrl } from "@/components/worldbook/scene-image-lightbox";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Add01Icon, ArrowLeft02Icon, PencilEdit01Icon, UserMultiple02Icon } from "@hugeicons/core-free-icons";
+import { Add01Icon, ArrowLeft02Icon, PencilEdit01Icon, UserMultiple02Icon, ZoomIcon } from "@hugeicons/core-free-icons";
+import { cn } from "@/lib/utils";
 import { toErrorPayload } from "@/api/client";
 import { translateError } from "@/i18n/errors";
 import {
@@ -45,6 +48,7 @@ import {
   useReorderPhases,
   useEvents,
   useLocations,
+  useEntityImageBytes,
 } from "@/hooks";
 import type { UpdateCharacterInput, CreatePhaseInput } from "@/api";
 import type { CharacterId, CharacterPhase, Event, Location, SpaceId, WorldId } from "@/types";
@@ -123,8 +127,20 @@ function CharacterDetailPage() {
   const deletePhaseMut = useDeletePhase(spaceId, wid);
   const reorderMut = useReorderPhases(spaceId, wid);
 
+  // Image bytes for the lightbox — shares the React Query cache with the
+  // EntityAvatar below, so this resolves instantly after the avatar has
+  // already loaded the image.
+  const { data: characterImageBytes } = useEntityImageBytes(
+    "character",
+    spaceId as SpaceId,
+    wid,
+    cid,
+  );
+  const characterImageUrl = useBlobUrl(characterImageBytes);
+
   const [editBaseOpen, setEditBaseOpen] = useState(false);
   const [draftActive, setDraftActive] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   // Optimistic order override — set synchronously in onDragEnd so the DOM
   // reorders before dnd-kit clears its transforms (prevents the drop twitch).
   const [overridePhases, setOverridePhases] = useState<CharacterPhase[] | null>(null);
@@ -287,21 +303,41 @@ function CharacterDetailPage() {
         {/* Identity header */}
         <div className="flex items-start justify-between gap-6">
           <div className="flex items-start gap-5">
-            <EntityAvatar
-              kind="character"
-              spaceId={spaceId as SpaceId}
-              worldId={wid}
-              id={cid}
-              alt={character.name}
-              fallbackIcon={
-                <HugeiconsIcon
-                  icon={UserMultiple02Icon}
-                  strokeWidth={2}
-                  className="size-10 text-muted-foreground"
-                />
-              }
-              className="w-32 shrink-0 rounded-lg"
-            />
+            <button
+              type="button"
+              disabled={!characterImageUrl}
+              onClick={() => characterImageUrl && setLightboxOpen(true)}
+              aria-label={t("character:detail.viewImage")}
+              className={cn(
+                "group relative shrink-0 rounded-lg",
+                characterImageUrl && "cursor-zoom-in",
+              )}
+            >
+              <EntityAvatar
+                kind="character"
+                spaceId={spaceId as SpaceId}
+                worldId={wid}
+                id={cid}
+                alt={character.name}
+                fallbackIcon={
+                  <HugeiconsIcon
+                    icon={UserMultiple02Icon}
+                    strokeWidth={2}
+                    className="size-10 text-muted-foreground"
+                  />
+                }
+                className="w-32 shrink-0 rounded-lg"
+              />
+              {characterImageUrl && (
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-black/0 transition-colors group-hover:bg-black/20">
+                  <HugeiconsIcon
+                    icon={ZoomIcon}
+                    strokeWidth={2}
+                    className="size-8 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                  />
+                </div>
+              )}
+            </button>
             <div className="flex flex-col gap-1">
               <h1 className="font-heading text-2xl font-semibold">
                 {character.name}
@@ -460,6 +496,13 @@ function CharacterDetailPage() {
             : undefined
         }
         onSubmit={handleUpdateBase}
+      />
+
+      <ImageLightbox
+        open={lightboxOpen}
+        onOpenChange={setLightboxOpen}
+        src={characterImageUrl}
+        alt={character.name}
       />
     </div>
   );
