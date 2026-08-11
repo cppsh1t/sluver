@@ -44,7 +44,7 @@ function queryOnly(tools: Record<string, ToolDef>): Record<string, ToolDef> {
 
 /**
  * Explorer toolset: full worldbook CRUD + novel/chapter/scene query + system.
- * ~38 tools. The Explorer surveys and builds the world (characters, locations,
+ * 44 tools. The Explorer surveys and builds the world (characters, locations,
  * items, lore, events) and can read (but not modify) the novel structure.
  */
 export function buildExplorerTools(ctx: ToolContext): ToolSet {
@@ -74,7 +74,7 @@ export function buildExplorerTools(ctx: ToolContext): ToolSet {
 
 /**
  * Writer toolset: full novel/chapter/scene CRUD + worldbook query + system.
- * ~26 tools. The Writer drafts and refines prose (novels, chapters, scenes)
+ * 36 tools. The Writer drafts and refines prose (novels, chapters, scenes)
  * and can read (but not modify) the worldbook for reference.
  */
 export function buildWriterTools(ctx: ToolContext): ToolSet {
@@ -88,6 +88,7 @@ export function buildWriterTools(ctx: ToolContext): ToolSet {
       ...queryOnly(characterTools()),
       ...queryOnly(locationTools()),
       ...queryOnly(itemTools()),
+      ...queryOnly(loreTools()),
       ...queryOnly(eventTools()),
       // System
       ...systemTools(),

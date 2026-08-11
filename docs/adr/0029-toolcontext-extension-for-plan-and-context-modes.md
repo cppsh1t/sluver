@@ -1,6 +1,6 @@
 # ADR-0029: ToolContext extension for Plan and Context modes
 
-**Status**: accepted (Phase 1 implemented; Phase 2 deferred).
+**Status**: accepted (Phase 1 and Phase 2 implemented).
 
 ## Context
 
@@ -39,7 +39,7 @@ interface PlanAccess {
 
 The `plan` tool's `execute` calls `planAccess.set(input)` and uses `planAccess.get()` only to compute the output summary (`pendingCount` / `doneCount`). Other tools never read Plan state — the reminder is injected into the system prompt at run start (ADR-0028), not exposed via context.
 
-### Phase 2 — Context mode (deferred; designed, not built)
+### Phase 2 — Context mode (implemented via [ADR-0031](./0031-tool-call-stub-compaction.md))
 
 ```ts
 interface ToolContext {
@@ -59,12 +59,14 @@ interface ThreadLookup {
 
 `threadLookup.findToolResult` is the reverse channel for `context_read`: it scans the Agent's messages for the matching `tool-result` part. Because the Agent's full thread is the source of truth and compaction is applied only at derivation time (ADR-0028 invariant 1), the lookup always returns the original content.
 
+> **Implementation refinement ([ADR-0031](./0031-tool-call-stub-compaction.md))**: the field was renamed to `findToolPair(toolCallId): { call, result } | undefined` and now returns both the tool-call (args) and the tool-result (output), not just the result message. This lets `context_read` expand a compacted `[tool_call {id}]` stub back into its full call+result form. Implemented on `Agent.findToolPair()` reading from the Persisted Thread; `context_read` lives in `src/lib/tools/system.ts`.
+
 ## Phasing
 
 This ADR captures the full architectural intent (both fields). Implementation follows feature scope:
 
-- **Phase 1 (this task — Plan mode)**: implement `planAccess` only. The `threadLookup` field is NOT added to `ToolContext` yet — YAGNI; an unused field on every tool factory's input invites confusion.
-- **Phase 2 (future Context mode task)**: add `threadLookup` to `ToolContext` and the `context_read` tool that consumes it. No new ADR required — this ADR already describes the design.
+- **Phase 1 (Plan mode)**: `planAccess` is implemented; the `plan` tool consumes it from `src/lib/tools/system.ts`.
+- **Phase 2 (Context mode)**: `threadLookup` is implemented via [ADR-0031](./0031-tool-call-stub-compaction.md) (refined from `findToolResult` → `findToolPair`); the `context_read` tool consumes it from `src/lib/tools/system.ts`.
 
 ## Consequences
 
@@ -77,7 +79,6 @@ This ADR captures the full architectural intent (both fields). Implementation fo
 **Negative:**
 
 - A small implementation wrinkle: tool factory closures capture an `agentRef` that is initially `null` and is back-filled after `Agent.open()` returns (the chicken-and-egg of "tools need ctx → ctx closes over agent → agent needs tools"). The closures read `agentRef.current` at execution time, when the Agent is guaranteed to exist (AgentLoop runs only after construction completes). Documented in the `constructAgent` docstring.
-- Adding `threadLookup` in Phase 2 will touch every tool factory (each receives a wider ctx shape). Trivial — destructuring only — but a global change.
 
 ## References
 
