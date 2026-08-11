@@ -76,7 +76,7 @@ const DEFAULT_ASPECT: Record<EntityKind, number> = {
  * recovered from `kind` at the type level, so the dispatcher casts once at the
  * trusted boundary (see {@link fetchEntityImage}).
  */
-type EntityImageId =
+export type EntityImageId =
   | CharacterId
   | PhaseId
   | LocationId
@@ -115,7 +115,7 @@ export interface EntityAvatarProps {
  * pairing here. These are NOT `as any` casts; each targets a concrete brand
  * that is a member of {@link EntityImageId}.
  */
-function fetchEntityImage(
+export function fetchEntityImage(
   kind: EntityKind,
   spaceId: SpaceId,
   worldId: WorldId,

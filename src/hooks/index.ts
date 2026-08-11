@@ -120,3 +120,5 @@ export {
   useDeleteSceneImage,
   useReorderSceneImages,
 } from "./use-scene-images";
+
+export { useEntityImageBytes } from "./use-entity-image";
