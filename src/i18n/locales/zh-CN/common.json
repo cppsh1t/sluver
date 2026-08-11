@@ -62,6 +62,9 @@
     "pending": "已选择图片 — 保存后将自动上传",
     "pendingClear": "清除已选"
   },
+  "lightbox": {
+    "imagePreview": "图片预览"
+  },
   "status": {
     "worldWorkspaceComingSoon": "世界工作区即将推出",
     "libraryComingSoon": {

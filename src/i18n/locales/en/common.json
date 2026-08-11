@@ -56,11 +56,14 @@
     "submitFailed": "Failed to save the image. Please try again."
   },
   "imageField": {
-    "upload": "Upload image",
-    "change": "Change image",
-    "remove": "Remove image",
-    "pending": "Image selected — will upload after save",
-    "pendingClear": "Clear selected"
+    "upload": "Upload Image",
+    "change": "Change Image",
+    "remove": "Remove Image",
+    "pending": "Image selected — will upload on save",
+    "pendingClear": "Clear selection"
+  },
+  "lightbox": {
+    "imagePreview": "Image Preview"
   },
   "status": {
     "worldWorkspaceComingSoon": "World workspace coming soon",
