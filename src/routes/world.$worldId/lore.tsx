@@ -19,6 +19,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { Add01Icon, BookOpen02Icon, Search01Icon } from "@hugeicons/core-free-icons";
 import { ElementFormDialog } from "@/components/worldbook/element-form-dialog";
 import { EntityCard } from "@/components/worldbook/entity-card";
+import { EntityDetailDialog } from "@/components/worldbook/entity-detail-dialog";
 import { toErrorPayload } from "@/api/client";
 import { translateError } from "@/i18n/errors";
 import {
@@ -46,6 +47,7 @@ function LorePage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Lore | null>(null);
+  const [detailTarget, setDetailTarget] = useState<Lore | null>(null);
   const [search, setSearch] = useState("");
 
   const filtered = useMemo(() => {
@@ -188,6 +190,7 @@ function LorePage() {
                 tags={entity.tags}
                 updatedAt={entity.updatedAt}
                 entityType={entityType}
+                onClick={() => setDetailTarget(entity)}
                 onEdit={() => setEditTarget(entity)}
                 onDelete={() => handleDelete(entity.id)}
               />
@@ -217,6 +220,31 @@ function LorePage() {
         onOpenChange={(v) => !v && setEditTarget(null)}
         onSubmit={(input) => handleUpdate(editTarget!.id, input)}
       />
+
+      {detailTarget && (
+        <EntityDetailDialog
+          open
+          onOpenChange={(v) => !v && setDetailTarget(null)}
+          entityType={entityType}
+          spaceId={spaceId}
+          worldId={wid}
+          id={detailTarget.id}
+          name={detailTarget.name}
+          description={detailTarget.description}
+          notes={detailTarget.notes}
+          tags={detailTarget.tags}
+          createdAt={detailTarget.createdAt}
+          updatedAt={detailTarget.updatedAt}
+          onEdit={() => {
+            setEditTarget(detailTarget);
+            setDetailTarget(null);
+          }}
+          onDelete={() => {
+            handleDelete(detailTarget.id);
+            setDetailTarget(null);
+          }}
+        />
+      )}
     </div>
   );
 }
