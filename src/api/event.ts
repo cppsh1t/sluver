@@ -5,7 +5,7 @@
  * Character participation is managed via `characterRefs` junction rows.
  */
 
-import type { Event, EventId, WorldId } from '@/types';
+import type { Event, EventId, EventSummary, WorldId } from '@/types';
 import { call } from './client';
 import type { CreateEventInput, UpdateEventInput } from './types';
 
@@ -19,6 +19,16 @@ export function getEvent(spaceId: string, worldId: WorldId, id: EventId): Promis
 
 export function listEvents(spaceId: string, worldId: WorldId): Promise<Event[]> {
   return call<Event[]>('list_events', { spaceId, worldId });
+}
+
+/** Lightweight event list — `id`, `name`, `tags`, `startAt`, `endAt`. */
+export function listEventSummaries(spaceId: string, worldId: WorldId): Promise<EventSummary[]> {
+  return call<EventSummary[]>('list_event_summaries', { spaceId, worldId });
+}
+
+/** Substring search across name, description, notes, tags, start time, and end time. Returns matching summaries. */
+export function searchEvents(spaceId: string, worldId: WorldId, query: string): Promise<EventSummary[]> {
+  return call<EventSummary[]>('search_events', { spaceId, worldId, query });
 }
 
 export function updateEvent(

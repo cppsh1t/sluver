@@ -15,3 +15,19 @@ export const loreSchema = elementBaseSchema.extend({
 });
 
 export type Lore = z.infer<typeof loreSchema>;
+
+// ─── Lore Summary ─────────────────────────────────────────────────────────
+
+/**
+ * Lightweight Lore view — `id`, `name`, `tags` only.
+ *
+ * Returned by `list_lore_summaries` and `search_lores`. Call `get_lore` for
+ * description and notes.
+ */
+export const loreSummarySchema = z.object({
+  id: loreIdSchema,
+  name: z.string(),
+  tags: z.array(z.string()),
+});
+
+export type LoreSummary = z.infer<typeof loreSummarySchema>;

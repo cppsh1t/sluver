@@ -262,6 +262,23 @@ pub fn run() {
             commands::diagnostics::get_logs_dir,
             commands::diagnostics::export_logs,
             commands::diagnostics::clear_logs,
+            // World entity summaries + search (lightweight IPC for agent tools)
+            commands::world_search::list_character_summaries,
+            commands::world_search::search_characters,
+            commands::world_search::list_location_summaries,
+            commands::world_search::search_locations,
+            commands::world_search::list_item_summaries,
+            commands::world_search::search_items,
+            commands::world_search::list_lore_summaries,
+            commands::world_search::search_lores,
+            commands::world_search::list_event_summaries,
+            commands::world_search::search_events,
+            commands::world_search::list_novel_summaries,
+            commands::world_search::search_novels,
+            commands::world_search::list_chapter_summaries,
+            commands::world_search::search_chapters,
+            commands::world_search::list_scene_summaries,
+            commands::world_search::search_scenes,
         ])
         .on_window_event(|window, event| {
             let label = window.label();

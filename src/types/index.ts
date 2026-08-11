@@ -53,14 +53,38 @@ export {
 } from './ai';
 
 // ─── World elements ───────────────────────────────────────────────────────
-export { characterSchema, type Character, characterPhaseSchema, type CharacterPhase, characterRefSchema, type CharacterRef } from './character';
-export { locationSchema, type Location } from './location';
-export { itemSchema, type Item } from './item';
-export { loreSchema, type Lore } from './lore';
-export { eventSchema, type Event } from './event';
+export {
+  characterSchema,
+  type Character,
+  characterSummarySchema,
+  type CharacterSummary,
+  characterPhaseSchema,
+  type CharacterPhase,
+  characterRefSchema,
+  type CharacterRef,
+} from './character';
+export { locationSchema, type Location, locationSummarySchema, type LocationSummary } from './location';
+export { itemSchema, type Item, itemSummarySchema, type ItemSummary } from './item';
+export { loreSchema, type Lore, loreSummarySchema, type LoreSummary } from './lore';
+export { eventSchema, type Event, eventSummarySchema, type EventSummary } from './event';
 
 // ─── Novel structure ──────────────────────────────────────────────────────
-export { novelSchema, type Novel, chapterSchema, type Chapter, sceneSchema, type Scene, sceneImageMetaSchema, type SceneImageMeta } from './novel';
+export {
+  novelSchema,
+  type Novel,
+  novelSummarySchema,
+  type NovelSummary,
+  chapterSchema,
+  type Chapter,
+  chapterSummarySchema,
+  type ChapterSummary,
+  sceneSchema,
+  type Scene,
+  sceneSummarySchema,
+  type SceneSummary,
+  sceneImageMetaSchema,
+  type SceneImageMeta,
+} from './novel';
 
 // ─── Conversation (AI chat) ────────────────────────────────────────────────
 export {

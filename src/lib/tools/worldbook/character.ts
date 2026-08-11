@@ -21,8 +21,10 @@ import {
   deleteCharacter,
   deletePhase,
   getCharacter,
+  listCharacterSummaries,
   listCharacters,
   reorderPhases,
+  searchCharacters,
   updateCharacter,
   updatePhase,
 } from "@/api/character";
@@ -34,10 +36,23 @@ export function characterTools(): Record<string, ToolDef> {
     // ── Query (auto) ────────────────────────────────────────────
     list_characters: {
       description:
-        "List all characters in the current world, including their phases. Returns full character data — no pagination.",
+        "List all characters in the current world. Returns summary fields (id, name, tags) only — call get_character for aliases, description, phases, notes.",
       inputSchema: z.object({}),
       consentLevel: "auto",
-      execute: async (_input, ctx) => listCharacters(ctx.spaceId, ctx.worldId),
+      execute: async (_input, ctx) => listCharacterSummaries(ctx.spaceId, ctx.worldId),
+    },
+
+    search_characters: {
+      description:
+        "Search characters by substring match across name, aliases, description, notes, and tags. Returns matching character summaries (id, name, tags) — call get_character for full fields on specific hits.",
+      inputSchema: z.object({
+        query: z.string().min(1).describe("Substring to search for (case-insensitive)."),
+      }),
+      consentLevel: "auto",
+      execute: async (input, ctx) => {
+        const { query } = input as { query: string };
+        return searchCharacters(ctx.spaceId, ctx.worldId, query);
+      },
     },
 
     get_character: {

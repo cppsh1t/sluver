@@ -9,10 +9,13 @@
 import type {
   Chapter,
   ChapterId,
+  ChapterSummary,
   Novel,
   NovelId,
+  NovelSummary,
   Scene,
   SceneId,
+  SceneSummary,
   WorldId,
 } from '@/types';
 import { call } from './client';
@@ -37,6 +40,16 @@ export function getNovel(spaceId: string, worldId: WorldId, id: NovelId): Promis
 
 export function listNovels(spaceId: string, worldId: WorldId): Promise<Novel[]> {
   return call<Novel[]>('list_novels', { spaceId, worldId });
+}
+
+/** Lightweight novel list — `id`, `title`, `tags`, `author`. */
+export function listNovelSummaries(spaceId: string, worldId: WorldId): Promise<NovelSummary[]> {
+  return call<NovelSummary[]>('list_novel_summaries', { spaceId, worldId });
+}
+
+/** Substring search across title, description, author, and tags. Returns matching summaries. */
+export function searchNovels(spaceId: string, worldId: WorldId, query: string): Promise<NovelSummary[]> {
+  return call<NovelSummary[]>('search_novels', { spaceId, worldId, query });
 }
 
 export function updateNovel(
@@ -69,6 +82,16 @@ export function getChapter(spaceId: string, worldId: WorldId, id: ChapterId): Pr
 
 export function listChapters(spaceId: string, worldId: WorldId, novelId: NovelId): Promise<Chapter[]> {
   return call<Chapter[]>('list_chapters', { spaceId, worldId, novelId });
+}
+
+/** Lightweight chapter list — `id`, `title` only. */
+export function listChapterSummaries(spaceId: string, worldId: WorldId, novelId: NovelId): Promise<ChapterSummary[]> {
+  return call<ChapterSummary[]>('list_chapter_summaries', { spaceId, worldId, novelId });
+}
+
+/** Substring search across title and summary. Returns matching summaries. */
+export function searchChapters(spaceId: string, worldId: WorldId, query: string): Promise<ChapterSummary[]> {
+  return call<ChapterSummary[]>('search_chapters', { spaceId, worldId, query });
 }
 
 export function updateChapter(
@@ -110,6 +133,16 @@ export function getScene(spaceId: string, worldId: WorldId, id: SceneId): Promis
 
 export function listScenes(spaceId: string, worldId: WorldId, chapterId: ChapterId): Promise<Scene[]> {
   return call<Scene[]>('list_scenes', { spaceId, worldId, chapterId });
+}
+
+/** Lightweight scene list — `id`, `title` only. */
+export function listSceneSummaries(spaceId: string, worldId: WorldId, chapterId: ChapterId): Promise<SceneSummary[]> {
+  return call<SceneSummary[]>('list_scene_summaries', { spaceId, worldId, chapterId });
+}
+
+/** Substring search across title, summary, content, start time, and end time. Returns matching summaries. */
+export function searchScenes(spaceId: string, worldId: WorldId, query: string): Promise<SceneSummary[]> {
+  return call<SceneSummary[]>('search_scenes', { spaceId, worldId, query });
 }
 
 export function updateScene(

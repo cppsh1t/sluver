@@ -136,3 +136,35 @@ pub struct SceneImageMeta {
     pub created_at: String,
     pub updated_at: String,
 }
+
+// ─── Lightweight summary views (agent-tool list/search IPC) ──────────────────
+//
+// Read-only return types — never deserialized. Each deliberately omits the
+// heavy / creative-content fields (descriptions, summaries, scene content,
+// junction refs) so agent-tool payloads stay small.
+
+/// Lightweight novel view for agent-tool list/search IPC.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NovelSummary {
+    pub id: String,
+    pub title: String,
+    pub tags: Vec<String>,
+    pub author: String,
+}
+
+/// Lightweight chapter view for agent-tool list/search IPC.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChapterSummary {
+    pub id: String,
+    pub title: String,
+}
+
+/// Lightweight scene view for agent-tool list/search IPC.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneSummary {
+    pub id: String,
+    pub title: String,
+}

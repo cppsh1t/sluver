@@ -53,3 +53,21 @@ export const eventSchema = z.object({
 });
 
 export type Event = z.infer<typeof eventSchema>;
+
+// ─── Event Summary ────────────────────────────────────────────────────────
+
+/**
+ * Lightweight Event view — `id`, `name`, `tags`, `startAt`, `endAt`.
+ *
+ * Returned by `list_event_summaries` and `search_events`. Omits participants,
+ * location, description, and notes — call `get_event` for those.
+ */
+export const eventSummarySchema = z.object({
+  id: eventIdSchema,
+  name: z.string(),
+  tags: z.array(z.string()),
+  startAt: z.iso.datetime().nullable(),
+  endAt: z.iso.datetime().nullable(),
+});
+
+export type EventSummary = z.infer<typeof eventSummarySchema>;

@@ -33,3 +33,12 @@ pub struct UpdateLoreInput {
     pub notes: String,
     pub tags: Vec<String>,
 }
+
+/// Lightweight lore view for agent-tool list/search IPC.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoreSummary {
+    pub id: String,
+    pub name: String,
+    pub tags: Vec<String>,
+}

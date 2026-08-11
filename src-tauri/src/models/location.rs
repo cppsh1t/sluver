@@ -33,3 +33,12 @@ pub struct UpdateLocationInput {
     pub notes: String,
     pub tags: Vec<String>,
 }
+
+/// Lightweight location view for agent-tool list/search IPC.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocationSummary {
+    pub id: String,
+    pub name: String,
+    pub tags: Vec<String>,
+}

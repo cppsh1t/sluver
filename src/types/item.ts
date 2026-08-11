@@ -15,3 +15,19 @@ export const itemSchema = elementBaseSchema.extend({
 });
 
 export type Item = z.infer<typeof itemSchema>;
+
+// ─── Item Summary ─────────────────────────────────────────────────────────
+
+/**
+ * Lightweight Item view — `id`, `name`, `tags` only.
+ *
+ * Returned by `list_item_summaries` and `search_items`. Call `get_item` for
+ * description and notes.
+ */
+export const itemSummarySchema = z.object({
+  id: itemIdSchema,
+  name: z.string(),
+  tags: z.array(z.string()),
+});
+
+export type ItemSummary = z.infer<typeof itemSummarySchema>;

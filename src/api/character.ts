@@ -5,7 +5,7 @@
  * registry, `worldId` selects the per-World DB within it.
  */
 
-import type { Character, CharacterId, CharacterPhase, PhaseId, WorldId } from '@/types';
+import type { Character, CharacterId, CharacterPhase, CharacterSummary, PhaseId, WorldId } from '@/types';
 import { call } from './client';
 import type {
   CreateCharacterInput,
@@ -26,6 +26,16 @@ export function getCharacter(spaceId: string, worldId: WorldId, id: CharacterId)
 
 export function listCharacters(spaceId: string, worldId: WorldId): Promise<Character[]> {
   return call<Character[]>('list_characters', { spaceId, worldId });
+}
+
+/** Lightweight cast list — `id`, `name`, `tags` only (no phases or prose). */
+export function listCharacterSummaries(spaceId: string, worldId: WorldId): Promise<CharacterSummary[]> {
+  return call<CharacterSummary[]>('list_character_summaries', { spaceId, worldId });
+}
+
+/** Substring search across name, aliases, description, notes, and tags. Returns matching summaries. */
+export function searchCharacters(spaceId: string, worldId: WorldId, query: string): Promise<CharacterSummary[]> {
+  return call<CharacterSummary[]>('search_characters', { spaceId, worldId, query });
 }
 
 export function updateCharacter(

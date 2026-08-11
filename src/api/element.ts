@@ -8,10 +8,13 @@
 import type {
   Item,
   ItemId,
+  ItemSummary,
   Location,
   LocationId,
+  LocationSummary,
   Lore,
   LoreId,
+  LoreSummary,
   WorldId,
 } from '@/types';
 import { call } from './client';
@@ -33,6 +36,16 @@ export function getLocation(spaceId: string, worldId: WorldId, id: LocationId): 
 
 export function listLocations(spaceId: string, worldId: WorldId): Promise<Location[]> {
   return call<Location[]>('list_locations', { spaceId, worldId });
+}
+
+/** Lightweight location list — `id`, `name`, `tags` only. */
+export function listLocationSummaries(spaceId: string, worldId: WorldId): Promise<LocationSummary[]> {
+  return call<LocationSummary[]>('list_location_summaries', { spaceId, worldId });
+}
+
+/** Substring search across name, description, notes, and tags. Returns matching summaries. */
+export function searchLocations(spaceId: string, worldId: WorldId, query: string): Promise<LocationSummary[]> {
+  return call<LocationSummary[]>('search_locations', { spaceId, worldId, query });
 }
 
 export function updateLocation(
@@ -62,6 +75,16 @@ export function listItems(spaceId: string, worldId: WorldId): Promise<Item[]> {
   return call<Item[]>('list_items', { spaceId, worldId });
 }
 
+/** Lightweight item list — `id`, `name`, `tags` only. */
+export function listItemSummaries(spaceId: string, worldId: WorldId): Promise<ItemSummary[]> {
+  return call<ItemSummary[]>('list_item_summaries', { spaceId, worldId });
+}
+
+/** Substring search across name, description, notes, and tags. Returns matching summaries. */
+export function searchItems(spaceId: string, worldId: WorldId, query: string): Promise<ItemSummary[]> {
+  return call<ItemSummary[]>('search_items', { spaceId, worldId, query });
+}
+
 export function updateItem(
   spaceId: string,
   worldId: WorldId,
@@ -87,6 +110,16 @@ export function getLore(spaceId: string, worldId: WorldId, id: LoreId): Promise<
 
 export function listLores(spaceId: string, worldId: WorldId): Promise<Lore[]> {
   return call<Lore[]>('list_lores', { spaceId, worldId });
+}
+
+/** Lightweight lore list — `id`, `name`, `tags` only. */
+export function listLoreSummaries(spaceId: string, worldId: WorldId): Promise<LoreSummary[]> {
+  return call<LoreSummary[]>('list_lore_summaries', { spaceId, worldId });
+}
+
+/** Substring search across name, description, notes, and tags. Returns matching summaries. */
+export function searchLores(spaceId: string, worldId: WorldId, query: string): Promise<LoreSummary[]> {
+  return call<LoreSummary[]>('search_lores', { spaceId, worldId, query });
 }
 
 export function updateLore(

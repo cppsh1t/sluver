@@ -90,3 +90,14 @@ pub struct UpdateCharacterInput {
     pub notes: String,
     pub tags: Vec<String>,
 }
+
+/// Lightweight character view for agent-tool list/search IPC. Read-only return
+/// type — never deserialized, deliberately omits the heavy fields (description,
+/// aliases, notes, phases) so agent tool payloads stay small.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CharacterSummary {
+    pub id: String,
+    pub name: String,
+    pub tags: Vec<String>,
+}

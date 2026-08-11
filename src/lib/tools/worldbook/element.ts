@@ -20,9 +20,12 @@ import {
   getItem,
   getLocation,
   getLore,
-  listItems,
-  listLocations,
-  listLores,
+  listItemSummaries,
+  listLocationSummaries,
+  listLoreSummaries,
+  searchItems,
+  searchLocations,
+  searchLores,
   updateItem,
   updateLocation,
   updateLore,
@@ -44,15 +47,32 @@ const updateSchema = createSchema.extend({
 
 const idSchema = z.object({ id: z.string().describe("The element's UUID.") });
 
+// ─── Search input (shared) ────────────────────────────────────────────────
+
+const searchSchema = z.object({
+  query: z.string().min(1).describe("Substring to search for (case-insensitive)."),
+});
+
 // ─── Location ─────────────────────────────────────────────────────────────
 
 export function locationTools(): Record<string, ToolDef> {
   return {
     list_locations: {
-      description: "List all locations in the current world.",
+      description:
+        "List all locations in the current world. Returns summary fields (id, name, tags) only — call get_location for description and notes.",
       inputSchema: z.object({}),
       consentLevel: "auto",
-      execute: async (_input, ctx) => listLocations(ctx.spaceId, ctx.worldId),
+      execute: async (_input, ctx) => listLocationSummaries(ctx.spaceId, ctx.worldId),
+    },
+    search_locations: {
+      description:
+        "Search locations by substring match across name, description, notes, and tags. Returns matching location summaries (id, name, tags) — call get_location for full fields on specific hits.",
+      inputSchema: searchSchema,
+      consentLevel: "auto",
+      execute: async (input, ctx) => {
+        const { query } = input as { query: string };
+        return searchLocations(ctx.spaceId, ctx.worldId, query);
+      },
     },
     get_location: {
       description: "Get a single location by ID.",
@@ -105,10 +125,21 @@ export function locationTools(): Record<string, ToolDef> {
 export function itemTools(): Record<string, ToolDef> {
   return {
     list_items: {
-      description: "List all items in the current world.",
+      description:
+        "List all items in the current world. Returns summary fields (id, name, tags) only — call get_item for description and notes.",
       inputSchema: z.object({}),
       consentLevel: "auto",
-      execute: async (_input, ctx) => listItems(ctx.spaceId, ctx.worldId),
+      execute: async (_input, ctx) => listItemSummaries(ctx.spaceId, ctx.worldId),
+    },
+    search_items: {
+      description:
+        "Search items by substring match across name, description, notes, and tags. Returns matching item summaries (id, name, tags) — call get_item for full fields on specific hits.",
+      inputSchema: searchSchema,
+      consentLevel: "auto",
+      execute: async (input, ctx) => {
+        const { query } = input as { query: string };
+        return searchItems(ctx.spaceId, ctx.worldId, query);
+      },
     },
     get_item: {
       description: "Get a single item by ID.",
@@ -161,10 +192,21 @@ export function itemTools(): Record<string, ToolDef> {
 export function loreTools(): Record<string, ToolDef> {
   return {
     list_lores: {
-      description: "List all lore entries in the current world.",
+      description:
+        "List all lore entries in the current world. Returns summary fields (id, name, tags) only — call get_lore for description and notes.",
       inputSchema: z.object({}),
       consentLevel: "auto",
-      execute: async (_input, ctx) => listLores(ctx.spaceId, ctx.worldId),
+      execute: async (_input, ctx) => listLoreSummaries(ctx.spaceId, ctx.worldId),
+    },
+    search_lores: {
+      description:
+        "Search lore entries by substring match across name, description, notes, and tags. Returns matching lore summaries (id, name, tags) — call get_lore for full fields on specific hits.",
+      inputSchema: searchSchema,
+      consentLevel: "auto",
+      execute: async (input, ctx) => {
+        const { query } = input as { query: string };
+        return searchLores(ctx.spaceId, ctx.worldId, query);
+      },
     },
     get_lore: {
       description: "Get a single lore entry by ID.",

@@ -14,7 +14,8 @@ import {
   createEvent,
   deleteEvent,
   getEvent,
-  listEvents,
+  listEventSummaries,
+  searchEvents,
   updateEvent,
 } from "@/api/event";
 import type { ToolDef } from "../types";
@@ -44,10 +45,24 @@ const updateSchema = createSchema.extend({
 export function eventTools(): Record<string, ToolDef> {
   return {
     list_events: {
-      description: "List all events in the current world, including their character participants.",
+      description:
+        "List all events in the current world. Returns summary fields (id, name, tags, startAt, endAt) only — call get_event for participants, location, description, and notes.",
       inputSchema: z.object({}),
       consentLevel: "auto",
-      execute: async (_input, ctx) => listEvents(ctx.spaceId, ctx.worldId),
+      execute: async (_input, ctx) => listEventSummaries(ctx.spaceId, ctx.worldId),
+    },
+
+    search_events: {
+      description:
+        "Search events by substring match across name, description, notes, tags, start time, and end time. Returns matching event summaries (id, name, tags, startAt, endAt) — call get_event for full fields on specific hits.",
+      inputSchema: z.object({
+        query: z.string().min(1).describe("Substring to search for (case-insensitive)."),
+      }),
+      consentLevel: "auto",
+      execute: async (input, ctx) => {
+        const { query } = input as { query: string };
+        return searchEvents(ctx.spaceId, ctx.worldId, query);
+      },
     },
 
     get_event: {

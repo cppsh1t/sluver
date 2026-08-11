@@ -55,6 +55,23 @@ export const novelSchema = z.object({
 
 export type Novel = z.infer<typeof novelSchema>;
 
+// ─── Novel Summary ────────────────────────────────────────────────────────
+
+/**
+ * Lightweight Novel view — `id`, `title`, `tags`, `author`.
+ *
+ * Returned by `list_novel_summaries` and `search_novels`. Omits `chapterIds`
+ * and `description` — call `get_novel` for those.
+ */
+export const novelSummarySchema = z.object({
+  id: novelIdSchema,
+  title: z.string(),
+  tags: z.array(z.string()),
+  author: z.string(),
+});
+
+export type NovelSummary = z.infer<typeof novelSummarySchema>;
+
 // ─── Chapter ──────────────────────────────────────────────────────────────
 
 /**
@@ -84,6 +101,21 @@ export const chapterSchema = z.object({
 });
 
 export type Chapter = z.infer<typeof chapterSchema>;
+
+// ─── Chapter Summary ──────────────────────────────────────────────────────
+
+/**
+ * Lightweight Chapter view — `id`, `title` only.
+ *
+ * Returned by `list_chapter_summaries` and `search_chapters`. Call
+ * `get_chapter` for summary text and scene IDs.
+ */
+export const chapterSummarySchema = z.object({
+  id: chapterIdSchema,
+  title: z.string(),
+});
+
+export type ChapterSummary = z.infer<typeof chapterSummarySchema>;
 
 // ─── Scene ────────────────────────────────────────────────────────────────
 
@@ -135,6 +167,21 @@ export const sceneSchema = z.object({
 });
 
 export type Scene = z.infer<typeof sceneSchema>;
+
+// ─── Scene Summary ────────────────────────────────────────────────────────
+
+/**
+ * Lightweight Scene view — `id`, `title` only.
+ *
+ * Returned by `list_scene_summaries` and `search_scenes`. Call `get_scene`
+ * for summary, content, and entity references.
+ */
+export const sceneSummarySchema = z.object({
+  id: sceneIdSchema,
+  title: z.string(),
+});
+
+export type SceneSummary = z.infer<typeof sceneSummarySchema>;
 
 // ─── Scene image (sidecar) ───────────────────────────────────────────────
 

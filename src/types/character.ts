@@ -77,6 +77,24 @@ export const characterSchema = z.object({
 
 export type Character = z.infer<typeof characterSchema>;
 
+// ─── Character Summary ────────────────────────────────────────────────────
+
+/**
+ * Lightweight Character view — `id`, `name`, `tags` only.
+ *
+ * Returned by `list_character_summaries` and `search_characters`. Omits the
+ * heavy `phases` array and prose fields (`description`, `notes`) so the agent
+ * can scan the cast list without pulling every character's full state. Call
+ * `get_character` for aliases, description, phases, and notes.
+ */
+export const characterSummarySchema = z.object({
+  id: characterIdSchema,
+  name: z.string(),
+  tags: z.array(z.string()),
+});
+
+export type CharacterSummary = z.infer<typeof characterSummarySchema>;
+
 // ─── Character Reference ──────────────────────────────────────────────────
 
 /**

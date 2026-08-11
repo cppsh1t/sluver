@@ -51,3 +51,16 @@ pub struct UpdateEventInput {
     pub notes: String,
     pub tags: Vec<String>,
 }
+
+/// Lightweight event view for agent-tool list/search IPC. Includes the
+/// nullable time window (`start_at` / `end_at`) since temporal placement is
+/// the primary axis agents disambiguate events on.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventSummary {
+    pub id: String,
+    pub name: String,
+    pub tags: Vec<String>,
+    pub start_at: Option<String>,
+    pub end_at: Option<String>,
+}

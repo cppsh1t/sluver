@@ -20,11 +20,14 @@ import {
   getChapter,
   getNovel,
   getScene,
-  listChapters,
-  listNovels,
-  listScenes,
+  listChapterSummaries,
+  listNovelSummaries,
+  listSceneSummaries,
   reorderChapters,
   reorderScenes,
+  searchChapters,
+  searchNovels,
+  searchScenes,
   updateChapter,
   updateNovel,
   updateScene,
@@ -54,10 +57,23 @@ const updateNovelSchema = createNovelSchema.extend({
 export function novelTools(): Record<string, ToolDef> {
   return {
     list_novels: {
-      description: "List all novels in the current world.",
+      description:
+        "List all novels in the current world. Returns summary fields (id, title, tags, author) only — call get_novel for description and chapter IDs.",
       inputSchema: z.object({}),
       consentLevel: "auto",
-      execute: async (_input, ctx) => listNovels(ctx.spaceId, ctx.worldId),
+      execute: async (_input, ctx) => listNovelSummaries(ctx.spaceId, ctx.worldId),
+    },
+    search_novels: {
+      description:
+        "Search novels by substring match across title, description, author, and tags. Returns matching novel summaries (id, title, tags, author) — call get_novel for full fields on specific hits.",
+      inputSchema: z.object({
+        query: z.string().min(1).describe("Substring to search for (case-insensitive)."),
+      }),
+      consentLevel: "auto",
+      execute: async (input, ctx) => {
+        const { query } = input as { query: string };
+        return searchNovels(ctx.spaceId, ctx.worldId, query);
+      },
     },
     get_novel: {
       description: "Get a single novel by ID, including its chapter IDs.",
@@ -122,12 +138,25 @@ const updateChapterSchema = z.object({
 export function chapterTools(): Record<string, ToolDef> {
   return {
     list_chapters: {
-      description: "List all chapters in a novel, including their scene IDs.",
+      description:
+        "List all chapters in a novel. Returns summary fields (id, title) only — call get_chapter for summary text and scene IDs.",
       inputSchema: z.object({ novelId: z.string().describe("The novel's UUID.") }),
       consentLevel: "auto",
       execute: async (input, ctx) => {
         const { novelId } = input as { novelId: string };
-        return listChapters(ctx.spaceId, ctx.worldId, novelId as never);
+        return listChapterSummaries(ctx.spaceId, ctx.worldId, novelId as never);
+      },
+    },
+    search_chapters: {
+      description:
+        "Search chapters by substring match across title and summary. Returns matching chapter summaries (id, title) — call get_chapter for full fields on specific hits.",
+      inputSchema: z.object({
+        query: z.string().min(1).describe("Substring to search for (case-insensitive)."),
+      }),
+      consentLevel: "auto",
+      execute: async (input, ctx) => {
+        const { query } = input as { query: string };
+        return searchChapters(ctx.spaceId, ctx.worldId, query);
       },
     },
     get_chapter: {
@@ -211,12 +240,25 @@ const updateSceneSchema = createSceneSchema.extend({
 export function sceneTools(): Record<string, ToolDef> {
   return {
     list_scenes: {
-      description: "List all scenes in a chapter, including their character/item/event references.",
+      description:
+        "List all scenes in a chapter. Returns summary fields (id, title) only — call get_scene for summary, content, and entity references.",
       inputSchema: z.object({ chapterId: z.string().describe("The chapter's UUID.") }),
       consentLevel: "auto",
       execute: async (input, ctx) => {
         const { chapterId } = input as { chapterId: string };
-        return listScenes(ctx.spaceId, ctx.worldId, chapterId as never);
+        return listSceneSummaries(ctx.spaceId, ctx.worldId, chapterId as never);
+      },
+    },
+    search_scenes: {
+      description:
+        "Search scenes by substring match across title, summary, content, start time, and end time. Returns matching scene summaries (id, title) — call get_scene for full fields on specific hits.",
+      inputSchema: z.object({
+        query: z.string().min(1).describe("Substring to search for (case-insensitive)."),
+      }),
+      consentLevel: "auto",
+      execute: async (input, ctx) => {
+        const { query } = input as { query: string };
+        return searchScenes(ctx.spaceId, ctx.worldId, query);
       },
     },
     get_scene: {
