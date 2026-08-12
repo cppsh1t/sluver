@@ -6,8 +6,9 @@
  * or when the page requires JavaScript to render content. The hidden WebView2
  * window loads the page in a real browser engine, letting Cloudflare/anti-bot
  * JS challenges resolve naturally, then extracts `document.documentElement
- * .outerHTML` via native `ExecuteScript` and runs the same Readability
- * extraction as `web_fetch`.
+ * .outerHTML` via native `ExecuteScript` and runs the same Readability +
+ * Markdown extraction as `web_fetch` (same `FetchedPage` shape, same image
+ * handling — see `webfetch.ts` for the full image-gathering notes).
  *
  * **Slower** than `web_fetch` (~3-5s per fetch vs <1s). The tool description
  * guides the agent to try `web_fetch` first and fall back here on failure.
@@ -48,7 +49,8 @@ export function webViewFetchTools(): Record<string, ToolDef> {
         "Use this ONLY when `web_fetch` returned an error (e.g. 403 Forbidden, access denied) " +
         "or when the page requires JavaScript to render content. " +
         "Slower than `web_fetch` (3-5 seconds per fetch) but handles Cloudflare/JS challenges. " +
-        "Returns the same format as `web_fetch` (title, content, metadata).",
+        "Returns the same format as `web_fetch` (Markdown content with inline `![](url)` images, " +
+        "`mainImage` hero field, title, metadata).",
       inputSchema: fetchInputSchema,
       consentLevel: "auto",
       execute: async (input) => {
