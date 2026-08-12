@@ -11,6 +11,10 @@
  * - `reorder`→ count label.
  * - `count`  → events/scenes ref counts.
  * - `getTime`→ formatted timestamp.
+ * - `webSearch` → result count + scrollable list of result previews
+ *   (title / domain / snippet).
+ * - `webFetch`  → page title + meta line (domain · chars · author · date) +
+ *   content excerpt.
  *
  * Returns `null` for unrecognized tools so the parent ({@link ToolCard}) can
  * fall back to the raw-JSON view as the primary body.
@@ -18,10 +22,14 @@
 
 import { useTranslation } from "react-i18next";
 
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Globe02Icon } from "@hugeicons/core-free-icons";
+
 import type { ToolBlockData } from "../message-render";
 import {
   asString,
   asStringArray,
+  domainFromUrl,
   ENTITY_META,
   isRecord,
   summarizeToolCall,
@@ -165,6 +173,44 @@ export function ToolBody({ tool }: { readonly tool: ToolBlockData }) {
     return <MetaLine>{t("chat:tool.listPending", { action: actionLabel, entity: entityLabel })}</MetaLine>;
   }
 
+  // ── search → query echo + count + name chips ────────────────────────
+  if (action === "search") {
+    if (!entityType) return null;
+    const entityLabel = t(`chat:tool.entity.${entityType}`);
+    const query = isRecord(tool.input) ? asString(tool.input.query) : undefined;
+    if (Array.isArray(out)) {
+      const names = namesFromArray(out, entityType).slice(0, 5);
+      const extra = out.length - names.length;
+      return (
+        <div className="flex flex-col gap-1">
+          {query && <MetaLine>{t("chat:tool.searchQuery", { query })}</MetaLine>}
+          {out.length === 0 ? (
+            <MetaLine>{t("chat:tool.searchNoResult", { entity: entityLabel })}</MetaLine>
+          ) : (
+            <MetaLine>{t("chat:tool.searchResult", { count: out.length, entity: entityLabel })}</MetaLine>
+          )}
+          {names.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {names.map((n, i) => <NameChip key={`${n}-${i}`} name={n} />)}
+              {extra > 0 && (
+                <span className="px-1.5 py-0.5 text-[0.625rem] text-muted-foreground/70">
+                  +{extra}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+    // Pending / running.
+    return (
+      <div className="flex flex-col gap-0.5">
+        {query && <MetaLine>{t("chat:tool.searchQuery", { query })}</MetaLine>}
+        <MetaLine>{t("chat:tool.searchPending", { entity: entityLabel })}</MetaLine>
+      </div>
+    );
+  }
+
   // ── delete → label + truncated id ─────────────────────────────────────
   if (action === "delete") {
     if (!entityType) return null;
@@ -227,6 +273,101 @@ export function ToolBody({ tool }: { readonly tool: ToolBlockData }) {
       if (formatted) return <MetaLine>{formatted}</MetaLine>;
     }
     return <MetaLine>{t(`chat:tool.action.getTime`)}</MetaLine>;
+  }
+
+  // ── webSearch → result count + scrollable result previews ────────────
+  if (action === "webSearch") {
+    if (hasOutput && isRecord(out) && Array.isArray(out.results)) {
+      const results = out.results;
+      if (results.length === 0) {
+        return <MetaLine>{t("chat:tool.search.noResults")}</MetaLine>;
+      }
+      return (
+        <div className="flex flex-col gap-1.5">
+          <MetaLine>{t("chat:tool.search.resultCount", { count: results.length })}</MetaLine>
+          <div className="flex max-h-64 flex-col gap-1.5 overflow-auto pr-1">
+            {results.map((item, idx) => {
+              if (!isRecord(item)) return null;
+              const title = asString(item.title);
+              const url = asString(item.url);
+              const snippet = asString(item.snippet);
+              const domain = domainFromUrl(url);
+              return (
+                <div key={idx} className="flex flex-col gap-0.5">
+                  <div className="flex items-center gap-1">
+                    <HugeiconsIcon
+                      icon={Globe02Icon}
+                      strokeWidth={2}
+                      aria-hidden
+                      className="size-3 shrink-0 text-muted-foreground/70"
+                    />
+                    {title ? (
+                      <span className="truncate text-[0.75rem] font-medium">{title}</span>
+                    ) : (
+                      <span className="truncate text-[0.75rem] font-medium text-muted-foreground/60">—</span>
+                    )}
+                  </div>
+                  {domain && (
+                    <span className="pl-4 text-[0.625rem] text-muted-foreground/70">{domain}</span>
+                  )}
+                  {snippet && (
+                    <p className="line-clamp-2 pl-4 text-[0.6875rem] leading-relaxed text-muted-foreground">
+                      {snippet}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+    // Pending / running — the header summary line already shows the query.
+    return <MetaLine>{t("chat:tool.search.pending")}</MetaLine>;
+  }
+
+  // ── webFetch → page title + meta line + content excerpt ──────────────
+  if (action === "webFetch") {
+    if (hasOutput && isRecord(out) && isRecord(out.page)) {
+      const page = out.page;
+      const title = asString(page.title);
+      const url = asString(page.url);
+      const content = asString(page.content) ?? "";
+      const author = asString(page.author);
+      const publishedAt = asString(page.publishedAt);
+      const domain = domainFromUrl(url);
+
+      // Meta line: domain · char count · author · published date (middot-joined).
+      const metaParts: string[] = [];
+      if (domain) metaParts.push(domain);
+      if (content.length > 0) metaParts.push(t("chat:tool.search.chars", { count: content.length }));
+      if (author) metaParts.push(`${t("chat:tool.search.author")}: ${author}`);
+      if (publishedAt) metaParts.push(`${t("chat:tool.search.published")}: ${publishedAt}`);
+
+      // Prefer excerpt for the preview when present (Readability meta desc is a
+      // tighter summary than the truncated body); fall back to the body content.
+      const excerpt = asString(page.excerpt) ?? content;
+
+      return (
+        <div className="flex flex-col gap-1">
+          {title ? (
+            <span className="truncate text-[0.75rem] font-medium">{title}</span>
+          ) : domain ? (
+            <span className="truncate text-[0.75rem] font-medium">{domain}</span>
+          ) : null}
+          {metaParts.length > 0 && (
+            <MetaLine>{metaParts.join(" · ")}</MetaLine>
+          )}
+          {excerpt && (
+            <p className="line-clamp-3 text-[0.6875rem] leading-relaxed text-muted-foreground">
+              {excerpt}
+            </p>
+          )}
+        </div>
+      );
+    }
+    // Pending / running — the header summary line already shows the domain.
+    return <MetaLine>{t("chat:tool.search.fetching")}</MetaLine>;
   }
 
   // Unrecognized tool — parent falls back to raw JSON.

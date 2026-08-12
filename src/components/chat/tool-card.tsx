@@ -162,7 +162,11 @@ function GenericToolCard({ tool, worldId, conversationId }: ToolCardProps) {
   const summary = summarizeToolCall(tool.toolName, tool.input, tool.output);
   // Recognized tools render an entity-shaped preview; unknown ones fall back
   // to the raw-JSON view as the primary body.
-  const hasStructuredPreview = summary.entityType !== null || summary.action === "getTime";
+  const hasStructuredPreview =
+    summary.entityType !== null ||
+    summary.action === "getTime" ||
+    summary.action === "webSearch" ||
+    summary.action === "webFetch";
 
   const statusKey = isPending ? "chat:tool.pendingApproval" : statusTextKey(tool.status);
   const labelText = t(statusKey);

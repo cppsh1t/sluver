@@ -18,12 +18,15 @@ export type ToolAction =
   | "create"
   | "get"
   | "list"
+  | "search"
   | "update"
   | "delete"
   | "reorder"
   | "count"
   | "addPhase"
-  | "getTime";
+  | "getTime"
+  | "webSearch"
+  | "webFetch";
 
 export type EntityType =
   | "character"
@@ -132,9 +135,25 @@ function singularize(word: string): string {
 }
 
 /**
+ * Best-effort host extraction from a URL string — never throws.
+ *
+ * Used by the web-fetch summary headline (`读取「en.wikipedia.org」`) and the
+ * fetch-card meta line. Malformed input returns `undefined`.
+ */
+export function domainFromUrl(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  try {
+    return new URL(url).host;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Parse a tool name into its semantic action + entity.
  *
- * Special cases: `get_current_time`, `add_phase`, `count_character_refs`,
+ * Special cases: `get_current_time`, `web_search`, `web_fetch`,
+ * `web_fetch_via_browser`, `add_phase`, `count_character_refs`,
  * `count_phase_refs`. Generic tools follow `{action}_{entity}`; reorder tools
  * use the plural entity (`reorder_phases`) which is singularized.
  */
@@ -144,6 +163,12 @@ function parseToolName(toolName: string): {
 } {
   if (toolName === "get_current_time") {
     return { action: "getTime", entityType: null };
+  }
+  if (toolName === "web_search") {
+    return { action: "webSearch", entityType: null };
+  }
+  if (toolName === "web_fetch" || toolName === "web_fetch_via_browser") {
+    return { action: "webFetch", entityType: null };
   }
   if (toolName === "add_phase") {
     return { action: "addPhase", entityType: "phase" };
@@ -168,6 +193,7 @@ function parseToolName(toolName: string): {
 
   switch (actionRaw) {
     case "list":
+    case "search":
     case "get":
     case "create":
     case "update":
@@ -250,6 +276,10 @@ function buildParamRows(
       const id = firstString(input, SCOPE_ID_FIELDS);
       return id ? [{ label: "id", value: truncateId(id) }] : [];
     }
+    case "search": {
+      const query = asString(input.query);
+      return query ? [{ label: "query", value: truncateProse(query) }] : [];
+    }
     case "get": {
       const id = firstString(input, ID_FIELDS);
       return id ? [{ label: "id", value: truncateId(id) }] : [];
@@ -257,6 +287,18 @@ function buildParamRows(
     case "getTime": {
       const tz = asString(input.timezone);
       return tz ? [{ label: "timezone", value: tz }] : [];
+    }
+    case "webSearch": {
+      const query = asString(input.query);
+      const rows: Array<{ readonly label: string; readonly value: string }> = [];
+      if (query) rows.push({ label: "query", value: truncateProse(query) });
+      const maxResults = typeof input.maxResults === "number" ? input.maxResults : undefined;
+      if (maxResults !== undefined) rows.push({ label: "maxResults", value: String(maxResults) });
+      return rows;
+    }
+    case "webFetch": {
+      const url = asString(input.url);
+      return url ? [{ label: "url", value: truncateProse(url) }] : [];
     }
     default:
       return [];
@@ -292,6 +334,17 @@ export function summarizeToolCall(
     const key = ENTITY_META[entityType].headlineKey;
     const outRec = isRecord(unwrapToolOutput(output)) ? (unwrapToolOutput(output) as Record<string, unknown>) : {};
     headline = asString(outRec[key]) ?? asString(inRec[key]);
+  } else if (action === "webSearch") {
+    headline = asString(inRec.query);
+  } else if (action === "webFetch") {
+    // Prefer the final (post-redirect) URL from the output, fall back to the
+    // input URL the agent requested. Either way, surface only the host.
+    const outRec = isRecord(unwrapToolOutput(output))
+      ? (unwrapToolOutput(output) as Record<string, unknown>)
+      : {};
+    const pageRec = isRecord(outRec.page) ? (outRec.page as Record<string, unknown>) : null;
+    const url = (pageRec ? asString(pageRec.url) : undefined) ?? asString(inRec.url);
+    headline = domainFromUrl(url);
   }
 
   const paramRows = buildParamRows(action, inRec);
