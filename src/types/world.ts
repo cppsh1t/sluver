@@ -17,6 +17,7 @@ export const worldSchema = z.object({
   name: z.string(),
   /** High-level description / setting overview of this world. */
   description: z.string(),
+  hasImage: z.boolean(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });

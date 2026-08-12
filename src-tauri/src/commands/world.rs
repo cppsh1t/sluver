@@ -1,6 +1,7 @@
 use rusqlite::params;
-use tauri::State;
+use tauri::{AppHandle, State};
 
+use crate::commands::events::emit_entity_changed;
 use crate::db::migrations::WORLD_MIGRATIONS;
 use crate::db::{DbError, DbManager};
 use crate::models::world::{CreateWorldInput, UpdateWorldInput, World};
@@ -15,6 +16,7 @@ fn row_to_world(row: &rusqlite::Row) -> rusqlite::Result<World> {
         description: row.get("description")?,
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
+        has_image: row.get("has_image")?,
     })
 }
 
@@ -25,12 +27,13 @@ fn row_to_world(row: &rusqlite::Row) -> rusqlite::Result<World> {
 // reads/writes) and gain `space_id` as the first param. World content DB
 // files live at `spaces/{spaceId}/worlds/{worldId}.db`.
 
-#[tracing::instrument(skip(state, input), fields(entity_id))]
+#[tracing::instrument(skip(state, input, app), fields(entity_id))]
 #[tauri::command]
 pub fn create_world(
     space_id: String,
     input: CreateWorldInput,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<World, DbError> {
     let id = new_id();
     tracing::Span::current().record("entity_id", id.as_str());
@@ -70,13 +73,16 @@ pub fn create_world(
             let _ = std::fs::remove_file(format!("{}-shm", full_path.display()));
         })?;
 
-    Ok(World {
+    let entity = World {
         id,
         name: input.name,
         description: input.description,
         created_at: now.clone(),
         updated_at: now,
-    })
+        has_image: false,
+    };
+    emit_entity_changed(&app, "world", Some(entity.id.clone()), &space_id, None);
+    Ok(entity)
 }
 
 #[tracing::instrument(skip(state))]
@@ -84,7 +90,7 @@ pub fn create_world(
 pub fn list_worlds(space_id: String, state: State<'_, DbManager>) -> Result<Vec<World>, DbError> {
     state.with_space(&space_id, |conn| {
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, created_at, updated_at FROM worlds ORDER BY created_at",
+            "SELECT id, name, description, created_at, updated_at, image_blob IS NOT NULL AS has_image FROM worlds ORDER BY created_at",
         )?;
         let worlds = stmt
             .query_map([], row_to_world)?
@@ -102,7 +108,7 @@ pub fn get_world(
 ) -> Result<World, DbError> {
     state.with_space(&space_id, |conn| {
         conn.query_row(
-            "SELECT id, name, description, created_at, updated_at FROM worlds WHERE id = ?1",
+            "SELECT id, name, description, created_at, updated_at, image_blob IS NOT NULL AS has_image FROM worlds WHERE id = ?1",
             params![id],
             row_to_world,
         )
@@ -113,38 +119,44 @@ pub fn get_world(
     })
 }
 
-#[tracing::instrument(skip(state, input, id), fields(entity_id = %id))]
+#[tracing::instrument(skip(state, input, id, app), fields(entity_id = %id))]
 #[tauri::command]
 pub fn update_world(
     space_id: String,
     id: String,
     input: UpdateWorldInput,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<World, DbError> {
     let now = now_iso();
-    state.with_space(&space_id, |conn| {
+    let result = state.with_space(&space_id, |conn| {
         let updated = conn.execute(
             "UPDATE worlds SET name = ?1, description = ?2, updated_at = ?3 WHERE id = ?4",
             params![input.name, input.description, now, id],
         )?;
         if updated == 0 {
-            return Err(DbError::WorldNotFound(id));
+            return Err(DbError::WorldNotFound(id.clone()));
         }
         conn.query_row(
-            "SELECT id, name, description, created_at, updated_at FROM worlds WHERE id = ?1",
+            "SELECT id, name, description, created_at, updated_at, image_blob IS NOT NULL AS has_image FROM worlds WHERE id = ?1",
             params![id],
             row_to_world,
         )
         .map_err(DbError::Sqlite)
-    })
+    });
+    if let Ok(ref entity) = result {
+        emit_entity_changed(&app, "world", Some(entity.id.clone()), &space_id, None);
+    }
+    result
 }
 
-#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
+#[tracing::instrument(skip(state, id, app), fields(entity_id = %id))]
 #[tauri::command]
 pub fn delete_world(
     space_id: String,
     id: String,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<(), DbError> {
     // 1. Delete from the Space's registry first — any concurrent with_world()
     //    will fail at path resolution with WorldNotFound before opening a new
@@ -178,6 +190,7 @@ pub fn delete_world(
     let _ = std::fs::remove_file(format!("{}-wal", full_path.display()));
     let _ = std::fs::remove_file(format!("{}-shm", full_path.display()));
 
+    emit_entity_changed(&app, "world", Some(id.clone()), &space_id, None);
     Ok(())
 }
 
@@ -196,7 +209,7 @@ pub fn delete_world(
 // are INFO; get is DEBUG because it fires on every World card render.
 
 #[tracing::instrument(
-    skip(state, image_base64),
+    skip(state, image_base64, app),
     fields(entity_id = %id)
 )]
 #[tauri::command]
@@ -206,6 +219,7 @@ pub fn update_world_image(
     image_base64: String,
     image_mime: String,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<(), DbError> {
     let bytes = decode_and_validate_image(&image_base64, &image_mime)?;
     let now = now_iso();
@@ -215,37 +229,46 @@ pub fn update_world_image(
         image_mime = %image_mime,
         "image updated"
     );
-    state.with_space(&space_id, |conn| {
+    let result = state.with_space(&space_id, |conn| {
         let updated = conn.execute(
             "UPDATE worlds SET image_blob = ?1, image_mime = ?2, updated_at = ?3 WHERE id = ?4",
             params![&bytes, &image_mime, now, &id],
         )?;
         if updated == 0 {
-            return Err(DbError::WorldNotFound(id));
+            return Err(DbError::WorldNotFound(id.clone()));
         }
         Ok(())
-    })
+    });
+    if result.is_ok() {
+        emit_entity_changed(&app, "world", Some(id.clone()), &space_id, None);
+    }
+    result
 }
 
-#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
+#[tracing::instrument(skip(state, id, app), fields(entity_id = %id))]
 #[tauri::command]
 pub fn clear_world_image(
     space_id: String,
     id: String,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<(), DbError> {
     let now = now_iso();
     tracing::info!(entity_id = %id, "image cleared");
-    state.with_space(&space_id, |conn| {
+    let result = state.with_space(&space_id, |conn| {
         let updated = conn.execute(
             "UPDATE worlds SET image_blob = NULL, image_mime = NULL, updated_at = ?1 WHERE id = ?2",
             params![now, &id],
         )?;
         if updated == 0 {
-            return Err(DbError::WorldNotFound(id));
+            return Err(DbError::WorldNotFound(id.clone()));
         }
         Ok(())
-    })
+    });
+    if result.is_ok() {
+        emit_entity_changed(&app, "world", Some(id.clone()), &space_id, None);
+    }
+    result
 }
 
 #[tracing::instrument(skip(state, id), fields(entity_id = %id))]

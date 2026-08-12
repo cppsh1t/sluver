@@ -9,6 +9,7 @@ pub struct World {
     pub description: String,
     pub created_at: String,
     pub updated_at: String,
+    pub has_image: bool,
 }
 
 /// Input for creating a new world.
