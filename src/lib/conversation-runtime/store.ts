@@ -872,6 +872,129 @@ export function createConversationRuntimeStore(
           },
         }));
 
+        // ── Streaming batch buffer ──────────────────────────────────────
+        // High-frequency deltas (text / reasoning / tool-input) are buffered
+        // here as chunk arrays and flushed ONCE per animation frame via a
+        // single patchData call. This collapses O(tokens) per-delta string
+        // concatenations + zustand state-tree rebuilds + React re-renders
+        // into O(frames) batch flushes — the core memory/CPU fix for
+        // autonomous multi-step runs where thousands of deltas stream across
+        // many steps (reasoning models especially).
+        //
+        // **Chunk arrays, not incremental concat**: each delta is pushed as
+        // an array element (O(1)). The array is `.join("")`-ed once per flush,
+        // producing a SINGLE string allocation per frame instead of the O(N²)
+        // allocation of per-delta `text += delta`.
+        //
+        // **Structural events flush immediately**: step_start, tool_call,
+        // tool_result, tool_error, error, and abort each call flushBatch()
+        // BEFORE their own patchData. This guarantees segment ordering (a
+        // tool card appears AFTER all preceding text) and completeness.
+        //
+        // **Safety valve**: if the batch exceeds FLUSH_THRESHOLD chunks (rAF
+        // throttled by a hidden window — ADR-0024 in-flight survival), a
+        // timer-based flush fires to prevent unbounded growth.
+        const FLUSH_THRESHOLD = 500;
+        const batch = {
+          text: { stepNumber: -1, chunks: [] as string[] },
+          reasoning: { stepNumber: -1, chunks: [] as string[] },
+          inputDraftChunks: [] as string[],
+          rafId: null as number | null,
+          timeoutId: null as number | null,
+        };
+
+        /**
+         * Flush all pending batch buffers into a single patchData call.
+         * Cancels any pending rAF and safety-valve timer. Resets the batch
+         * arrays. No-op when all buffers are empty. Idempotent (safe to call
+         * from structural events, finalization, rAF callback, and the safety
+         * valve re-entrantly).
+         */
+        const flushBatch = (): void => {
+          if (batch.rafId !== null) {
+            cancelAnimationFrame(batch.rafId);
+            batch.rafId = null;
+          }
+          if (batch.timeoutId !== null) {
+            clearTimeout(batch.timeoutId);
+            batch.timeoutId = null;
+          }
+          // Snapshot + reset BEFORE patchData — avoids re-entrancy issues if
+          // a subscriber somehow triggers another flush.
+          const tChunks = batch.text.chunks;
+          const tStep = batch.text.stepNumber;
+          const rChunks = batch.reasoning.chunks;
+          const rStep = batch.reasoning.stepNumber;
+          const iChunks = batch.inputDraftChunks;
+          batch.text.chunks = [];
+          batch.reasoning.chunks = [];
+          batch.inputDraftChunks = [];
+
+          if (
+            tChunks.length === 0 &&
+            rChunks.length === 0 &&
+            iChunks.length === 0
+          ) {
+            return;
+          }
+
+          const tBatch = tChunks.length > 0 ? tChunks.join("") : null;
+          const rBatch = rChunks.length > 0 ? rChunks.join("") : null;
+          const iBatch = iChunks.length > 0 ? iChunks.join("") : null;
+
+          patchData(worldId, conversationId, (d) => {
+            if (!d.view.stream) return d;
+            let segments = d.view.stream.segments;
+            if (tBatch !== null) {
+              segments = appendDelta(segments, "text", tStep, tBatch);
+            }
+            if (rBatch !== null) {
+              segments = appendDelta(segments, "reasoning", rStep, rBatch);
+            }
+            return {
+              ...d,
+              view: {
+                ...d.view,
+                stream: {
+                  ...d.view.stream,
+                  segments,
+                  pendingInputDraft:
+                    iBatch !== null
+                      ? d.view.stream.pendingInputDraft + iBatch
+                      : d.view.stream.pendingInputDraft,
+                },
+              },
+            };
+          });
+        };
+
+        /**
+         * Schedule a rAF flush if not already pending. Safety valve: if the
+         * batch exceeds FLUSH_THRESHOLD chunks, flush via setTimeout(0)
+         * instead (works when rAF is throttled by a hidden window).
+         */
+        const scheduleFlush = (): void => {
+          const total =
+            batch.text.chunks.length +
+            batch.reasoning.chunks.length +
+            batch.inputDraftChunks.length;
+          if (total >= FLUSH_THRESHOLD) {
+            if (batch.rafId !== null) {
+              cancelAnimationFrame(batch.rafId);
+              batch.rafId = null;
+            }
+            // Only schedule one timer at a time — prevents pile-up when the
+            // buffer stays above threshold under sustained fast streaming.
+            if (batch.timeoutId === null) {
+              batch.timeoutId = setTimeout(flushBatch, 0);
+            }
+            return;
+          }
+          if (batch.rafId === null) {
+            batch.rafId = requestAnimationFrame(flushBatch);
+          }
+        };
+
         // ── Event handler — mutates view.stream per AgentEvent ──
         // Registered synchronously after run(); the loop starts on the next
         // microtask, so this listener is attached before `run_start` fires.
@@ -886,6 +1009,7 @@ export function createConversationRuntimeStore(
               return;
 
             case "step_start":
+              flushBatch();
               // One divider per step — `step_start` fires once per loop step.
               patchData(worldId, conversationId, (d) => {
                 if (!d.view.stream) return d;
@@ -910,67 +1034,45 @@ export function createConversationRuntimeStore(
               return;
 
             case "text_delta":
-              patchData(worldId, conversationId, (d) => {
-                if (!d.view.stream) return d;
-                return {
-                  ...d,
-                  view: {
-                    ...d.view,
-                    stream: {
-                      ...d.view.stream,
-                      segments: appendDelta(
-                        d.view.stream.segments,
-                        "text",
-                        event.stepNumber,
-                        event.delta,
-                      ),
-                    },
-                  },
-                };
-              });
+              // Flush pending reasoning to preserve arrival order (reasoning
+              // → text interleaving within a step is uncommon but possible).
+              if (batch.reasoning.chunks.length > 0) {
+                flushBatch();
+              }
+              // Step boundary → flush previous step's batch so segments stay
+              // in arrival order, then start accumulating for the new step.
+              if (batch.text.stepNumber !== event.stepNumber) {
+                flushBatch();
+                batch.text.stepNumber = event.stepNumber;
+              }
+              batch.text.chunks.push(event.delta);
+              scheduleFlush();
               return;
 
             case "reasoning_delta":
-              patchData(worldId, conversationId, (d) => {
-                if (!d.view.stream) return d;
-                return {
-                  ...d,
-                  view: {
-                    ...d.view,
-                    stream: {
-                      ...d.view.stream,
-                      segments: appendDelta(
-                        d.view.stream.segments,
-                        "reasoning",
-                        event.stepNumber,
-                        event.delta,
-                      ),
-                    },
-                  },
-                };
-              });
+              // Flush pending text to preserve arrival order.
+              if (batch.text.chunks.length > 0) {
+                flushBatch();
+              }
+              if (batch.reasoning.stepNumber !== event.stepNumber) {
+                flushBatch();
+                batch.reasoning.stepNumber = event.stepNumber;
+              }
+              batch.reasoning.chunks.push(event.delta);
+              scheduleFlush();
               return;
 
             case "tool_input_delta":
               // The event carries no toolCallId (the loop strips it); buffer
               // into the pending draft and transfer on the next tool_call.
-              patchData(worldId, conversationId, (d) => {
-                if (!d.view.stream) return d;
-                return {
-                  ...d,
-                  view: {
-                    ...d.view,
-                    stream: {
-                      ...d.view.stream,
-                      pendingInputDraft:
-                        d.view.stream.pendingInputDraft + event.delta,
-                    },
-                  },
-                };
-              });
+              // tool_call flushes the batch first, so the full accumulated
+              // draft is available when the tool segment is created.
+              batch.inputDraftChunks.push(event.delta);
+              scheduleFlush();
               return;
 
             case "tool_call":
+              flushBatch();
               patchData(worldId, conversationId, (d) => {
                 if (!d.view.stream) return d;
                 const inputDraft = d.view.stream.pendingInputDraft;
@@ -1002,6 +1104,7 @@ export function createConversationRuntimeStore(
               return;
 
             case "tool_result":
+              flushBatch();
               patchData(worldId, conversationId, (d) => {
                 if (!d.view.stream) return d;
                 return {
@@ -1022,6 +1125,7 @@ export function createConversationRuntimeStore(
               return;
 
             case "tool_error":
+              flushBatch();
               patchData(worldId, conversationId, (d) => {
                 if (!d.view.stream) return d;
                 return {
@@ -1046,6 +1150,7 @@ export function createConversationRuntimeStore(
               return;
 
             case "error":
+              flushBatch();
               // Stream-terminating error: surface immediately. The run will
               // resolve shortly and the result.then() does final cleanup
               // (stream clear + message refresh); view.error survives the
@@ -1061,6 +1166,7 @@ export function createConversationRuntimeStore(
               return;
 
             case "abort":
+              flushBatch();
               // Immediate "stopped" feedback; result.then() finalizes.
               // Also clear any pending approvals — the gate's abort listener
               // should have already resolved them, but this is defensive.
@@ -1120,6 +1226,7 @@ export function createConversationRuntimeStore(
         // The result NEVER rejects (ADR-0018); the .catch is defensive.
         void handle.result
           .then((result) => {
+            flushBatch();
             detachRunListeners();
             // ADR-0030 — surface per-turn usage two ways:
             //   1. `lastTurnUsage` = the full LanguageModelUsage (with
@@ -1158,6 +1265,7 @@ export function createConversationRuntimeStore(
             });
           })
           .catch((e) => {
+            flushBatch();
             detachRunListeners();
             patchData(worldId, conversationId, (d) => ({
               ...d,
