@@ -1097,8 +1097,20 @@ export function createConversationRuntimeStore(
           }
         };
 
-        handle.subscribe(handleEvent);
-        handle.subscribe(createAgentEventLogger(roleName));
+        // Capture both unsubscribe functions. The per-run emitter owns its
+        // subscriber set, and while `runHandle: null` (set in finalization
+        // below) SHOULD release the handle + emitter, V8/WebView2 is
+        // conservative about GC-ing Promise chains — the discarded closures
+        // (`handleEvent` captures `patchData` → zustand `set`/`get`) can stay
+        // pinned longer than expected after a run. Calling both unsubscribes
+        // deterministically in EVERY termination path (ADR-0018 — all runs
+        // resolve, never reject) is the robust fix. Idempotent (events.ts).
+        const unsubView = handle.subscribe(handleEvent);
+        const unsubLogger = handle.subscribe(createAgentEventLogger(roleName));
+        const detachRunListeners = (): void => {
+          unsubView();
+          unsubLogger();
+        };
 
         // ── Run finalization ──
         // The Agent registers its OWN handle.result.then() inside run() (it
@@ -1108,6 +1120,7 @@ export function createConversationRuntimeStore(
         // The result NEVER rejects (ADR-0018); the .catch is defensive.
         void handle.result
           .then((result) => {
+            detachRunListeners();
             // ADR-0030 — surface per-turn usage two ways:
             //   1. `lastTurnUsage` = the full LanguageModelUsage (with
             //      cache/reasoning breakdowns) for ephemeral live display.
@@ -1145,6 +1158,7 @@ export function createConversationRuntimeStore(
             });
           })
           .catch((e) => {
+            detachRunListeners();
             patchData(worldId, conversationId, (d) => ({
               ...d,
               runHandle: null,
