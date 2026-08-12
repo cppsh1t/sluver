@@ -28,6 +28,10 @@
     "nameQuote": "“{{name}}”",
     "listResult": "Found {{count}} {{entity}}",
     "listPending": "{{action}} {{entity}} list",
+    "searchResult": "Found {{count}} {{entity}}",
+    "searchNoResult": "No matching {{entity}}",
+    "searchPending": "Searching {{entity}}…",
+    "searchQuery": "Query: {{query}}",
     "deleted": "Deleted {{entity}}",
     "reorderPending": "{{action}} {{count}} {{entity}}",
     "reorderDone": "Reordered {{count}} {{entity}}",
@@ -38,10 +42,13 @@
       "delete": "Delete",
       "get": "Get",
       "list": "List",
+      "search": "Search",
       "reorder": "Reorder",
       "count": "Count refs",
       "addPhase": "Add phase",
-      "getTime": "Get current time"
+      "getTime": "Get current time",
+      "webSearch": "Search",
+      "webFetch": "Fetch"
     },
     "entity": {
       "character": "character",
@@ -69,6 +76,15 @@
       "inProgress": "{{count}} in progress",
       "updating": "Updating…",
       "empty": "Plan cleared"
+    },
+    "search": {
+      "resultCount": "{{count}} results found",
+      "noResults": "No results found",
+      "pending": "Searching…",
+      "fetching": "Fetching page…",
+      "chars": "{{count}} chars",
+      "author": "Author",
+      "published": "Published"
     }
   },
   "consent": {

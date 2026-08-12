@@ -28,6 +28,10 @@
     "nameQuote": "「{{name}}」",
     "listResult": "查询到 {{count}} 个 {{entity}}",
     "listPending": "{{action}} {{entity}}列表",
+    "searchResult": "找到 {{count}} 个 {{entity}}",
+    "searchNoResult": "未找到匹配的 {{entity}}",
+    "searchPending": "搜索{{entity}}中…",
+    "searchQuery": "关键词：{{query}}",
     "deleted": "已删除 {{entity}}",
     "reorderPending": "{{action}} {{count}} 个 {{entity}}",
     "reorderDone": "已重排序 {{count}} 个 {{entity}}",
@@ -38,10 +42,13 @@
       "delete": "删除",
       "get": "查询",
       "list": "查询",
+      "search": "搜索",
       "reorder": "重排序",
       "count": "统计引用",
       "addPhase": "添加阶段",
-      "getTime": "获取当前时间"
+      "getTime": "获取当前时间",
+      "webSearch": "搜索",
+      "webFetch": "读取"
     },
     "entity": {
       "character": "角色",
@@ -69,6 +76,15 @@
       "inProgress": "{{count}} 个进行中",
       "updating": "更新中…",
       "empty": "计划已清空"
+    },
+    "search": {
+      "resultCount": "找到 {{count}} 条结果",
+      "noResults": "没有找到结果",
+      "pending": "正在搜索…",
+      "fetching": "正在读取页面…",
+      "chars": "{{count}} 字符",
+      "author": "作者",
+      "published": "发布"
     }
   },
   "consent": {
