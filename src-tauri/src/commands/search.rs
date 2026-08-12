@@ -23,7 +23,7 @@
 // only useful information for a network/parse failure).
 
 use base64::Engine as _;
-use readabilityrs::Readability;
+use readabilityrs::{Readability, ReadabilityOptions};
 use serde::Serialize;
 use url::Url;
 
@@ -59,6 +59,22 @@ pub struct SearchResult {
     pub snippet: String,
 }
 
+/// Identifies the format of [`FetchedPage::content`] so the consumer (agent /
+/// UI) knows how to render it.
+///
+/// Articles successfully extracted by Readability are returned as `Markdown`
+/// with inline images preserved at their original document position as
+/// `![alt](url)` — the agent can scan for these to pick the right image URL
+/// for further processing (e.g. feeding to `set_character_image_from_url`).
+/// The fallback path for non-article HTML (server error pages, `<pre>`-wrapped
+/// text) returns `Text` (HTML-stripped plain text with no image information).
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ContentFormat {
+    Markdown,
+    Text,
+}
+
 /// A fetched web page's extracted content. Transient DTO (not a persisted
 /// entity), so it lives here rather than under `models/`.
 #[derive(Debug, Serialize)]
@@ -68,9 +84,14 @@ pub struct FetchedPage {
     pub url: String,
     /// Page title (from metadata, `<title>`, or Readability extraction).
     pub title: Option<String>,
-    /// Main content as plain text (HTML tags stripped). Truncated to
-    /// `max_length` chars.
+    /// Main content. Format is identified by [`content_format`](#structfield.content_format).
+    /// When Markdown, images are preserved inline as `![alt](url)` at their
+    /// original document position. Truncated to `max_length` chars.
     pub content: String,
+    /// Format of [`content`](#structfield.content) — `markdown` (Readability
+    /// extracted an article and converted to Markdown, preserving images) or
+    /// `text` (fallback plain-text dump, no images).
+    pub content_format: ContentFormat,
     /// Author byline (Readability extraction; `None` if not detected).
     pub author: Option<String>,
     /// Short excerpt / meta description (Readability extraction; `None` if
@@ -78,6 +99,16 @@ pub struct FetchedPage {
     pub excerpt: Option<String>,
     /// Publication timestamp (Readability extraction; `None` if not detected).
     pub published_at: Option<String>,
+    /// Best "hero" image URL extracted by Readability from JSON-LD /
+    /// OpenGraph / Twitter Card meta tags (`og:image`, `twitter:image`,
+    /// `link[rel="image_src"]`, etc.). Single absolute URL when present.
+    ///
+    /// Distinct from the inline images embedded in `content` (when Markdown):
+    /// `main_image` is the page's designated cover/hero image, while inline
+    /// `![](url)` entries are body illustrations. For entity image assignment
+    /// both are valid candidates — `main_image` is typically the strongest
+    /// signal for biographical / wiki-style pages.
+    pub main_image: Option<String>,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -311,9 +342,11 @@ pub async fn fetch_url(
         url: final_url,
         title: page.title,
         content: truncated,
+        content_format: page.content_format,
         author: page.author,
         excerpt: page.excerpt,
         published_at: page.published_at,
+        main_image: page.main_image,
     })
 }
 
@@ -321,39 +354,79 @@ pub async fn fetch_url(
 struct ExtractedPage {
     title: Option<String>,
     content: String,
+    content_format: ContentFormat,
     author: Option<String>,
     excerpt: Option<String>,
     published_at: Option<String>,
+    main_image: Option<String>,
 }
 
 /// Run Readability extraction; on failure, fall back to a naive full-text dump.
 ///
+/// Readability is invoked with `output_markdown = true`, which makes the
+/// library return `markdown_content` — the cleaned article HTML converted to
+/// Markdown, with inline images preserved at their original document position
+/// as `![alt](url)`. The library's standardization pipeline (`elements::images
+/// ::standardize_images`) transparently handles:
+///
+///   - **Lazy-load normalization**: `data-src` (and similar vendor attributes)
+///     are promoted to `src` before Markdown conversion, so lazy-loaded images
+///     from baike/zhihu/weibo aren't lost as placeholder GIFs.
+///   - **srcset selection**: the largest source by width/density is picked
+///     from responsive `<img srcset="...">`.
+///   - **Tiny-image removal**: tracker pixels and UI icons (width AND height
+///     both `< 100`) are dropped, leaving only content-bearing images.
+///   - **Relative → absolute URL**: resolved against `final_url`.
+///
+/// The Markdown body preserves the image's position in the document flow, so
+/// the agent can correlate each `![](url)` with its surrounding prose to judge
+/// semantic role (portrait / illustration / diagram / etc.).
+///
 /// The fallback handles pages Readability can't parse (e.g. plain text rendered
 /// as `<pre>`, server error pages, non-article HTML). It strips ALL tags via
 /// `scraper::Html::parse_document` + a root-element text walk and tries to
-/// pull a title from `<title>`.
+/// pull a title from `<title>`. No image information is recoverable here.
 fn extract_page(html: &str, final_url: &str) -> Result<ExtractedPage, DbError> {
-    // Primary path: Readability extraction.
-    if let Ok(readability) = Readability::new(html, Some(final_url), None) {
-        if let Some(parsed) = readability.parse() {
-            // Prefer Readability's own `text_content` (plain text with all
-            // HTML tags already stripped by the library — higher fidelity
-            // than re-parsing via scraper). Fall back to flattening `content`
-            // (clean HTML) via the already-dep'd `scraper` crate.
-            let plain = match parsed.text_content.as_deref() {
-                Some(t) if !t.trim().is_empty() => t.to_string(),
-                _ => parsed
-                    .content
-                    .as_deref()
-                    .map(html_to_text)
-                    .unwrap_or_default(),
+    // Enable Markdown output so images are preserved inline. All other options
+    // stay at library defaults.
+    let options = ReadabilityOptions {
+        output_markdown: true,
+        ..Default::default()
+    };
+
+    let parsed = Readability::new(html, Some(final_url), Some(options))
+        .ok()
+        .and_then(|r| r.parse());
+
+    if let Some(parsed) = parsed {
+        // Prefer markdown_content (images preserved as `![alt](url)` inline).
+        // Fall back to text_content (plain text, no images) — rare; only when
+        // the library extracted an article but Markdown conversion yielded
+        // nothing. Both being empty means Readability found no article at all
+        // → drop to the fallback path below.
+        let md = parsed
+            .markdown_content
+            .as_deref()
+            .filter(|s| !s.trim().is_empty());
+        let txt = parsed
+            .text_content
+            .as_deref()
+            .filter(|s| !s.trim().is_empty());
+
+        if let Some(content) = md.or(txt) {
+            let content_format = if md.is_some() {
+                ContentFormat::Markdown
+            } else {
+                ContentFormat::Text
             };
             return Ok(ExtractedPage {
                 title: parsed.title,
-                content: plain,
+                content: content.to_string(),
+                content_format,
                 author: parsed.byline,
                 excerpt: parsed.excerpt,
                 published_at: parsed.published_time,
+                main_image: parsed.image,
             });
         }
     }
@@ -364,9 +437,11 @@ fn extract_page(html: &str, final_url: &str) -> Result<ExtractedPage, DbError> {
     Ok(ExtractedPage {
         title: extract_title(html),
         content: html_to_text(html),
+        content_format: ContentFormat::Text,
         author: None,
         excerpt: None,
         published_at: None,
+        main_image: None,
     })
 }
 
@@ -571,9 +646,11 @@ pub async fn fetch_url_via_webview(
         url: final_url,
         title: page.title,
         content: truncated,
+        content_format: page.content_format,
         author: page.author,
         excerpt: page.excerpt,
         published_at: page.published_at,
+        main_image: page.main_image,
     })
 }
 

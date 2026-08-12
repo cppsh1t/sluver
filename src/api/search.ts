@@ -30,20 +30,50 @@ export function searchWeb(
 
 // ─── URL fetch ──────────────────────────────────────────────────────────────
 
+/** Format of `FetchedPage.content`. See `FetchedPage` for details. */
+export type ContentFormat = "markdown" | "text";
+
 /** A fetched web page's extracted content. */
 export interface FetchedPage {
   /** Final URL after redirects. */
   url: string;
   /** Page title (from `<title>` or Readability extraction). */
   title: string | null;
-  /** Main content as plain text. Truncated to `maxLength` chars. */
+  /**
+   * Main content. Format is identified by `contentFormat`:
+   *
+   * - `"markdown"` — Readability extracted an article and converted it to
+   *   Markdown. **Inline images are preserved at their original document
+   *   position** as `![alt](url)`, so a biographical article might read
+   *   `李白（701-762）... ![李白肖像](https://upload.wikimedia.org/.../Li_Bai.jpg) ...`.
+   *   The agent can correlate each image with surrounding prose to pick the
+   *   right URL for entity image assignment.
+   * - `"text"` — Fallback plain-text dump (server error pages, `<pre>`-wrapped
+   *   text, non-article HTML). No image information is present.
+   *
+   * Truncated to `maxLength` chars.
+   */
   content: string;
+  /** Format of `content` — `"markdown"` (Readability) or `"text"` (fallback). */
+  contentFormat: ContentFormat;
   /** Author byline, if detected. */
   author: string | null;
   /** Short excerpt / meta description, if detected. */
   excerpt: string | null;
   /** Publication timestamp (ISO string), if detected. */
   publishedAt: string | null;
+  /**
+   * Best "hero" image URL extracted by Readability from JSON-LD / OpenGraph /
+   * Twitter Card meta tags (`og:image`, `twitter:image`, etc.). Single
+   * absolute URL when present.
+   *
+   * Distinct from inline `![](url)` entries in `content` (when Markdown):
+   * `mainImage` is the page's designated cover/hero image, while inline
+   * images are body illustrations. For entity image assignment both are
+   * valid candidates — `mainImage` is typically the strongest signal for
+   * biographical / wiki-style pages.
+   */
+  mainImage: string | null;
 }
 
 /**
