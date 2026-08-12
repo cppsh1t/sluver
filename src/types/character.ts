@@ -49,6 +49,7 @@ export const characterPhaseSchema = z.object({
   triggerEventId: eventIdSchema.nullable(),
   /** Resolved name of the trigger event (LEFT JOIN from events table). `null` when `triggerEventId` is null. */
   triggerEventName: z.string().nullable(),
+  hasImage: z.boolean(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -71,6 +72,7 @@ export const characterSchema = z.object({
   notes: z.string(),
   /** User-defined tags for categorization / filtering. */
   tags: z.array(z.string()),
+  hasImage: z.boolean(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });

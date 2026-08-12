@@ -1,7 +1,8 @@
 use rusqlite::params;
 use std::collections::HashMap;
-use tauri::State;
+use tauri::{AppHandle, State};
 
+use crate::commands::events::emit_entity_changed;
 use crate::db::{DbError, DbManager};
 use crate::models::character::{
     Character, CharacterPhase, CharacterRef, CreateCharacterInput, CreatePhaseInput,
@@ -21,6 +22,7 @@ struct CharacterRaw {
     tags: Vec<String>,
     created_at: String,
     updated_at: String,
+    has_image: bool,
 }
 
 fn row_to_character_raw(row: &rusqlite::Row) -> rusqlite::Result<CharacterRaw> {
@@ -35,6 +37,7 @@ fn row_to_character_raw(row: &rusqlite::Row) -> rusqlite::Result<CharacterRaw> {
         tags: serde_json::from_str(&tags_json).unwrap_or_default(),
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
+        has_image: row.get("has_image")?,
     })
 }
 
@@ -43,7 +46,7 @@ fn load_phases(
     character_id: &str,
 ) -> rusqlite::Result<Vec<CharacterPhase>> {
     let mut stmt = conn.prepare(
-        "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.description, cp.conversation_style, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name
+        "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.description, cp.conversation_style, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name, cp.image_blob IS NOT NULL AS has_image
          FROM character_phases cp
          LEFT JOIN events e ON cp.trigger_event_id = e.id
          WHERE cp.character_id = ?1 ORDER BY cp.position",
@@ -61,6 +64,7 @@ fn load_phases(
                 trigger_event_name: row.get("trigger_event_name")?,
                 created_at: row.get("created_at")?,
                 updated_at: row.get("updated_at")?,
+                has_image: row.get("has_image")?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -74,7 +78,7 @@ fn load_character(
 ) -> Result<Character, DbError> {
     let raw = conn
         .query_row(
-            "SELECT id, name, aliases, description, notes, tags, created_at, updated_at
+            "SELECT id, name, aliases, description, notes, tags, created_at, updated_at, image_blob IS NOT NULL AS has_image
              FROM characters WHERE id = ?1",
             params![id],
             row_to_character_raw,
@@ -97,18 +101,20 @@ fn load_character(
         tags: raw.tags,
         created_at: raw.created_at,
         updated_at: raw.updated_at,
+        has_image: raw.has_image,
     })
 }
 
 // ─── Character CRUD ─────────────────────────────────────────────────────────
 
-#[tracing::instrument(skip(state, input), fields(entity_id))]
+#[tracing::instrument(skip(state, app, input), fields(entity_id))]
 #[tauri::command]
 pub fn create_character(
     space_id: String,
     world_id: String,
     input: CreateCharacterInput,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<Character, DbError> {
     let char_id = new_id();
     tracing::Span::current().record("entity_id", char_id.as_str());
@@ -116,7 +122,7 @@ pub fn create_character(
     let aliases_json = serde_json::to_string(&input.aliases)?;
     let tags_json = serde_json::to_string(&input.tags)?;
 
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
     let tx = conn.transaction()?;
     tx.execute(
         "INSERT INTO characters (id, name, aliases, description, notes, tags, created_at, updated_at)
@@ -125,7 +131,11 @@ pub fn create_character(
     )?;
     tx.commit()?;
     load_character(conn, &char_id, &world_id)
-})
+});
+    if let Ok(ref entity) = result {
+        emit_entity_changed(&app, "character", Some(entity.id.clone()), &space_id, Some(&world_id));
+    }
+    result
 }
 
 #[tracing::instrument(skip(state, id), fields(entity_id = %id))]
@@ -151,7 +161,7 @@ pub fn list_characters(
     state.with_world(&space_id, &world_id, |conn| {
     // (a) Batch-load all characters
     let mut stmt = conn.prepare(
-        "SELECT id, name, aliases, description, notes, tags, created_at, updated_at
+        "SELECT id, name, aliases, description, notes, tags, created_at, updated_at, image_blob IS NOT NULL AS has_image
          FROM characters ORDER BY created_at",
     )?;
     let raws: Vec<CharacterRaw> = stmt
@@ -160,7 +170,7 @@ pub fn list_characters(
 
     // (b) Batch-load ALL phases
     let mut phase_stmt = conn.prepare(
-        "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.description, cp.conversation_style, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name
+        "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.description, cp.conversation_style, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name, cp.image_blob IS NOT NULL AS has_image
          FROM character_phases cp
          LEFT JOIN events e ON cp.trigger_event_id = e.id
          ORDER BY cp.character_id, cp.position",
@@ -181,6 +191,7 @@ pub fn list_characters(
                     trigger_event_name: row.get("trigger_event_name")?,
                     created_at: row.get("created_at")?,
                     updated_at: row.get("updated_at")?,
+                    has_image: row.get("has_image")?,
                 },
             ))
         })?
@@ -208,6 +219,7 @@ pub fn list_characters(
                 tags: raw.tags,
                 created_at: raw.created_at,
                 updated_at: raw.updated_at,
+                has_image: raw.has_image,
             }
         })
         .collect();
@@ -216,7 +228,7 @@ pub fn list_characters(
 })
 }
 
-#[tracing::instrument(skip(state, input, id), fields(entity_id = %id))]
+#[tracing::instrument(skip(state, app, input, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn update_character(
     space_id: String,
@@ -224,16 +236,17 @@ pub fn update_character(
     id: String,
     input: UpdateCharacterInput,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<Character, DbError> {
     let now = now_iso();
     let aliases_json = serde_json::to_string(&input.aliases)?;
     let tags_json = serde_json::to_string(&input.tags)?;
 
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         let updated = conn.execute(
             "UPDATE characters
-         SET name = ?1, aliases = ?2, description = ?3, notes = ?4, tags = ?5, updated_at = ?6
-         WHERE id = ?7",
+             SET name = ?1, aliases = ?2, description = ?3, notes = ?4, tags = ?5, updated_at = ?6
+             WHERE id = ?7",
             params![
                 input.name,
                 aliases_json,
@@ -245,32 +258,41 @@ pub fn update_character(
             ],
         )?;
         if updated == 0 {
-            return Err(DbError::NotFound("Character", id));
+            return Err(DbError::NotFound("Character", id.clone()));
         }
         load_character(conn, &id, &world_id)
-    })
+    });
+    if let Ok(ref entity) = result {
+        emit_entity_changed(&app, "character", Some(entity.id.clone()), &space_id, Some(&world_id));
+    }
+    result
 }
 
-#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
+#[tracing::instrument(skip(state, app, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn delete_character(
     space_id: String,
     world_id: String,
     id: String,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<(), DbError> {
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         let deleted = conn.execute("DELETE FROM characters WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(DbError::NotFound("Character", id));
+            return Err(DbError::NotFound("Character", id.clone()));
         }
         Ok(())
-    })
+    });
+    if result.is_ok() {
+        emit_entity_changed(&app, "character", Some(id.clone()), &space_id, Some(&world_id));
+    }
+    result
 }
 
 // ─── Phase CRUD ─────────────────────────────────────────────────────────────
 
-#[tracing::instrument(skip(state, input), fields(entity_id))]
+#[tracing::instrument(skip(state, app, input), fields(entity_id))]
 #[tauri::command]
 pub fn add_phase(
     space_id: String,
@@ -278,12 +300,13 @@ pub fn add_phase(
     character_id: String,
     input: CreatePhaseInput,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<CharacterPhase, DbError> {
     let phase_id = new_id();
     tracing::Span::current().record("entity_id", phase_id.as_str());
     let now = now_iso();
 
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
     let tx = conn.transaction()?;
 
     // position = max(existing position) + 1, or 0 if first
@@ -314,7 +337,7 @@ pub fn add_phase(
 
     // Read back
     conn.query_row(
-        "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.description, cp.conversation_style, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name
+        "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.description, cp.conversation_style, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name, cp.image_blob IS NOT NULL AS has_image
          FROM character_phases cp
          LEFT JOIN events e ON cp.trigger_event_id = e.id
          WHERE cp.id = ?1",
@@ -331,14 +354,19 @@ pub fn add_phase(
                 trigger_event_name: row.get("trigger_event_name")?,
                 created_at: row.get("created_at")?,
                 updated_at: row.get("updated_at")?,
+                has_image: row.get("has_image")?,
             })
         },
     )
     .map_err(DbError::Sqlite)
-})
+});
+    if let Ok(ref entity) = result {
+        emit_entity_changed(&app, "phase", Some(entity.id.clone()), &space_id, Some(&world_id));
+    }
+    result
 }
 
-#[tracing::instrument(skip(state, input, phase_id), fields(entity_id = %phase_id))]
+#[tracing::instrument(skip(state, app, input, phase_id), fields(entity_id = %phase_id))]
 #[tauri::command]
 pub fn update_phase(
     space_id: String,
@@ -346,10 +374,11 @@ pub fn update_phase(
     phase_id: String,
     input: UpdatePhaseInput,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<CharacterPhase, DbError> {
     let now = now_iso();
 
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
     let updated = conn.execute(
         "UPDATE character_phases
          SET name = ?1, appearance = ?2, description = ?3, conversation_style = ?4, trigger_event_id = ?5, updated_at = ?6
@@ -357,11 +386,11 @@ pub fn update_phase(
         params![input.name, input.appearance, input.description, input.conversation_style, input.trigger_event_id, now, phase_id],
     )?;
     if updated == 0 {
-        return Err(DbError::NotFound("Phase", phase_id));
+        return Err(DbError::NotFound("Phase", phase_id.clone()));
     }
 
     conn.query_row(
-        "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.description, cp.conversation_style, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name
+        "SELECT cp.id, cp.character_id, cp.name, cp.appearance, cp.description, cp.conversation_style, cp.trigger_event_id, cp.created_at, cp.updated_at, e.name AS trigger_event_name, cp.image_blob IS NOT NULL AS has_image
          FROM character_phases cp
          LEFT JOIN events e ON cp.trigger_event_id = e.id
          WHERE cp.id = ?1",
@@ -378,31 +407,41 @@ pub fn update_phase(
                 trigger_event_name: row.get("trigger_event_name")?,
                 created_at: row.get("created_at")?,
                 updated_at: row.get("updated_at")?,
+                has_image: row.get("has_image")?,
             })
         },
     )
     .map_err(DbError::Sqlite)
-})
+});
+    if let Ok(ref entity) = result {
+        emit_entity_changed(&app, "phase", Some(entity.id.clone()), &space_id, Some(&world_id));
+    }
+    result
 }
 
-#[tracing::instrument(skip(state, phase_id), fields(entity_id = %phase_id))]
+#[tracing::instrument(skip(state, app, phase_id), fields(entity_id = %phase_id))]
 #[tauri::command]
 pub fn delete_phase(
     space_id: String,
     world_id: String,
     phase_id: String,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<(), DbError> {
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         let deleted = conn.execute(
             "DELETE FROM character_phases WHERE id = ?1",
             params![phase_id],
         )?;
         if deleted == 0 {
-            return Err(DbError::NotFound("Phase", phase_id));
+            return Err(DbError::NotFound("Phase", phase_id.clone()));
         }
         Ok(())
-    })
+    });
+    if result.is_ok() {
+        emit_entity_changed(&app, "phase", Some(phase_id.clone()), &space_id, Some(&world_id));
+    }
+    result
 }
 
 // Suppress unused import warning — CharacterRef will be used by other command modules.
@@ -411,7 +450,7 @@ fn _ensure_character_ref_used(_: CharacterRef) {}
 
 // ─── Phase reorder ───────────────────────────────────────────────────────────
 
-#[tracing::instrument(skip(state, phase_ids))]
+#[tracing::instrument(skip(state, app, phase_ids))]
 #[tauri::command]
 pub fn reorder_phases(
     space_id: String,
@@ -419,8 +458,9 @@ pub fn reorder_phases(
     character_id: String,
     phase_ids: Vec<String>,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<(), DbError> {
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         let tx = conn.transaction()?;
 
         // Shift to a temporary range to avoid UNIQUE(character_id, position) violations
@@ -443,7 +483,11 @@ pub fn reorder_phases(
 
         tx.commit()?;
         Ok(())
-    })
+    });
+    if result.is_ok() {
+        emit_entity_changed(&app, "phase", None, &space_id, Some(&world_id));
+    }
+    result
 }
 
 // ─── Per-entity image commands (Character + CharacterPhase) ─────────────────
@@ -459,9 +503,9 @@ pub fn reorder_phases(
 // clear are INFO; get is DEBUG because it fires on every avatar render.
 
 macro_rules! impl_character_image_commands {
-    ($table:literal, $label:literal, $id_param:ident, $update_fn:ident, $clear_fn:ident, $get_fn:ident) => {
+    ($table:literal, $label:literal, $kind:literal, $id_param:ident, $update_fn:ident, $clear_fn:ident, $get_fn:ident) => {
         #[tracing::instrument(
-            skip(state, image_base64),
+            skip(state, app, image_base64),
             fields(entity_id = %$id_param)
         )]
         #[tauri::command]
@@ -472,6 +516,7 @@ macro_rules! impl_character_image_commands {
             image_base64: String,
             image_mime: String,
             state: State<'_, DbManager>,
+            app: AppHandle,
         ) -> Result<(), DbError> {
             let bytes = decode_and_validate_image(&image_base64, &image_mime)?;
             let now = now_iso();
@@ -481,7 +526,7 @@ macro_rules! impl_character_image_commands {
                 image_mime = %image_mime,
                 "image updated"
             );
-            state.with_world(&space_id, &world_id, |conn| {
+            let result = state.with_world(&space_id, &world_id, |conn| {
                 let updated = conn.execute(
                     &format!(
                         "UPDATE {} SET image_blob = ?1, image_mime = ?2, updated_at = ?3 WHERE id = ?4",
@@ -490,23 +535,28 @@ macro_rules! impl_character_image_commands {
                     params![&bytes, &image_mime, now, &$id_param],
                 )?;
                 if updated == 0 {
-                    return Err(DbError::NotFound($label, $id_param));
+                    return Err(DbError::NotFound($label, $id_param.clone()));
                 }
                 Ok(())
-            })
+            });
+            if result.is_ok() {
+                emit_entity_changed(&app, $kind, Some($id_param.clone()), &space_id, Some(&world_id));
+            }
+            result
         }
 
-        #[tracing::instrument(skip(state, $id_param), fields(entity_id = %$id_param))]
+        #[tracing::instrument(skip(state, app, $id_param), fields(entity_id = %$id_param))]
         #[tauri::command]
         pub fn $clear_fn(
             space_id: String,
             world_id: String,
             $id_param: String,
             state: State<'_, DbManager>,
+            app: AppHandle,
         ) -> Result<(), DbError> {
             let now = now_iso();
             tracing::info!(entity_id = %$id_param, "image cleared");
-            state.with_world(&space_id, &world_id, |conn| {
+            let result = state.with_world(&space_id, &world_id, |conn| {
                 let updated = conn.execute(
                     &format!(
                         "UPDATE {} SET image_blob = NULL, image_mime = NULL, updated_at = ?1 WHERE id = ?2",
@@ -515,10 +565,14 @@ macro_rules! impl_character_image_commands {
                     params![now, &$id_param],
                 )?;
                 if updated == 0 {
-                    return Err(DbError::NotFound($label, $id_param));
+                    return Err(DbError::NotFound($label, $id_param.clone()));
                 }
                 Ok(())
-            })
+            });
+            if result.is_ok() {
+                emit_entity_changed(&app, $kind, Some($id_param.clone()), &space_id, Some(&world_id));
+            }
+            result
         }
 
         #[tracing::instrument(skip(state, $id_param), fields(entity_id = %$id_param))]
@@ -552,6 +606,7 @@ macro_rules! impl_character_image_commands {
 impl_character_image_commands!(
     "characters",
     "Character",
+    "character",
     id,
     update_character_image,
     clear_character_image,
@@ -560,6 +615,7 @@ impl_character_image_commands!(
 impl_character_image_commands!(
     "character_phases",
     "Phase",
+    "phase",
     phase_id,
     update_phase_image,
     clear_phase_image,

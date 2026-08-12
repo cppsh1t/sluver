@@ -22,6 +22,7 @@ pub struct CharacterPhase {
     pub trigger_event_name: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    pub has_image: bool,
 }
 
 /// Input for creating a new phase.
@@ -63,6 +64,7 @@ pub struct Character {
     pub tags: Vec<String>,
     pub created_at: String,
     pub updated_at: String,
+    pub has_image: bool,
 }
 
 /// Input for creating a character (no initial phase — characters start with zero phases).
