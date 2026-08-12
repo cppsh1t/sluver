@@ -3,6 +3,7 @@ pub mod character;
 pub mod conversation;
 pub mod diagnostics;
 pub mod element;
+pub mod events;
 pub mod event;
 pub mod export_book;
 pub mod novel;
