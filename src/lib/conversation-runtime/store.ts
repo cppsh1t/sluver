@@ -414,8 +414,20 @@ function updateConversation(
  * between two text spans splits them into two segments — preserving the true
  * arrival order.
  *
- * Returns a NEW array (immutably-spread element). Callers MUST feed the result
- * back via the `patchData` spread pattern so zustand sees a fresh reference.
+ * **In-place mutation**: per the `StreamSegment` type's documented mutability
+ * (store.ts ~line 126-128: *"intentionally mutable so delta handlers can
+ * replace them in place inside a fresh array"*), the last segment's `text` is
+ * mutated directly rather than allocating `{ ...last, text: ... }` per delta.
+ * This avoids one small-object spread per streaming chunk (thousands per
+ * autonomous run). The fresh top-level array (`[...segments]`) is still
+ * returned so zustand sees a new reference and re-renders. The superseded
+ * state's segment object is technically mutated too, but it is immediately
+ * superseded and never read again — harmless under the single-reader zustand
+ * model.
+ *
+ * NOTE: string concatenation (`last.text += delta`) is inherent to JS (strings
+ * are immutable) and still allocates. The O(N²) string garbage is the
+ * remaining cost; eliminating it requires chunk-array batching (future work).
  */
 function appendDelta(
   segments: readonly StreamSegment[],
@@ -426,7 +438,9 @@ function appendDelta(
   const next = [...segments];
   const last = next[next.length - 1];
   if (last && last.kind === kind && last.stepNumber === stepNumber) {
-    next[next.length - 1] = { ...last, text: last.text + delta };
+    // Mutate in place — `text` is intentionally mutable on the type (see
+    // store.ts StreamSegment docstring). Avoids `{ ...last, text: ... }`.
+    last.text += delta;
   } else {
     next.push({ kind, stepNumber, text: delta });
   }
