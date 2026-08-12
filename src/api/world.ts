@@ -6,7 +6,7 @@
  * scoped to a per-World DB — no `worldId` parameter here.
  */
 
-import type { World } from '@/types';
+import type { World, WorldId } from '@/types';
 import { call } from './client';
 import type { CreateWorldInput, UpdateWorldInput } from './types';
 
@@ -41,4 +41,30 @@ export function deleteWorld(spaceId: string, id: string): Promise<void> {
  */
 export function setTrayLocale(locale: string): Promise<void> {
   return call<void>('set_tray_locale', { locale });
+}
+
+// ─── Export / Import ─────────────────────────────────────────────────────────
+
+export function exportWorld(args: {
+  spaceId: string;
+  worldId: WorldId;
+  outputPath: string;
+}): Promise<void> {
+  return call<void>('export_world', {
+    spaceId: args.spaceId,
+    worldId: args.worldId,
+    outputPath: args.outputPath,
+  });
+}
+
+export function importWorld(args: {
+  spaceId: string;
+  inputPath: string;
+  overwrite: boolean;
+}): Promise<World> {
+  return call<World>('import_world', {
+    spaceId: args.spaceId,
+    inputPath: args.inputPath,
+    overwrite: args.overwrite,
+  });
 }

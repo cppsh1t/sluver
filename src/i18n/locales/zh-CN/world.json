@@ -46,5 +46,25 @@
     "imageUpdateFailed": "图片更新失败",
     "imageRemoved": "图片已移除",
     "imageRemoveFailed": "图片移除失败"
+  },
+  "export": {
+    "action": "导出世界",
+    "toast": {
+      "success": "世界已导出",
+      "failed": "导出世界失败"
+    }
+  },
+  "import": {
+    "action": "导入世界",
+    "toast": {
+      "success": "世界已导入",
+      "failed": "导入世界失败"
+    },
+    "overwrite": {
+      "title": "世界已存在",
+      "description": "名为「{{name}}」的世界已存在。导入将替换其全部内容。确定要继续吗？",
+      "confirm": "覆盖导入",
+      "cancel": "取消"
+    }
   }
 }

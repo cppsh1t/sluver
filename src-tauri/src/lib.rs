@@ -124,6 +124,9 @@ pub fn run() {
             commands::world::update_world_image,
             commands::world::clear_world_image,
             commands::world::get_world_image,
+            // World export / import (.sluver-world zip archive)
+            commands::world::export_world,
+            commands::world::import_world,
             // App settings
             commands::setting::get_app_setting,
             commands::setting::update_app_setting,

@@ -139,6 +139,36 @@ pub enum DbError {
     /// point for EPUB; for TXT it's a complete prefix).
     #[error("Novel export failed: {0}")]
     NovelExportFailed(String),
+
+    /// `export_world` failed midway (wal checkpoint, file read, zip build).
+    /// Dynamic message only; surfaces as `WORLD_EXPORT_FAILED`. The partial
+    /// output file is removed by the command before returning this error.
+    #[error("World export failed: {0}")]
+    WorldExportFailed(String),
+
+    /// `import_world` failed midway (file IO, base64 decode, registry write).
+    /// Dynamic message only; surfaces as `WORLD_IMPORT_FAILED`. The command
+    /// cleans up any partially-written `.db` on the new-import path.
+    #[error("World import failed: {0}")]
+    WorldImportFailed(String),
+
+    /// Imported `.sluver-world` file is corrupt or unsupported (not a valid
+    /// zip, missing `manifest.json`, unparseable manifest, unsupported
+    /// `formatVersion`, missing `world.db`). Surfaces as
+    /// `WORLD_IMPORT_CORRUPT_FILE` with `{ reason }` so the frontend can
+    /// render a targeted "this file is not a valid world export" message.
+    #[error("World import corrupt file: {0}")]
+    WorldImportCorruptFile(String),
+
+    /// Imported world's id already exists in the target Space and `overwrite`
+    /// was `false`. Surfaces as `WORLD_IMPORT_ALREADY_EXISTS` with
+    /// `{ entity, id, existing_name }` so the frontend can show a
+    /// confirmation dialog and retry with `overwrite = true`.
+    #[error("World import already exists: {id} ({existing_name})")]
+    WorldImportAlreadyExists {
+        id: String,
+        existing_name: String,
+    },
 }
 
 impl DbError {
@@ -218,6 +248,27 @@ impl DbError {
             // `export_novel` failure: dynamic IO/epub message — code is enough,
             // everything useful is in `message`.
             DbError::NovelExportFailed(_) => ("NOVEL_EXPORT_FAILED", HashMap::new()),
+            // `export_world` / `import_world` failures: dynamic IO/zip message —
+            // code is enough, everything useful is in `message`.
+            DbError::WorldExportFailed(_) => ("WORLD_EXPORT_FAILED", HashMap::new()),
+            DbError::WorldImportFailed(_) => ("WORLD_IMPORT_FAILED", HashMap::new()),
+            // Imported `.sluver-world` is corrupt: surface the reason so the
+            // frontend can distinguish "not a zip" / "missing manifest" / etc.
+            DbError::WorldImportCorruptFile(reason) => (
+                "WORLD_IMPORT_CORRUPT_FILE",
+                HashMap::from([("reason".to_string(), reason.clone())]),
+            ),
+            // Imported world id already exists (overwrite=false): surface the
+            // existing name + id so the frontend can render a confirmation
+            // dialog ("World 'X' already exists. Replace it?").
+            DbError::WorldImportAlreadyExists { id, existing_name } => (
+                "WORLD_IMPORT_ALREADY_EXISTS",
+                HashMap::from([
+                    ("entity".to_string(), "world".to_string()),
+                    ("id".to_string(), id.clone()),
+                    ("existing_name".to_string(), existing_name.clone()),
+                ]),
+            ),
         };
         ErrorPayload {
             code: code.to_string(),

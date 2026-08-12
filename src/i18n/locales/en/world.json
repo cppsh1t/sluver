@@ -46,5 +46,25 @@
     "imageUpdateFailed": "Failed to update image",
     "imageRemoved": "Image removed",
     "imageRemoveFailed": "Failed to remove image"
+  },
+  "export": {
+    "action": "Export world",
+    "toast": {
+      "success": "World exported successfully",
+      "failed": "Failed to export world"
+    }
+  },
+  "import": {
+    "action": "Import world",
+    "toast": {
+      "success": "World imported successfully",
+      "failed": "Failed to import world"
+    },
+    "overwrite": {
+      "title": "World already exists",
+      "description": "A world named \"{{name}}\" already exists. Importing will replace ALL of its content. Are you sure you want to continue?",
+      "confirm": "Overwrite and import",
+      "cancel": "Cancel"
+    }
   }
 }

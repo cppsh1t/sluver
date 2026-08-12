@@ -24,5 +24,9 @@
   "INVALID_INPUT": "Invalid input: {{message}}",
   "INVALID_IMAGE": "Image is invalid or too large (WebP / JPEG / PNG only, max 1 MB)",
   "NOVEL_EXPORT_FAILED": "Failed to export the novel.",
+  "WORLD_EXPORT_FAILED": "Failed to export the world file",
+  "WORLD_IMPORT_FAILED": "Failed to import the world file",
+  "WORLD_IMPORT_CORRUPT_FILE": "The world file is corrupt or in an unsupported format",
+  "WORLD_IMPORT_ALREADY_EXISTS": "A world with this ID already exists",
   "INTERNAL_ERROR": "An internal error occurred"
 }

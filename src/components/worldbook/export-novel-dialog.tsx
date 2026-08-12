@@ -45,11 +45,15 @@ const FORMAT_OPTIONS: FormatOption[] = [
 /**
  * Strip characters that are illegal in Windows filenames, replacing them
  * with `_`. Also collapses a resulting empty/whitespace-only name to
- * `"novel"` so `save()` always gets a sane default filename.
+ * `"world"` (or the provided `fallback`) so `save()` always gets a sane
+ * default filename.
+ *
+ * Shared by the novel export dialog and the world export flow on
+ * WorldCard. Exported so both call sites use the same sanitization.
  */
-function sanitizeFilename(title: string): string {
+export function sanitizeFilename(title: string, fallback = "world"): string {
   const cleaned = title.replace(/[<>:"/\\|?*]/g, "_").trim();
-  return cleaned.length > 0 ? cleaned : "novel";
+  return cleaned.length > 0 ? cleaned : fallback;
 }
 
 /**
@@ -82,7 +86,7 @@ function ExportNovelDialog({
 
   async function handleConfirm() {
     const option = FORMAT_OPTIONS.find((o) => o.value === format)!;
-    const baseName = sanitizeFilename(novel.title);
+    const baseName = sanitizeFilename(novel.title, "novel");
 
     const outputPath = await save({
       defaultPath: `${baseName}.${option.ext}`,

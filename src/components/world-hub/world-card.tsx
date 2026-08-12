@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { save } from "@tauri-apps/plugin-dialog";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -29,6 +31,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Delete02Icon,
+  FileExportIcon,
   Globe02Icon,
   MoreHorizontalIcon,
   PencilEdit01Icon,
@@ -36,6 +39,12 @@ import {
 
 import { EditWorldDialog } from "@/components/world-hub/edit-world-dialog";
 import { EntityAvatar } from "@/components/ui/entity-avatar";
+import { sanitizeFilename } from "@/components/worldbook/export-novel-dialog";
+import { exportWorld } from "@/api";
+import { toErrorPayload } from "@/api/client";
+import i18n from "@/i18n";
+import { translateError } from "@/i18n/errors";
+
 import { formatRelativeTime } from "@/lib/format";
 import type { UpdateWorldInput } from "@/api";
 import type { SpaceId, World } from "@/types";
@@ -52,9 +61,38 @@ function WorldCard({ spaceId, world, onOpen, onUpdate, onDelete }: WorldCardProp
   const { t } = useTranslation(["world", "common"]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   async function handleUpdate(input: UpdateWorldInput) {
     await onUpdate(world, input);
+  }
+
+  /**
+   * Export this World to a `.sluver-world` file via a native save dialog.
+   *
+   * Mirrors `ExportNovelDialog`: `save()` returning `null`/non-string is a
+   * silent cancel. Async i18n for toast messages (snake_case per ADR-0016).
+   * The Rust `export_world` command logs `world.exported` with richer fields.
+   */
+  async function handleExport() {
+    const outputPath = await save({
+      defaultPath: `${sanitizeFilename(world.name)}.sluver-world`,
+      filters: [{ name: "Sluver World", extensions: ["sluver-world"] }],
+    });
+    if (typeof outputPath !== "string") return;
+
+    setExporting(true);
+    try {
+      await exportWorld({ spaceId, worldId: world.id, outputPath });
+      toast.success(i18n.t("world:export.toast.success"));
+    } catch (e) {
+      const payload = toErrorPayload(e);
+      toast.error(i18n.t("world:export.toast.failed"), {
+        description: translateError(payload),
+      });
+    } finally {
+      setExporting(false);
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -119,6 +157,16 @@ function WorldCard({ spaceId, world, onOpen, onUpdate, onDelete }: WorldCardProp
                 >
                   <HugeiconsIcon icon={PencilEdit01Icon} strokeWidth={2} />
                   {t("world:card.editAction")}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void handleExport();
+                  }}
+                  disabled={exporting}
+                >
+                  <HugeiconsIcon icon={FileExportIcon} strokeWidth={2} />
+                  {t("world:export.action")}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem

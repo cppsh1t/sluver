@@ -77,7 +77,7 @@ impl DbManager {
     /// path-traversal attempts (e.g. "../../foo") and other malformed ids
     /// that are used in filesystem path construction. The version nibble is
     /// NOT validated; that is a concern of the id generator, not the consumer.
-    fn validate_id(id: &str) -> Result<(), DbError> {
+    pub fn validate_id(id: &str) -> Result<(), DbError> {
         // UUID shape: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
         // 32 hex digits + 4 dashes = 36 chars.
         if id.len() != 36 {
@@ -119,6 +119,31 @@ impl DbManager {
     /// `"worlds/{worldId}.db"` — relative to the Space dir per ADR-0007).
     fn world_db_path(&self, space_id: &str, relative: &str) -> PathBuf {
         self.space_dir(space_id).join(relative)
+    }
+
+    /// Resolve the absolute filesystem path of a World's `.db` content file
+    /// by looking up its `db_path` in this Space's registry (`space.db`) and
+    /// joining with `data_dir/spaces/{space_id}/`.
+    ///
+    /// Used by `export_world` to locate the file to checkpoint + read after
+    /// the WAL has been folded in. Single-lock operation (only `spaces`):
+    /// the lock is released before the caller does any file I/O. The `meta`
+    /// lock is never acquired.
+    pub fn world_db_file_path(&self, space_id: &str, world_id: &str) -> Result<PathBuf, DbError> {
+        let relative = self.with_space(space_id, |conn| {
+            conn.query_row(
+                "SELECT db_path FROM worlds WHERE id = ?1",
+                rusqlite::params![world_id],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    DbError::WorldNotFound(world_id.to_string())
+                }
+                other => DbError::Sqlite(other),
+            })
+        })?;
+        Ok(self.space_dir(space_id).join(relative))
     }
 
     /// Opens a fresh `space.db` connection at the conventional path, applies

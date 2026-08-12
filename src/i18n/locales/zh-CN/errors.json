@@ -24,5 +24,9 @@
   "INVALID_INPUT": "无效输入：{{message}}",
   "INVALID_IMAGE": "图片无效或过大（仅支持 WebP / JPEG / PNG，最大 1 MB）",
   "NOVEL_EXPORT_FAILED": "导出小说失败。",
+  "WORLD_EXPORT_FAILED": "导出世界文件失败",
+  "WORLD_IMPORT_FAILED": "导入世界文件失败",
+  "WORLD_IMPORT_CORRUPT_FILE": "世界文件已损坏或格式不受支持",
+  "WORLD_IMPORT_ALREADY_EXISTS": "具有此 ID 的世界已存在",
   "INTERNAL_ERROR": "发生内部错误"
 }
