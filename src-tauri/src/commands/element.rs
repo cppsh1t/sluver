@@ -1,6 +1,7 @@
 use rusqlite::params;
-use tauri::State;
+use tauri::{AppHandle, State};
 
+use crate::commands::events::emit_entity_changed;
 use crate::db::{DbError, DbManager};
 use crate::models::item::{CreateItemInput, Item, UpdateItemInput};
 use crate::models::location::{CreateLocationInput, Location, UpdateLocationInput};
@@ -17,6 +18,7 @@ struct ElementRaw {
     tags: Vec<String>,
     created_at: String,
     updated_at: String,
+    has_image: bool,
 }
 
 fn row_to_element_raw(row: &rusqlite::Row) -> rusqlite::Result<ElementRaw> {
@@ -29,10 +31,11 @@ fn row_to_element_raw(row: &rusqlite::Row) -> rusqlite::Result<ElementRaw> {
         tags: serde_json::from_str(&tags_json).unwrap_or_default(),
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
+        has_image: row.get("has_image")?,
     })
 }
 
-const SELECT_COLS: &str = "id, name, description, notes, tags, created_at, updated_at";
+const SELECT_COLS: &str = "id, name, description, notes, tags, created_at, updated_at, image_blob IS NOT NULL AS has_image";
 
 macro_rules! load_element {
     ($conn:expr, $id:expr, $world_id:expr, $table:literal, $Entity:ident, $label:literal) => {{
@@ -56,6 +59,7 @@ macro_rules! load_element {
             tags: raw.tags,
             created_at: raw.created_at,
             updated_at: raw.updated_at,
+            has_image: raw.has_image,
         })
     }};
 }
@@ -78,6 +82,7 @@ macro_rules! list_element {
                     tags: raw.tags,
                     created_at: raw.created_at,
                     updated_at: raw.updated_at,
+                    has_image: raw.has_image,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -87,20 +92,21 @@ macro_rules! list_element {
 
 // ─── Location CRUD ───────────────────────────────────────────────────────────
 
-#[tracing::instrument(skip(state, input), fields(entity_id))]
+#[tracing::instrument(skip(state, input, app), fields(entity_id))]
 #[tauri::command]
 pub fn create_location(
     space_id: String,
     world_id: String,
     input: CreateLocationInput,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<Location, DbError> {
     let id = new_id();
     tracing::Span::current().record("entity_id", id.as_str());
     let now = now_iso();
     let tags_json = serde_json::to_string(&input.tags)?;
 
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         conn.execute(
             "INSERT INTO locations (id, name, description, notes, tags, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -115,7 +121,17 @@ pub fn create_location(
             ],
         )?;
         load_element!(conn, &id, &world_id, "locations", Location, "Location")
-    })
+    });
+    if let Ok(ref entity) = result {
+        emit_entity_changed(
+            &app,
+            "location",
+            Some(entity.id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
 #[tracing::instrument(skip(state, id), fields(entity_id = %id))]
@@ -143,7 +159,7 @@ pub fn list_locations(
     })
 }
 
-#[tracing::instrument(skip(state, input, id), fields(entity_id = %id))]
+#[tracing::instrument(skip(state, input, id, app), fields(entity_id = %id))]
 #[tauri::command]
 pub fn update_location(
     space_id: String,
@@ -151,11 +167,12 @@ pub fn update_location(
     id: String,
     input: UpdateLocationInput,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<Location, DbError> {
     let now = now_iso();
     let tags_json = serde_json::to_string(&input.tags)?;
 
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         let updated = conn.execute(
             "UPDATE locations
          SET name = ?1, description = ?2, notes = ?3, tags = ?4, updated_at = ?5
@@ -173,42 +190,64 @@ pub fn update_location(
             return Err(DbError::NotFound("Location", id));
         }
         load_element!(conn, &id, &world_id, "locations", Location, "Location")
-    })
+    });
+    if let Ok(ref entity) = result {
+        emit_entity_changed(
+            &app,
+            "location",
+            Some(entity.id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
-#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
+#[tracing::instrument(skip(state, id, app), fields(entity_id = %id))]
 #[tauri::command]
 pub fn delete_location(
     space_id: String,
     world_id: String,
     id: String,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<(), DbError> {
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         let deleted = conn.execute("DELETE FROM locations WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(DbError::NotFound("Location", id));
+            return Err(DbError::NotFound("Location", id.clone()));
         }
         Ok(())
-    })
+    });
+    if result.is_ok() {
+        emit_entity_changed(
+            &app,
+            "location",
+            Some(id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
 // ─── Item CRUD ────────────────────────────────────────────────────────────────
 
-#[tracing::instrument(skip(state, input), fields(entity_id))]
+#[tracing::instrument(skip(state, input, app), fields(entity_id))]
 #[tauri::command]
 pub fn create_item(
     space_id: String,
     world_id: String,
     input: CreateItemInput,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<Item, DbError> {
     let id = new_id();
     tracing::Span::current().record("entity_id", id.as_str());
     let now = now_iso();
     let tags_json = serde_json::to_string(&input.tags)?;
 
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         conn.execute(
             "INSERT INTO items (id, name, description, notes, tags, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -223,7 +262,17 @@ pub fn create_item(
             ],
         )?;
         load_element!(conn, &id, &world_id, "items", Item, "Item")
-    })
+    });
+    if let Ok(ref entity) = result {
+        emit_entity_changed(
+            &app,
+            "item",
+            Some(entity.id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
 #[tracing::instrument(skip(state, id), fields(entity_id = %id))]
@@ -251,7 +300,7 @@ pub fn list_items(
     })
 }
 
-#[tracing::instrument(skip(state, input, id), fields(entity_id = %id))]
+#[tracing::instrument(skip(state, input, id, app), fields(entity_id = %id))]
 #[tauri::command]
 pub fn update_item(
     space_id: String,
@@ -259,11 +308,12 @@ pub fn update_item(
     id: String,
     input: UpdateItemInput,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<Item, DbError> {
     let now = now_iso();
     let tags_json = serde_json::to_string(&input.tags)?;
 
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         let updated = conn.execute(
             "UPDATE items
          SET name = ?1, description = ?2, notes = ?3, tags = ?4, updated_at = ?5
@@ -281,42 +331,64 @@ pub fn update_item(
             return Err(DbError::NotFound("Item", id));
         }
         load_element!(conn, &id, &world_id, "items", Item, "Item")
-    })
+    });
+    if let Ok(ref entity) = result {
+        emit_entity_changed(
+            &app,
+            "item",
+            Some(entity.id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
-#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
+#[tracing::instrument(skip(state, id, app), fields(entity_id = %id))]
 #[tauri::command]
 pub fn delete_item(
     space_id: String,
     world_id: String,
     id: String,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<(), DbError> {
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         let deleted = conn.execute("DELETE FROM items WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(DbError::NotFound("Item", id));
+            return Err(DbError::NotFound("Item", id.clone()));
         }
         Ok(())
-    })
+    });
+    if result.is_ok() {
+        emit_entity_changed(
+            &app,
+            "item",
+            Some(id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
 // ─── Lore CRUD ────────────────────────────────────────────────────────────────
 
-#[tracing::instrument(skip(state, input), fields(entity_id))]
+#[tracing::instrument(skip(state, input, app), fields(entity_id))]
 #[tauri::command]
 pub fn create_lore(
     space_id: String,
     world_id: String,
     input: CreateLoreInput,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<Lore, DbError> {
     let id = new_id();
     tracing::Span::current().record("entity_id", id.as_str());
     let now = now_iso();
     let tags_json = serde_json::to_string(&input.tags)?;
 
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         conn.execute(
             "INSERT INTO lores (id, name, description, notes, tags, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -331,7 +403,17 @@ pub fn create_lore(
             ],
         )?;
         load_element!(conn, &id, &world_id, "lores", Lore, "Lore")
-    })
+    });
+    if let Ok(ref entity) = result {
+        emit_entity_changed(
+            &app,
+            "lore",
+            Some(entity.id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
 #[tracing::instrument(skip(state, id), fields(entity_id = %id))]
@@ -359,7 +441,7 @@ pub fn list_lores(
     })
 }
 
-#[tracing::instrument(skip(state, input, id), fields(entity_id = %id))]
+#[tracing::instrument(skip(state, input, id, app), fields(entity_id = %id))]
 #[tauri::command]
 pub fn update_lore(
     space_id: String,
@@ -367,11 +449,12 @@ pub fn update_lore(
     id: String,
     input: UpdateLoreInput,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<Lore, DbError> {
     let now = now_iso();
     let tags_json = serde_json::to_string(&input.tags)?;
 
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         let updated = conn.execute(
             "UPDATE lores
          SET name = ?1, description = ?2, notes = ?3, tags = ?4, updated_at = ?5
@@ -389,24 +472,45 @@ pub fn update_lore(
             return Err(DbError::NotFound("Lore", id));
         }
         load_element!(conn, &id, &world_id, "lores", Lore, "Lore")
-    })
+    });
+    if let Ok(ref entity) = result {
+        emit_entity_changed(
+            &app,
+            "lore",
+            Some(entity.id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
-#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
+#[tracing::instrument(skip(state, id, app), fields(entity_id = %id))]
 #[tauri::command]
 pub fn delete_lore(
     space_id: String,
     world_id: String,
     id: String,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<(), DbError> {
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         let deleted = conn.execute("DELETE FROM lores WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(DbError::NotFound("Lore", id));
+            return Err(DbError::NotFound("Lore", id.clone()));
         }
         Ok(())
-    })
+    });
+    if result.is_ok() {
+        emit_entity_changed(
+            &app,
+            "lore",
+            Some(id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
 // ─── Per-entity image commands (Location / Item / Lore) ──────────────────────
@@ -426,15 +530,16 @@ pub fn delete_lore(
 
 /// Generate `update_<entity>_image` / `clear_<entity>_image` / `get_<entity>_image`
 /// commands bound to a specific `$table` and surfaced under `$label` in
-/// `DbError::NotFound` messages. The signature contract (frontend depends on
+/// `DbError::NotFound` messages. `$kind` is the `entity-changed` event kind
+/// literal (e.g. `"location"`). The signature contract (frontend depends on
 /// these exact names + param order):
-///   - update: `(space_id, world_id, id, image_base64, image_mime, state)`
-///   - clear:  `(space_id, world_id, id, state)`
+///   - update: `(space_id, world_id, id, image_base64, image_mime, state, app)`
+///   - clear:  `(space_id, world_id, id, state, app)`
 ///   - get:    `(space_id, world_id, id, state) -> tauri::ipc::Response`
 macro_rules! impl_element_image_commands {
-    ($table:literal, $label:literal, $update_fn:ident, $clear_fn:ident, $get_fn:ident) => {
+    ($table:literal, $label:literal, $kind:literal, $update_fn:ident, $clear_fn:ident, $get_fn:ident) => {
         #[tracing::instrument(
-            skip(state, image_base64),
+            skip(state, image_base64, app),
             fields(entity_id = %id)
         )]
         #[tauri::command]
@@ -445,6 +550,7 @@ macro_rules! impl_element_image_commands {
             image_base64: String,
             image_mime: String,
             state: State<'_, DbManager>,
+            app: AppHandle,
         ) -> Result<(), DbError> {
             let bytes = decode_and_validate_image(&image_base64, &image_mime)?;
             let now = now_iso();
@@ -454,7 +560,7 @@ macro_rules! impl_element_image_commands {
                 image_mime = %image_mime,
                 "image updated"
             );
-            state.with_world(&space_id, &world_id, |conn| {
+            let result = state.with_world(&space_id, &world_id, |conn| {
                 let updated = conn.execute(
                     &format!(
                         "UPDATE {} SET image_blob = ?1, image_mime = ?2, updated_at = ?3 WHERE id = ?4",
@@ -463,23 +569,34 @@ macro_rules! impl_element_image_commands {
                     params![&bytes, &image_mime, now, &id],
                 )?;
                 if updated == 0 {
-                    return Err(DbError::NotFound($label, id));
+                    return Err(DbError::NotFound($label, id.clone()));
                 }
                 Ok(())
-            })
+            });
+            if result.is_ok() {
+                emit_entity_changed(
+                    &app,
+                    $kind,
+                    Some(id.clone()),
+                    &space_id,
+                    Some(&world_id),
+                );
+            }
+            result
         }
 
-        #[tracing::instrument(skip(state, id), fields(entity_id = %id))]
+        #[tracing::instrument(skip(state, id, app), fields(entity_id = %id))]
         #[tauri::command]
         pub fn $clear_fn(
             space_id: String,
             world_id: String,
             id: String,
             state: State<'_, DbManager>,
+            app: AppHandle,
         ) -> Result<(), DbError> {
             let now = now_iso();
             tracing::info!(entity_id = %id, "image cleared");
-            state.with_world(&space_id, &world_id, |conn| {
+            let result = state.with_world(&space_id, &world_id, |conn| {
                 let updated = conn.execute(
                     &format!(
                         "UPDATE {} SET image_blob = NULL, image_mime = NULL, updated_at = ?1 WHERE id = ?2",
@@ -488,10 +605,20 @@ macro_rules! impl_element_image_commands {
                     params![now, &id],
                 )?;
                 if updated == 0 {
-                    return Err(DbError::NotFound($label, id));
+                    return Err(DbError::NotFound($label, id.clone()));
                 }
                 Ok(())
-            })
+            });
+            if result.is_ok() {
+                emit_entity_changed(
+                    &app,
+                    $kind,
+                    Some(id.clone()),
+                    &space_id,
+                    Some(&world_id),
+                );
+            }
+            result
         }
 
         #[tracing::instrument(skip(state, id), fields(entity_id = %id))]
@@ -533,6 +660,7 @@ macro_rules! impl_element_image_commands {
 impl_element_image_commands!(
     "locations",
     "Location",
+    "location",
     update_location_image,
     clear_location_image,
     get_location_image
@@ -540,6 +668,7 @@ impl_element_image_commands!(
 impl_element_image_commands!(
     "items",
     "Item",
+    "item",
     update_item_image,
     clear_item_image,
     get_item_image
@@ -547,6 +676,7 @@ impl_element_image_commands!(
 impl_element_image_commands!(
     "lores",
     "Lore",
+    "lore",
     update_lore_image,
     clear_lore_image,
     get_lore_image

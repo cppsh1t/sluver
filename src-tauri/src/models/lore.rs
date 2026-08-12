@@ -11,6 +11,7 @@ pub struct Lore {
     pub tags: Vec<String>,
     pub created_at: String,
     pub updated_at: String,
+    pub has_image: bool,
 }
 
 #[derive(Debug, Deserialize)]
