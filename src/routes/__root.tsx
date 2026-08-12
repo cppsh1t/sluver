@@ -46,6 +46,61 @@ function verbosityToLogLevel(tier: string): LogLevel {
   }
 }
 
+/**
+ * Maps an `entity-changed` payload `kind` to the React Query list-key prefixes
+ * that must be invalidated when that kind changes.
+ *
+ * React Query v5 treats `invalidateQueries({ queryKey: [prefix] })` as a
+ * prefix match by default, so passing only the first key element refreshes
+ * every query whose key starts with that segment (across all spaces/worlds/
+ * parents). Prefix matching is the right granularity here: the `entity-changed`
+ * event carries no data about which specific list the write touched, and we
+ * never want a stale list after a structural mutation.
+ */
+const ENTITY_LIST_KEYS: Record<string, string[]> = {
+  world: ["worlds"],
+  character: ["characters"],
+  // Phases are embedded inside their parent Character; a phase write mutates
+  // the character, so the character list must refresh.
+  phase: ["characters"],
+  location: ["locations"],
+  item: ["items"],
+  lore: ["lores"],
+  event: ["events"],
+  novel: ["novels"],
+  // Chapter reordering shifts scene membership; scenes live under chapters.
+  chapter: ["chapters", "scenes"],
+  scene: ["scenes", "scene-images", "scene-image-bytes"],
+};
+
+/**
+ * Kinds whose single cover image is cached under the `["image", kind, id]`
+ * key. That cache uses `staleTime: Infinity`, so it ONLY refreshes when an
+ * explicit invalidation targets the exact key.
+ */
+const SINGLE_IMAGE_KINDS = new Set([
+  "world",
+  "character",
+  "phase",
+  "location",
+  "item",
+  "lore",
+  "event",
+  "novel",
+]);
+
+/**
+ * Payload shape of the backend `entity-changed` Tauri event, emitted after
+ * every entity write. `id` is omitted for bulk operations (e.g. reorder);
+ * `worldId` is omitted when the entity is the World itself (space-scoped).
+ */
+interface EntityChangedPayload {
+  kind: string;
+  id?: string;
+  spaceId: string;
+  worldId?: string;
+}
+
 function RootLayout() {
   const queryClient = useQueryClient();
 
@@ -144,6 +199,57 @@ function RootLayout() {
       unlisten?.();
     };
   }, []);
+
+  // Cross-entity cache invalidation (Bug 1 fix). The Rust backend emits
+  // `entity-changed` after EVERY entity write, including writes performed by
+  // the AI agent tool loop. Agent-driven writes (notably setting an entity's
+  // cover image) bypass React Query's mutation hooks, so without this
+  // listener the `["image", kind, id]` cache — which is created with
+  // `staleTime: Infinity` — would never refresh and the UI would keep showing
+  // the stale/no-image state until a manual refetch.
+  //
+  // The same listener also refreshes list queries so reordering / inline
+  // edits made by the agent propagate to every open window. Prefix matching
+  // (see ENTITY_LIST_KEYS) keeps the mapping table small and avoids needing
+  // the full query key (which the event payload does not carry).
+  //
+  // Same race-guard pattern as the listeners above: `listen()` is async, so
+  // a `cancelled` flag prevents a late-resolving subscription from leaking
+  // when the effect cleans up before attachment.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    listen<EntityChangedPayload>("entity-changed", (event) => {
+      const { kind, id } = event.payload;
+      const listKeys = ENTITY_LIST_KEYS[kind];
+      if (listKeys) {
+        for (const key of listKeys) {
+          queryClient.invalidateQueries({ queryKey: [key] });
+        }
+      }
+      if (SINGLE_IMAGE_KINDS.has(kind) && id) {
+        queryClient.invalidateQueries({ queryKey: ["image", kind, id] });
+      }
+    })
+      .then((fn) => {
+        if (cancelled) {
+          fn();
+        } else {
+          unlisten = fn;
+        }
+      })
+      .catch((e) => {
+        // Without this listener, agent image writes never refresh the UI.
+        // Log at error so a failed attachment shows up in diagnostics.
+        logger.error("root.entity_changed_listen.failed", {
+          error: String(e),
+        });
+      });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [queryClient]);
 
   return (
     <div className="flex h-svh flex-col overflow-hidden bg-background text-foreground">
