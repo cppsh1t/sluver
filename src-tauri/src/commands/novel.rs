@@ -1,7 +1,8 @@
 use rusqlite::params;
 use std::collections::HashMap;
-use tauri::State;
+use tauri::{AppHandle, State};
 
+use crate::commands::events::emit_entity_changed;
 use crate::db::{DbError, DbManager};
 use crate::models::character::CharacterRef;
 use crate::models::novel::{
@@ -13,9 +14,9 @@ use crate::util::{decode_and_validate_image, new_id, normalize_iso, now_iso};
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 fn load_novel(conn: &rusqlite::Connection, id: &str, world_id: &str) -> Result<Novel, DbError> {
-    let (title, description, author, tags_json, created_at, updated_at) = conn
+    let (title, description, author, tags_json, created_at, updated_at, has_image) = conn
         .query_row(
-            "SELECT title, description, author, tags, created_at, updated_at FROM novels WHERE id = ?1",
+            "SELECT title, description, author, tags, created_at, updated_at, image_blob IS NOT NULL AS has_image FROM novels WHERE id = ?1",
             params![id],
             |row| {
                 Ok((
@@ -25,6 +26,7 @@ fn load_novel(conn: &rusqlite::Connection, id: &str, world_id: &str) -> Result<N
                     row.get::<_, String>("tags")?,
                     row.get::<_, String>("created_at")?,
                     row.get::<_, String>("updated_at")?,
+                    row.get::<_, bool>("has_image")?,
                 ))
             },
         )
@@ -50,6 +52,7 @@ fn load_novel(conn: &rusqlite::Connection, id: &str, world_id: &str) -> Result<N
         tags: serde_json::from_str(&tags_json).unwrap_or_default(),
         created_at,
         updated_at,
+        has_image,
     })
 }
 
@@ -170,27 +173,38 @@ fn load_scene(conn: &rusqlite::Connection, id: &str) -> Result<Scene, DbError> {
 
 // ─── Novel CRUD ────────────────────────────────────────────────────────────
 
-#[tracing::instrument(skip(state, input), fields(entity_id))]
+#[tracing::instrument(skip(state, input, app), fields(entity_id))]
 #[tauri::command]
 pub fn create_novel(
     space_id: String,
     world_id: String,
     input: CreateNovelInput,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<Novel, DbError> {
     let id = new_id();
     tracing::Span::current().record("entity_id", id.as_str());
     let now = now_iso();
     let tags_json = serde_json::to_string(&input.tags)?;
 
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         conn.execute(
             "INSERT INTO novels (id, title, description, author, tags, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![id, input.title, input.description, input.author, tags_json, now, now],
         )?;
         load_novel(conn, &id, &world_id)
-    })
+    });
+    if let Ok(ref entity) = result {
+        emit_entity_changed(
+            &app,
+            "novel",
+            Some(entity.id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
 #[tracing::instrument(skip(state, id), fields(entity_id = %id))]
@@ -223,9 +237,10 @@ pub fn list_novels(
             tags_json: String,
             created_at: String,
             updated_at: String,
+            has_image: bool,
         }
         let mut stmt = conn.prepare(
-            "SELECT id, title, description, author, tags, created_at, updated_at
+            "SELECT id, title, description, author, tags, created_at, updated_at, image_blob IS NOT NULL AS has_image
          FROM novels ORDER BY created_at",
         )?;
         let raws: Vec<NovelRaw> = stmt
@@ -238,6 +253,7 @@ pub fn list_novels(
                     tags_json: row.get("tags")?,
                     created_at: row.get("created_at")?,
                     updated_at: row.get("updated_at")?,
+                    has_image: row.get("has_image")?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -287,6 +303,7 @@ pub fn list_novels(
                     tags,
                     created_at: raw.created_at,
                     updated_at: raw.updated_at,
+                    has_image: raw.has_image,
                 }
             })
             .collect();
@@ -519,7 +536,7 @@ pub fn list_scenes(
 })
 }
 
-#[tracing::instrument(skip(state, input, id), fields(entity_id = %id))]
+#[tracing::instrument(skip(state, input, id, app), fields(entity_id = %id))]
 #[tauri::command]
 pub fn update_novel(
     space_id: String,
@@ -527,42 +544,64 @@ pub fn update_novel(
     id: String,
     input: UpdateNovelInput,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<Novel, DbError> {
     let now = now_iso();
     let tags_json = serde_json::to_string(&input.tags)?;
 
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         let updated = conn.execute(
         "UPDATE novels SET title = ?1, description = ?2, author = ?3, tags = ?4, updated_at = ?5 WHERE id = ?6",
         params![input.title, input.description, input.author, tags_json, now, id],
     )?;
         if updated == 0 {
-            return Err(DbError::NotFound("Novel", id));
+            return Err(DbError::NotFound("Novel", id.clone()));
         }
         load_novel(conn, &id, &world_id)
-    })
+    });
+    if let Ok(ref entity) = result {
+        emit_entity_changed(
+            &app,
+            "novel",
+            Some(entity.id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
-#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
+#[tracing::instrument(skip(state, id, app), fields(entity_id = %id))]
 #[tauri::command]
 pub fn delete_novel(
     space_id: String,
     world_id: String,
     id: String,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<(), DbError> {
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         let deleted = conn.execute("DELETE FROM novels WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(DbError::NotFound("Novel", id));
+            return Err(DbError::NotFound("Novel", id.clone()));
         }
         Ok(())
-    })
+    });
+    if result.is_ok() {
+        emit_entity_changed(
+            &app,
+            "novel",
+            Some(id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
 // ─── Chapter CRUD ──────────────────────────────────────────────────────────
 
-#[tracing::instrument(skip(state, input), fields(entity_id))]
+#[tracing::instrument(skip(state, input, app), fields(entity_id))]
 #[tauri::command]
 pub fn create_chapter(
     space_id: String,
@@ -570,12 +609,13 @@ pub fn create_chapter(
     novel_id: String,
     input: CreateChapterInput,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<Chapter, DbError> {
     let id = new_id();
     tracing::Span::current().record("entity_id", id.as_str());
     let now = now_iso();
 
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         let tx = conn.transaction()?;
 
         let next_pos: i64 = tx.query_row(
@@ -592,7 +632,17 @@ pub fn create_chapter(
         tx.commit()?;
 
         load_chapter(conn, &id)
-    })
+    });
+    if let Ok(ref entity) = result {
+        emit_entity_changed(
+            &app,
+            "chapter",
+            Some(entity.id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
 #[tracing::instrument(skip(state, id), fields(entity_id = %id))]
@@ -606,7 +656,7 @@ pub fn get_chapter(
     state.with_world(&space_id, &world_id, |conn| load_chapter(conn, &id))
 }
 
-#[tracing::instrument(skip(state, input, id), fields(entity_id = %id))]
+#[tracing::instrument(skip(state, input, id, app), fields(entity_id = %id))]
 #[tauri::command]
 pub fn update_chapter(
     space_id: String,
@@ -614,39 +664,61 @@ pub fn update_chapter(
     id: String,
     input: UpdateChapterInput,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<Chapter, DbError> {
     let now = now_iso();
 
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         let updated = conn.execute(
             "UPDATE chapters SET title = ?1, summary = ?2, updated_at = ?3 WHERE id = ?4",
             params![input.title, input.summary, now, id],
         )?;
         if updated == 0 {
-            return Err(DbError::NotFound("Chapter", id));
+            return Err(DbError::NotFound("Chapter", id.clone()));
         }
         load_chapter(conn, &id)
-    })
+    });
+    if let Ok(ref entity) = result {
+        emit_entity_changed(
+            &app,
+            "chapter",
+            Some(entity.id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
-#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
+#[tracing::instrument(skip(state, id, app), fields(entity_id = %id))]
 #[tauri::command]
 pub fn delete_chapter(
     space_id: String,
     world_id: String,
     id: String,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<(), DbError> {
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         let deleted = conn.execute("DELETE FROM chapters WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(DbError::NotFound("Chapter", id));
+            return Err(DbError::NotFound("Chapter", id.clone()));
         }
         Ok(())
-    })
+    });
+    if result.is_ok() {
+        emit_entity_changed(
+            &app,
+            "chapter",
+            Some(id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
-#[tracing::instrument(skip(state, chapter_ids))]
+#[tracing::instrument(skip(state, chapter_ids, app))]
 #[tauri::command]
 pub fn reorder_chapters(
     space_id: String,
@@ -654,8 +726,9 @@ pub fn reorder_chapters(
     novel_id: String,
     chapter_ids: Vec<String>,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<(), DbError> {
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         let tx = conn.transaction()?;
 
         // Shift to a temporary range to avoid UNIQUE(novel_id, position) violations
@@ -678,12 +751,16 @@ pub fn reorder_chapters(
 
         tx.commit()?;
         Ok(())
-    })
+    });
+    if result.is_ok() {
+        emit_entity_changed(&app, "chapter", None, &space_id, Some(&world_id));
+    }
+    result
 }
 
 // ─── Scene CRUD ──────────────────────────────────────────────────────────────
 
-#[tracing::instrument(skip(state, input), fields(entity_id))]
+#[tracing::instrument(skip(state, input, app), fields(entity_id))]
 #[tauri::command]
 pub fn create_scene(
     space_id: String,
@@ -691,6 +768,7 @@ pub fn create_scene(
     chapter_id: String,
     input: CreateSceneInput,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<Scene, DbError> {
     let id = new_id();
     tracing::Span::current().record("entity_id", id.as_str());
@@ -699,7 +777,7 @@ pub fn create_scene(
     let start_at = normalize_iso(&input.start_at);
     let end_at = normalize_iso(&input.end_at);
 
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
     let tx = conn.transaction()?;
 
     let next_pos: i64 = tx
@@ -750,7 +828,17 @@ pub fn create_scene(
 
     tx.commit()?;
     load_scene(conn, &id)
-})
+});
+    if let Ok(ref entity) = result {
+        emit_entity_changed(
+            &app,
+            "scene",
+            Some(entity.id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
 #[tracing::instrument(skip(state, id), fields(entity_id = %id))]
@@ -764,7 +852,7 @@ pub fn get_scene(
     state.with_world(&space_id, &world_id, |conn| load_scene(conn, &id))
 }
 
-#[tracing::instrument(skip(state, input, id), fields(entity_id = %id))]
+#[tracing::instrument(skip(state, input, id, app), fields(entity_id = %id))]
 #[tauri::command]
 pub fn update_scene(
     space_id: String,
@@ -772,13 +860,14 @@ pub fn update_scene(
     id: String,
     input: UpdateSceneInput,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<Scene, DbError> {
     let now = now_iso();
     // Canonicalize timestamps; drop non-ISO values (ADR-0026 — strict ISO contract).
     let start_at = normalize_iso(&input.start_at);
     let end_at = normalize_iso(&input.end_at);
 
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
     let tx = conn.transaction()?;
 
     let affected = tx.execute(
@@ -796,7 +885,7 @@ pub fn update_scene(
         ],
     )?;
     if affected == 0 {
-        return Err(DbError::NotFound("Scene", id));
+        return Err(DbError::NotFound("Scene", id.clone()));
     }
 
     tx.execute(
@@ -835,27 +924,48 @@ pub fn update_scene(
 
     tx.commit()?;
     load_scene(conn, &id)
-})
+});
+    if let Ok(ref entity) = result {
+        emit_entity_changed(
+            &app,
+            "scene",
+            Some(entity.id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
-#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
+#[tracing::instrument(skip(state, id, app), fields(entity_id = %id))]
 #[tauri::command]
 pub fn delete_scene(
     space_id: String,
     world_id: String,
     id: String,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<(), DbError> {
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         let deleted = conn.execute("DELETE FROM scenes WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(DbError::NotFound("Scene", id));
+            return Err(DbError::NotFound("Scene", id.clone()));
         }
         Ok(())
-    })
+    });
+    if result.is_ok() {
+        emit_entity_changed(
+            &app,
+            "scene",
+            Some(id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
-#[tracing::instrument(skip(state, scene_ids))]
+#[tracing::instrument(skip(state, scene_ids, app))]
 #[tauri::command]
 pub fn reorder_scenes(
     space_id: String,
@@ -863,8 +973,9 @@ pub fn reorder_scenes(
     chapter_id: String,
     scene_ids: Vec<String>,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<(), DbError> {
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         let tx = conn.transaction()?;
 
         // Shift to a temporary range to avoid UNIQUE(chapter_id, position) violations
@@ -887,7 +998,11 @@ pub fn reorder_scenes(
 
         tx.commit()?;
         Ok(())
-    })
+    });
+    if result.is_ok() {
+        emit_entity_changed(&app, "scene", None, &space_id, Some(&world_id));
+    }
+    result
 }
 
 // ─── Per-entity image commands (Novel) ──────────────────────────────────────
@@ -903,7 +1018,7 @@ pub fn reorder_scenes(
 // are INFO; get is DEBUG because it fires on every novel card render.
 
 #[tracing::instrument(
-    skip(state, image_base64),
+    skip(state, image_base64, app),
     fields(entity_id = %id)
 )]
 #[tauri::command]
@@ -914,6 +1029,7 @@ pub fn update_novel_image(
     image_base64: String,
     image_mime: String,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<(), DbError> {
     let bytes = decode_and_validate_image(&image_base64, &image_mime)?;
     let now = now_iso();
@@ -923,38 +1039,59 @@ pub fn update_novel_image(
         image_mime = %image_mime,
         "image updated"
     );
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         let updated = conn.execute(
             "UPDATE novels SET image_blob = ?1, image_mime = ?2, updated_at = ?3 WHERE id = ?4",
             params![&bytes, &image_mime, now, &id],
         )?;
         if updated == 0 {
-            return Err(DbError::NotFound("Novel", id));
+            return Err(DbError::NotFound("Novel", id.clone()));
         }
         Ok(())
-    })
+    });
+    if result.is_ok() {
+        emit_entity_changed(
+            &app,
+            "novel",
+            Some(id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
-#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
+#[tracing::instrument(skip(state, id, app), fields(entity_id = %id))]
 #[tauri::command]
 pub fn clear_novel_image(
     space_id: String,
     world_id: String,
     id: String,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<(), DbError> {
     let now = now_iso();
     tracing::info!(entity_id = %id, "image cleared");
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         let updated = conn.execute(
             "UPDATE novels SET image_blob = NULL, image_mime = NULL, updated_at = ?1 WHERE id = ?2",
             params![now, &id],
         )?;
         if updated == 0 {
-            return Err(DbError::NotFound("Novel", id));
+            return Err(DbError::NotFound("Novel", id.clone()));
         }
         Ok(())
-    })
+    });
+    if result.is_ok() {
+        emit_entity_changed(
+            &app,
+            "novel",
+            Some(id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
 #[tracing::instrument(skip(state, id), fields(entity_id = %id))]
@@ -998,7 +1135,7 @@ pub fn get_novel_image(
 // fire on every scene render.
 
 #[tracing::instrument(
-    skip(state, image_base64),
+    skip(state, image_base64, app),
     fields(entity_id, scene_id = %scene_id)
 )]
 #[tauri::command]
@@ -1009,6 +1146,7 @@ pub fn add_scene_image(
     image_base64: String,
     image_mime: String,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<SceneImageMeta, DbError> {
     let bytes = decode_and_validate_image(&image_base64, &image_mime)?;
     let id = new_id();
@@ -1021,7 +1159,7 @@ pub fn add_scene_image(
         image_mime = %image_mime,
         "scene image added"
     );
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         // Verify the parent scene exists first — a plain FK violation on
         // INSERT would surface as an opaque SQLite error, but the contract
         // here is a business-level NotFound so the frontend can branch on it.
@@ -1061,19 +1199,32 @@ pub fn add_scene_image(
             },
         )?;
         Ok(meta)
-    })
+    });
+    if result.is_ok() {
+        emit_entity_changed(
+            &app,
+            "scene",
+            Some(scene_id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
-#[tracing::instrument(skip(state), fields(entity_id = %image_id))]
+#[tracing::instrument(skip(state, app), fields(entity_id = %image_id))]
 #[tauri::command]
 pub fn delete_scene_image(
     space_id: String,
     world_id: String,
     image_id: String,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<(), DbError> {
     tracing::info!(entity_id = %image_id, "scene image deleted");
-    state.with_world(&space_id, &world_id, |conn| {
+    // Closure returns the parent scene_id so we can emit a targeted
+    // entity-changed event after success. Mapped back to `()` below.
+    let result = state.with_world(&space_id, &world_id, |conn| {
         // Capture scene_id before delete so siblings can be renumbered.
         let scene_id: String = conn
             .query_row(
@@ -1113,11 +1264,21 @@ pub fn delete_scene_image(
             )?;
         }
         tx.commit()?;
-        Ok(())
-    })
+        Ok(scene_id)
+    });
+    if let Ok(ref scene_id) = result {
+        emit_entity_changed(
+            &app,
+            "scene",
+            Some(scene_id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result.map(|_| ())
 }
 
-#[tracing::instrument(skip(state, image_ids), fields(scene_id = %scene_id))]
+#[tracing::instrument(skip(state, image_ids, app), fields(scene_id = %scene_id))]
 #[tauri::command]
 pub fn reorder_scene_images(
     space_id: String,
@@ -1125,8 +1286,9 @@ pub fn reorder_scene_images(
     scene_id: String,
     image_ids: Vec<String>,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<(), DbError> {
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         let tx = conn.transaction()?;
         // No UNIQUE(scene_id, position) constraint, so per-row updates can run
         // directly without the temporary-shift that reorder_scenes needs.
@@ -1147,7 +1309,17 @@ pub fn reorder_scene_images(
             "scene images reordered"
         );
         Ok(())
-    })
+    });
+    if result.is_ok() {
+        emit_entity_changed(
+            &app,
+            "scene",
+            Some(scene_id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
 #[tracing::instrument(skip(state), fields(entity_id = %image_id))]
