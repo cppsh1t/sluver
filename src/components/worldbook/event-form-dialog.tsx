@@ -165,13 +165,13 @@ function EventFormDialog({
         onOpenChange(v);
       }}
     >
-      <DialogContent>
-        <DialogHeader>
+      <DialogContent className="flex max-h-[85vh] flex-col overflow-hidden sm:max-w-lg">
+        <DialogHeader className="shrink-0">
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{desc}</DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit}>
-          <FieldGroup>
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          <FieldGroup className="min-h-0 flex-1 overflow-y-auto">
             {/* Image upload — edit mode only. Create flow has no id yet. */}
             {mode === "edit" && entity?.id && (
               <Field>
@@ -279,7 +279,7 @@ function EventFormDialog({
               )}
             </Field>
           </FieldGroup>
-          <DialogFooter className="mt-4">
+          <DialogFooter className="mt-4 shrink-0">
             <DialogClose render={<Button variant="outline" type="button" />}>
               {t("common:actions.cancel")}
             </DialogClose>
