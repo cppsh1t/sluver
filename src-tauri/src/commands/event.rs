@@ -1,7 +1,8 @@
 use rusqlite::params;
 use std::collections::HashMap;
-use tauri::State;
+use tauri::{AppHandle, State};
 
+use crate::commands::events::emit_entity_changed;
 use crate::db::{DbError, DbManager};
 use crate::models::character::CharacterRef;
 use crate::models::event::{CreateEventInput, Event, UpdateEventInput};
@@ -9,9 +10,9 @@ use crate::models::ref_counts::RefCounts;
 use crate::util::{decode_and_validate_image, new_id, normalize_iso, now_iso};
 
 fn load_event(conn: &mut rusqlite::Connection, id: &str, world_id: &str) -> Result<Event, DbError> {
-    let (name, description, start_at, end_at, location_id, notes, tags_json, created_at, updated_at) =
+    let (name, description, start_at, end_at, location_id, notes, tags_json, created_at, updated_at, has_image) =
         conn.query_row(
-            "SELECT name, description, start_at, end_at, location_id, notes, tags, created_at, updated_at
+            "SELECT name, description, start_at, end_at, location_id, notes, tags, created_at, updated_at, image_blob IS NOT NULL AS has_image
              FROM events WHERE id = ?1",
             params![id],
             |row| {
@@ -25,6 +26,7 @@ fn load_event(conn: &mut rusqlite::Connection, id: &str, world_id: &str) -> Resu
                     row.get::<_, String>("tags")?,
                     row.get::<_, String>("created_at")?,
                     row.get::<_, String>("updated_at")?,
+                    row.get::<_, bool>("has_image")?,
                 ))
             },
         )
@@ -58,16 +60,18 @@ fn load_event(conn: &mut rusqlite::Connection, id: &str, world_id: &str) -> Resu
         tags,
         created_at,
         updated_at,
+        has_image,
     })
 }
 
-#[tracing::instrument(skip(state, input), fields(entity_id))]
+#[tracing::instrument(skip(state, input, app), fields(entity_id))]
 #[tauri::command]
 pub fn create_event(
     space_id: String,
     world_id: String,
     input: CreateEventInput,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<Event, DbError> {
     let event_id = new_id();
     tracing::Span::current().record("entity_id", event_id.as_str());
@@ -77,7 +81,7 @@ pub fn create_event(
     let start_at = normalize_iso(&input.start_at);
     let end_at = normalize_iso(&input.end_at);
 
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
     let tx = conn.transaction()?;
     tx.execute(
         "INSERT INTO events (id, name, description, start_at, end_at, location_id, notes, tags, created_at, updated_at)
@@ -103,7 +107,17 @@ pub fn create_event(
     }
     tx.commit()?;
     load_event(conn, &event_id, &world_id)
-})
+});
+    if let Ok(ref entity) = result {
+        emit_entity_changed(
+            &app,
+            "event",
+            Some(entity.id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
 #[tracing::instrument(skip(state, id), fields(entity_id = %id))]
@@ -139,9 +153,10 @@ pub fn list_events(
         tags_json: String,
         created_at: String,
         updated_at: String,
+        has_image: bool,
     }
     let mut stmt = conn.prepare(
-        "SELECT id, name, description, start_at, end_at, location_id, notes, tags, created_at, updated_at
+        "SELECT id, name, description, start_at, end_at, location_id, notes, tags, created_at, updated_at, image_blob IS NOT NULL AS has_image
          FROM events ORDER BY created_at",
     )?;
     let raws: Vec<EventRaw> = stmt
@@ -157,6 +172,7 @@ pub fn list_events(
                 tags_json: row.get("tags")?,
                 created_at: row.get("created_at")?,
                 updated_at: row.get("updated_at")?,
+                has_image: row.get("has_image")?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -211,6 +227,7 @@ pub fn list_events(
                 tags,
                 created_at: raw.created_at,
                 updated_at: raw.updated_at,
+                has_image: raw.has_image,
             }
         })
         .collect();
@@ -219,7 +236,7 @@ pub fn list_events(
 })
 }
 
-#[tracing::instrument(skip(state, input, id), fields(entity_id = %id))]
+#[tracing::instrument(skip(state, input, id, app), fields(entity_id = %id))]
 #[tauri::command]
 pub fn update_event(
     space_id: String,
@@ -227,6 +244,7 @@ pub fn update_event(
     id: String,
     input: UpdateEventInput,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<Event, DbError> {
     let now = now_iso();
     let tags_json = serde_json::to_string(&input.tags)?;
@@ -234,7 +252,7 @@ pub fn update_event(
     let start_at = normalize_iso(&input.start_at);
     let end_at = normalize_iso(&input.end_at);
 
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
     let tx = conn.transaction()?;
     let updated = tx.execute(
         "UPDATE events
@@ -253,7 +271,7 @@ pub fn update_event(
         ],
     )?;
     if updated == 0 {
-        return Err(DbError::NotFound("Event", id));
+        return Err(DbError::NotFound("Event", id.clone()));
     }
     tx.execute(
         "DELETE FROM event_character_refs WHERE event_id = ?1",
@@ -267,24 +285,45 @@ pub fn update_event(
     }
     tx.commit()?;
     load_event(conn, &id, &world_id)
-})
+});
+    if let Ok(ref entity) = result {
+        emit_entity_changed(
+            &app,
+            "event",
+            Some(entity.id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
-#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
+#[tracing::instrument(skip(state, id, app), fields(entity_id = %id))]
 #[tauri::command]
 pub fn delete_event(
     space_id: String,
     world_id: String,
     id: String,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<(), DbError> {
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         let deleted = conn.execute("DELETE FROM events WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(DbError::NotFound("Event", id));
+            return Err(DbError::NotFound("Event", id.clone()));
         }
         Ok(())
-    })
+    });
+    if result.is_ok() {
+        emit_entity_changed(
+            &app,
+            "event",
+            Some(id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
 // ─── Reference counting ─────────────────────────────────────────────────────
@@ -360,7 +399,7 @@ pub fn count_character_refs(
 // are INFO; get is DEBUG because it fires on every event card render.
 
 #[tracing::instrument(
-    skip(state, image_base64),
+    skip(state, image_base64, app),
     fields(entity_id = %id)
 )]
 #[tauri::command]
@@ -371,6 +410,7 @@ pub fn update_event_image(
     image_base64: String,
     image_mime: String,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<(), DbError> {
     let bytes = decode_and_validate_image(&image_base64, &image_mime)?;
     let now = now_iso();
@@ -380,38 +420,59 @@ pub fn update_event_image(
         image_mime = %image_mime,
         "image updated"
     );
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         let updated = conn.execute(
             "UPDATE events SET image_blob = ?1, image_mime = ?2, updated_at = ?3 WHERE id = ?4",
             params![&bytes, &image_mime, now, &id],
         )?;
         if updated == 0 {
-            return Err(DbError::NotFound("Event", id));
+            return Err(DbError::NotFound("Event", id.clone()));
         }
         Ok(())
-    })
+    });
+    if result.is_ok() {
+        emit_entity_changed(
+            &app,
+            "event",
+            Some(id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
-#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
+#[tracing::instrument(skip(state, id, app), fields(entity_id = %id))]
 #[tauri::command]
 pub fn clear_event_image(
     space_id: String,
     world_id: String,
     id: String,
     state: State<'_, DbManager>,
+    app: AppHandle,
 ) -> Result<(), DbError> {
     let now = now_iso();
     tracing::info!(entity_id = %id, "image cleared");
-    state.with_world(&space_id, &world_id, |conn| {
+    let result = state.with_world(&space_id, &world_id, |conn| {
         let updated = conn.execute(
             "UPDATE events SET image_blob = NULL, image_mime = NULL, updated_at = ?1 WHERE id = ?2",
             params![now, &id],
         )?;
         if updated == 0 {
-            return Err(DbError::NotFound("Event", id));
+            return Err(DbError::NotFound("Event", id.clone()));
         }
         Ok(())
-    })
+    });
+    if result.is_ok() {
+        emit_entity_changed(
+            &app,
+            "event",
+            Some(id.clone()),
+            &space_id,
+            Some(&world_id),
+        );
+    }
+    result
 }
 
 #[tracing::instrument(skip(state, id), fields(entity_id = %id))]

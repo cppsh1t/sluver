@@ -48,6 +48,7 @@ export const eventSchema = z.object({
   notes: z.string(),
   /** User-defined tags for categorization / filtering. */
   tags: z.array(z.string()),
+  hasImage: z.boolean(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
