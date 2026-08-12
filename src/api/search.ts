@@ -73,3 +73,44 @@ export function fetchUrlViaWebview(
 ): Promise<FetchedPage> {
   return call<FetchedPage>('fetch_url_via_webview', { url, locale, maxLength });
 }
+
+// ─── Image-from-URL pipeline ────────────────────────────────────────────────
+
+/**
+ * Download an image from a URL, process it (center-crop + resize + WebP
+ * encode), and return the prepared bytes ready for `update<Entity>Image`.
+ *
+ * Server-side pipeline (mirrors `ImageCropDialog`'s pick → crop → compress →
+ * submit flow, minus the interactive crop rectangle):
+ *   1. reqwest GET with Chrome UA (same client as `fetchUrl`)
+ *   2. `image::load_from_memory` auto-detects JPEG / PNG / WebP
+ *   3. Center-crop to `aspect` (longest-edge cut toward target)
+ *   4. Lanczos3 resize to exactly `outputWidth × outputHeight`
+ *   5. Lossless WebP encode (pure Rust — no libwebp C dep)
+ *   6. 1 MiB ceiling check
+ *
+ * Returns raw bytes via Tauri's binary IPC channel (same path as
+ * `getCharacterImage` etc.) — NOT base64. Feed the result to any
+ * `update<Entity>Image` wrapper:
+ *
+ * ```ts
+ * const buf = await fetchAndPrepareImage(url, 3/4, 300, 400);
+ * await updateCharacterImage(spaceId, worldId, id, new Uint8Array(buf), "image/webp");
+ * ```
+ *
+ * @throws `INVALID_IMAGE` if encoded output exceeds 1 MiB (extremely unlikely
+ *         at the small target sizes the entity forms use).
+ */
+export function fetchAndPrepareImage(
+  url: string,
+  aspect: number,
+  outputWidth: number,
+  outputHeight: number,
+): Promise<ArrayBuffer> {
+  return call<ArrayBuffer>('fetch_and_prepare_image', {
+    url,
+    aspect,
+    outputWidth,
+    outputHeight,
+  });
+}

@@ -22,6 +22,7 @@ import { characterTools } from "./character";
 import { eventTools } from "./event";
 import { itemTools, locationTools, loreTools } from "./element";
 import { chapterTools, novelTools, sceneTools } from "./novel";
+import { worldTools } from "./world";
 
 // ─── Query-only filter ────────────────────────────────────────────────────
 
@@ -52,6 +53,9 @@ function queryOnly(tools: Record<string, ToolDef>): Record<string, ToolDef> {
 export function buildExplorerTools(ctx: ToolContext): ToolSet {
   return buildToolSet(
     {
+      // World cover image (configurable). No CRUD — world create/delete is
+      // a Space-management UI concern, not an agent operation.
+      ...worldTools(),
       // Full worldbook CRUD (includes search_*)
       ...characterTools(),
       ...locationTools(),
@@ -82,6 +86,9 @@ export function buildExplorerTools(ctx: ToolContext): ToolSet {
 export function buildWriterTools(ctx: ToolContext): ToolSet {
   return buildToolSet(
     {
+      // World cover image (configurable). Writer may attach cover art for
+      // the world it's writing in.
+      ...worldTools(),
       // Full novel/chapter/scene CRUD (includes search_*)
       ...novelTools(),
       ...chapterTools(),

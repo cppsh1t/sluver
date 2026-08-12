@@ -30,7 +30,17 @@ import {
   updateLocation,
   updateLore,
 } from "@/api/element";
+import {
+  updateItemImage,
+  updateLocationImage,
+  updateLoreImage,
+} from "@/api/image";
 import type { ToolDef } from "../types";
+import {
+  ENTITY_IMAGE_CROP_SPEC,
+  executeSetImageFromUrl,
+  imageUrlSchema,
+} from "./image-from-url";
 
 // ─── Shared schemas ───────────────────────────────────────────────────────
 
@@ -117,6 +127,37 @@ export function locationTools(): Record<string, ToolDef> {
         return { deleted: true, id };
       },
     },
+
+    // ── Image from URL (configurable) ──────────────────────────────
+    //
+    // Center-crop pipeline: download → decode → center-crop to 4:3 landscape
+    // → Lanczos3 resize to 400×300 → lossless WebP encode. Matches the
+    // user-side `ImageCropDialog` flow for locations.
+
+    set_location_image_from_url: {
+      description:
+        "Set a location's image by downloading from a URL — useful for " +
+        "attaching a map, panorama, or scenery photo found via `web_search`. " +
+        "The image is downloaded, center-cropped to 4:3 landscape, resized " +
+        "to 400×300, and re-encoded as lossless WebP. Any previous image is " +
+        "overwritten. Prefer landscape or square sources — tall portrait " +
+        "images get center-cropped and may cut the top/bottom.",
+      inputSchema: z.object({
+        id: z.string().describe("The location's UUID."),
+        imageUrl: imageUrlSchema,
+      }),
+      consentLevel: "configurable",
+      execute: async (input, ctx) => {
+        const { id, imageUrl } = input as { id: string; imageUrl: string };
+        return executeSetImageFromUrl(
+          ctx,
+          imageUrl,
+          ENTITY_IMAGE_CROP_SPEC.location,
+          (bytes, mime) =>
+            updateLocationImage(ctx.spaceId, ctx.worldId, id as never, bytes, mime),
+        );
+      },
+    },
   };
 }
 
@@ -184,6 +225,36 @@ export function itemTools(): Record<string, ToolDef> {
         return { deleted: true, id };
       },
     },
+
+    // ── Image from URL (configurable) ──────────────────────────────
+    //
+    // Center-crop to 1:1 square, resize to 256×256, lossless WebP. Square
+    // or near-square sources survive center-crop intact.
+
+    set_item_image_from_url: {
+      description:
+        "Set an item's image by downloading from a URL — useful for " +
+        "attaching a product shot, artifact photo, or weapon illustration " +
+        "found via `web_search`. The image is downloaded, center-cropped to " +
+        "a 1:1 square, resized to 256×256, and re-encoded as lossless WebP. " +
+        "Any previous image is overwritten. Square sources survive intact; " +
+        "off-aspect sources get center-cropped.",
+      inputSchema: z.object({
+        id: z.string().describe("The item's UUID."),
+        imageUrl: imageUrlSchema,
+      }),
+      consentLevel: "configurable",
+      execute: async (input, ctx) => {
+        const { id, imageUrl } = input as { id: string; imageUrl: string };
+        return executeSetImageFromUrl(
+          ctx,
+          imageUrl,
+          ENTITY_IMAGE_CROP_SPEC.item,
+          (bytes, mime) =>
+            updateItemImage(ctx.spaceId, ctx.worldId, id as never, bytes, mime),
+        );
+      },
+    },
   };
 }
 
@@ -249,6 +320,34 @@ export function loreTools(): Record<string, ToolDef> {
         const { id } = input as { id: string };
         await deleteLore(ctx.spaceId, ctx.worldId, id as never);
         return { deleted: true, id };
+      },
+    },
+
+    // ── Image from URL (configurable) ──────────────────────────────
+    //
+    // Same 1:1 → 256×256 pipeline as `set_item_image_from_url`.
+
+    set_lore_image_from_url: {
+      description:
+        "Set a lore entry's image by downloading from a URL — useful for " +
+        "attaching an illustration, symbol, or artwork found via `web_search`. " +
+        "The image is downloaded, center-cropped to a 1:1 square, resized to " +
+        "256×256, and re-encoded as lossless WebP. Any previous image is " +
+        "overwritten. Square sources survive intact.",
+      inputSchema: z.object({
+        id: z.string().describe("The lore entry's UUID."),
+        imageUrl: imageUrlSchema,
+      }),
+      consentLevel: "configurable",
+      execute: async (input, ctx) => {
+        const { id, imageUrl } = input as { id: string; imageUrl: string };
+        return executeSetImageFromUrl(
+          ctx,
+          imageUrl,
+          ENTITY_IMAGE_CROP_SPEC.lore,
+          (bytes, mime) =>
+            updateLoreImage(ctx.spaceId, ctx.worldId, id as never, bytes, mime),
+        );
       },
     },
   };

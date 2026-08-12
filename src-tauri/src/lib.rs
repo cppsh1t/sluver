@@ -255,6 +255,9 @@ pub fn run() {
             commands::search::search_web,
             commands::search::fetch_url,
             commands::search::fetch_url_via_webview,
+            // Image-from-URL pipeline (download + center-crop + resize + WebP).
+            // Used by agent `set_<entity>_image_from_url` tools.
+            commands::search::fetch_and_prepare_image,
             // Diagnostics (logging — ADR-0014 / ADR-0015)
             commands::diagnostics::frontend_log,
             commands::diagnostics::get_log_level,

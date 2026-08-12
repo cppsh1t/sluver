@@ -18,7 +18,13 @@ import {
   searchEvents,
   updateEvent,
 } from "@/api/event";
+import { updateEventImage } from "@/api/image";
 import type { ToolDef } from "../types";
+import {
+  ENTITY_IMAGE_CROP_SPEC,
+  executeSetImageFromUrl,
+  imageUrlSchema,
+} from "./image-from-url";
 
 // ─── Shared schemas ───────────────────────────────────────────────────────
 
@@ -124,6 +130,38 @@ export function eventTools(): Record<string, ToolDef> {
         const { id } = input as { id: string };
         await deleteEvent(ctx.spaceId, ctx.worldId, id as never);
         return { deleted: true, id };
+      },
+    },
+
+    // ── Image from URL (configurable) ──────────────────────────────
+    //
+    // Center-crop to 16:9 landscape, resize to 640×360, lossless WebP.
+    // Events typically depict scenes — battle panoramas, council meetings,
+    // geographic locations — so the wide aspect suits them.
+
+    set_event_image_from_url: {
+      description:
+        "Set an event's image by downloading from a URL — useful for " +
+        "attaching a scene illustration, historical depiction, or location " +
+        "photo found via `web_search`. The image is downloaded, center-cropped " +
+        "to 16:9 landscape, resized to 640×360, and re-encoded as lossless " +
+        "WebP. Any previous image is overwritten. Prefer wide landscape " +
+        "sources — portrait images get center-cropped and may cut the " +
+        "top/bottom of the scene.",
+      inputSchema: z.object({
+        id: z.string().describe("The event's UUID."),
+        imageUrl: imageUrlSchema,
+      }),
+      consentLevel: "configurable",
+      execute: async (input, ctx) => {
+        const { id, imageUrl } = input as { id: string; imageUrl: string };
+        return executeSetImageFromUrl(
+          ctx,
+          imageUrl,
+          ENTITY_IMAGE_CROP_SPEC.event,
+          (bytes, mime) =>
+            updateEventImage(ctx.spaceId, ctx.worldId, id as never, bytes, mime),
+        );
       },
     },
   };

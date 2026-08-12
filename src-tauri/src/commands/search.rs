@@ -677,3 +677,166 @@ pub async fn fetch_url_via_webview(
         "webview fetch is currently only supported on Windows".into(),
     ))
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// fetch_and_prepare_image
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Download an image from a URL, center-crop to a target aspect ratio, resize
+/// to exact output dimensions, and re-encode as lossless WebP.
+///
+/// Used by the agent's `set_<entity>_image_from_url` tools so the agent can
+/// attach portraits/covers found via `web_search` to entities. Mirrors the
+/// user-side pick → crop → compress → submit flow (`ImageCropDialog`) with
+/// one key difference: the user picks the crop rectangle interactively,
+/// while this command uses **center-crop** (no face/saliency detection).
+///
+/// **Pipeline:**
+/// 1. `reqwest` GET (reuses `CHROME_UA` + `REQUEST_TIMEOUT_SECS` from `fetch_url`)
+/// 2. `image::load_from_memory` auto-detects format (JPEG / PNG / WebP)
+/// 3. Center-crop to `aspect` — cuts the longer dimension in half from each
+///    side so the source center stays in frame
+/// 4. Lanczos3 resize to exactly `output_width × output_height`
+/// 5. Lossless WebP encode via `image::codecs::webp::WebPEncoder` (pure Rust,
+///    no libwebp C dependency — lossy encoding would require the separate
+///    `webp` crate)
+/// 6. Size ceiling check (`util::MAX_IMAGE_BYTES` = 1 MiB) — oversized output
+///    surfaces as `INVALID_IMAGE` (the same code the user-upload path uses)
+///
+/// Output is returned as raw bytes via `tauri::ipc::Response` — bypasses
+/// JSON serialization on the wire, mirroring `get_*_image`. Frontend reads
+/// it as `ArrayBuffer` and feeds it to `update<Entity>Image(bytes, "image/webp")`.
+///
+/// **Why lossless WebP and not lossy:**
+/// - `image` 0.25's built-in WebP encoder is lossless-only (pure Rust). Lossy
+///   would require `webp = "0.3"` + libwebp-sys — a heavy native dep that
+///   dirties cross-platform builds (project currently ships rustls-tls only).
+/// - At 300×400 / 640×360 output sizes, lossless WebP is ~50-80 KB — well
+///   below the 1 MiB ceiling.
+///
+/// **Redaction (ADR-0014 / ADR-0016):** URL is user creative content (a
+/// research target). `skip_all` + length-only field, consistent with
+/// `fetch_url`. The output bytes are creative content too — only the length
+/// is recorded.
+#[tracing::instrument(skip_all, fields(url_length = url.len(), output_bytes))]
+#[tauri::command]
+pub async fn fetch_and_prepare_image(
+    url: String,
+    aspect: f64,
+    output_width: u32,
+    output_height: u32,
+) -> Result<tauri::ipc::Response, DbError> {
+    use image::ImageEncoder;
+    use std::io::Cursor;
+
+    // ── 1. Validate URL + args ──────────────────────────────────────────
+    let target = Url::parse(&url)
+        .map_err(|e| DbError::Internal(format!("invalid URL: {e}")))?;
+    // Restrict to http(s) — same guard as `fetch_url_via_webview`. The image
+    // crate is happy to decode file:/// and data: URLs, which would expose
+    // local file contents to the agent.
+    if !matches!(target.scheme(), "http" | "https") {
+        return Err(DbError::Internal("only http(s) URLs are supported".into()));
+    }
+    if !(aspect.is_finite() && aspect > 0.0) {
+        return Err(DbError::Internal(format!("invalid aspect ratio: {aspect}")));
+    }
+    if output_width == 0 || output_height == 0 {
+        return Err(DbError::Internal(
+            "output_width and output_height must be positive".into(),
+        ));
+    }
+
+    // ── 2. Download bytes (reuse the Chrome UA + timeout from fetch_url) ─
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| DbError::Internal(format!("fetch_image client build: {e}")))?;
+
+    let resp = client
+        .get(&url)
+        .header(reqwest::header::USER_AGENT, CHROME_UA)
+        .header(
+            reqwest::header::ACCEPT,
+            "image/png,image/jpeg,image/webp,image/*;q=0.8,*/*;q=0.5",
+        )
+        .send()
+        .await
+        .map_err(|e| DbError::Internal(format!("fetch_image request failed: {e}")))?;
+
+    if !resp.status().is_success() {
+        return Err(DbError::Internal(format!(
+            "fetch_image got HTTP {}",
+            resp.status()
+        )));
+    }
+
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| DbError::Internal(format!("fetch_image read body failed: {e}")))?;
+
+    // ── 3. Decode (auto-detect format) ──────────────────────────────────
+    let img = image::load_from_memory(&bytes)
+        .map_err(|e| DbError::Internal(format!("image decode failed: {e}")))?;
+
+    // ── 4. Center-crop to target aspect ─────────────────────────────────
+    //
+    // Cuts the longer dimension so the surviving frame exactly matches the
+    // target aspect. Half the excess is removed from each side, keeping the
+    // source image's center in the cropped frame. For portrait-orientation
+    // sources with a centered subject (typical wiki/baike head-shots), this
+    // keeps the subject intact. Landscape sources will have their sides cut,
+    // which is acceptable for the use case (agent can pick a different URL).
+    let (iw, ih) = (img.width(), img.height());
+    let src_aspect = iw as f64 / ih as f64;
+    let (crop_w, crop_h, crop_x, crop_y) = if src_aspect > aspect {
+        // Source is wider than target → crop horizontally.
+        let new_w = (((ih as f64) * aspect).round() as u32).min(iw).max(1);
+        let x = (iw - new_w) / 2;
+        (new_w, ih, x, 0u32)
+    } else {
+        // Source is taller than (or equal to) target → crop vertically.
+        let new_h = (((iw as f64) / aspect).round() as u32).min(ih).max(1);
+        let y = (ih - new_h) / 2;
+        (iw, new_h, 0u32, y)
+    };
+    let cropped = img.crop_imm(crop_x, crop_y, crop_w, crop_h);
+
+    // ── 5. Lanczos3 resize to exact output dimensions ───────────────────
+    //
+    // After center-crop the source aspect ≈ target aspect, so resize
+    // introduces no further distortion — just smoothing/scaling. Lanczos3
+    // is the highest-quality filter in `image`; slower than Catmull-Rom but
+    // fine for one-shot 300×400 / 640×360 work (sub-10ms on modern CPUs).
+    let resized = cropped.resize_exact(
+        output_width,
+        output_height,
+        image::imageops::FilterType::Lanczos3,
+    );
+
+    // ── 6. Lossless WebP encode ─────────────────────────────────────────
+    let mut buf = Cursor::new(Vec::new());
+    image::codecs::webp::WebPEncoder::new_lossless(&mut buf)
+        .write_image(
+            resized.as_bytes(),
+            output_width,
+            output_height,
+            resized.color().into(),
+        )
+        .map_err(|e| DbError::Internal(format!("webp encode failed: {e}")))?;
+    let out_bytes = buf.into_inner();
+
+    tracing::Span::current().record("output_bytes", out_bytes.len());
+
+    // ── 7. Size ceiling (reuse util::MAX_IMAGE_BYTES = 1 MiB) ───────────
+    // Output is always smaller than the source (downscaled + WebP-encoded),
+    // but guard against pathological cases (huge source already at target
+    // dimensions, lossless-encoded).
+    if out_bytes.len() > crate::util::MAX_IMAGE_BYTES {
+        return Err(DbError::InvalidImage);
+    }
+
+    tracing::debug!("fetch_and_prepare_image completed");
+    Ok(tauri::ipc::Response::new(out_bytes))
+}

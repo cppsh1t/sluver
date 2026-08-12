@@ -28,7 +28,13 @@ import {
   updateCharacter,
   updatePhase,
 } from "@/api/character";
+import { updateCharacterImage, updatePhaseImage } from "@/api/image";
 import type { ToolDef } from "../types";
+import {
+  ENTITY_IMAGE_CROP_SPEC,
+  executeSetImageFromUrl,
+  imageUrlSchema,
+} from "./image-from-url";
 
 /** All character-domain tools (character CRUD + phase management + ref counts). */
 export function characterTools(): Record<string, ToolDef> {
@@ -268,6 +274,65 @@ export function characterTools(): Record<string, ToolDef> {
         const { characterId, phaseIds } = input as { characterId: string; phaseIds: string[] };
         await reorderPhases(ctx.spaceId, ctx.worldId, characterId as never, phaseIds as never);
         return { reordered: true, characterId, order: phaseIds };
+      },
+    },
+
+    // ── Image from URL (configurable) ──────────────────────────────
+    //
+    // Center-crop pipeline runs server-side (`fetch_and_prepare_image`):
+    // download → decode (JPEG/PNG/WebP) → center-crop to 3:4 → Lanczos3
+    // resize to 300×400 → lossless WebP encode. Mirrors the user-side
+    // `ImageCropDialog` flow minus the interactive crop rectangle.
+
+    set_character_image_from_url: {
+      description:
+        "Set a character's portrait by downloading an image from a URL. " +
+        "Use this after `web_search` to attach a portrait found online — the agent " +
+        "cannot pick a file from disk, only fetch from a URL. The image is " +
+        "automatically downloaded, center-cropped to 3:4 portrait, resized to " +
+        "300×400, and re-encoded as lossless WebP. Any previous portrait is " +
+        "overwritten. Common sources: Wikipedia / Baidu Baike / fandom wikis / " +
+        "museum websites. Prefer portrait-orientation sources — landscape " +
+        "images get center-cropped and may cut the subject's sides.",
+      inputSchema: z.object({
+        characterId: z.string().describe("The character's UUID."),
+        imageUrl: imageUrlSchema,
+      }),
+      consentLevel: "configurable",
+      execute: async (input, ctx) => {
+        const { characterId, imageUrl } = input as { characterId: string; imageUrl: string };
+        return executeSetImageFromUrl(
+          ctx,
+          imageUrl,
+          ENTITY_IMAGE_CROP_SPEC.character,
+          (bytes, mime) =>
+            updateCharacterImage(ctx.spaceId, ctx.worldId, characterId as never, bytes, mime),
+        );
+      },
+    },
+
+    set_phase_image_from_url: {
+      description:
+        "Set a phase's portrait by downloading an image from a URL. Use this " +
+        "when a character has multiple life stages (phases) and each warrants " +
+        "a distinct visual — e.g. 'Before the Fall' vs 'In Exile'. The image " +
+        "is downloaded, center-cropped to 3:4 portrait, resized to 300×400, " +
+        "and re-encoded as lossless WebP. Any previous phase portrait is " +
+        "overwritten. Prefer portrait-orientation sources.",
+      inputSchema: z.object({
+        phaseId: z.string().describe("The phase's UUID (NOT the character's id)."),
+        imageUrl: imageUrlSchema,
+      }),
+      consentLevel: "configurable",
+      execute: async (input, ctx) => {
+        const { phaseId, imageUrl } = input as { phaseId: string; imageUrl: string };
+        return executeSetImageFromUrl(
+          ctx,
+          imageUrl,
+          ENTITY_IMAGE_CROP_SPEC.phase,
+          (bytes, mime) =>
+            updatePhaseImage(ctx.spaceId, ctx.worldId, phaseId as never, bytes, mime),
+        );
       },
     },
   };

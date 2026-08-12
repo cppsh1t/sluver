@@ -32,7 +32,13 @@ import {
   updateNovel,
   updateScene,
 } from "@/api/novel";
+import { updateNovelImage } from "@/api/image";
 import type { ToolDef } from "../types";
+import {
+  ENTITY_IMAGE_CROP_SPEC,
+  executeSetImageFromUrl,
+  imageUrlSchema,
+} from "./image-from-url";
 
 // ─── Shared ───────────────────────────────────────────────────────────────
 
@@ -116,6 +122,37 @@ export function novelTools(): Record<string, ToolDef> {
         const { id } = input as { id: string };
         await deleteNovel(ctx.spaceId, ctx.worldId, id as never);
         return { deleted: true, id };
+      },
+    },
+
+    // ── Image from URL (configurable) ──────────────────────────────
+    //
+    // Center-crop to 2:3 portrait (book-cover aspect), resize to 320×480,
+    // lossless WebP. The 2:3 ratio matches standard paperback covers.
+
+    set_novel_image_from_url: {
+      description:
+        "Set a novel's cover image by downloading from a URL — useful for " +
+        "attaching cover art, a dust-jacket scan, or promotional artwork found " +
+        "via `web_search`. The image is downloaded, center-cropped to 2:3 " +
+        "portrait (the standard book-cover aspect), resized to 320×480, and " +
+        "re-encoded as lossless WebP. Any previous cover is overwritten. " +
+        "Prefer portrait-orientation sources (typical book-cover shape) — " +
+        "landscape sources get center-cropped and may cut the sides.",
+      inputSchema: z.object({
+        id: z.string().describe("The novel's UUID."),
+        imageUrl: imageUrlSchema,
+      }),
+      consentLevel: "configurable",
+      execute: async (input, ctx) => {
+        const { id, imageUrl } = input as { id: string; imageUrl: string };
+        return executeSetImageFromUrl(
+          ctx,
+          imageUrl,
+          ENTITY_IMAGE_CROP_SPEC.novel,
+          (bytes, mime) =>
+            updateNovelImage(ctx.spaceId, ctx.worldId, id as never, bytes, mime),
+        );
       },
     },
   };
