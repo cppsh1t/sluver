@@ -18,6 +18,7 @@ import {
   deleteNovel,
   deleteScene,
   getChapter,
+  getChapterOverview,
   getNovel,
   getScene,
   listChapterSummaries,
@@ -203,6 +204,16 @@ export function chapterTools(): Record<string, ToolDef> {
       execute: async (input, ctx) => {
         const { id } = input as { id: string };
         return getChapter(ctx.spaceId, ctx.worldId, id as never);
+      },
+    },
+    get_chapter_overview: {
+      description:
+        "Get a chapter with ALL its scenes' overviews in one call — the chapter's own fields (title, summary, sceneIds) plus every scene's summary, timeline, and entity references (characterRefs, locationId, itemIds, eventIds). Scene prose (`content`) is deliberately excluded to keep the payload small. Use this to quickly understand what happens in a chapter and which worldbook entities it touches, before drafting or reordering.",
+      inputSchema: z.object({ id: z.string().describe("The chapter's UUID.") }),
+      consentLevel: "auto",
+      execute: async (input, ctx) => {
+        const { id } = input as { id: string };
+        return getChapterOverview(ctx.spaceId, ctx.worldId, id as never);
       },
     },
     create_chapter: {

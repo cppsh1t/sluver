@@ -9,6 +9,7 @@
 import type {
   Chapter,
   ChapterId,
+  ChapterOverview,
   ChapterSummary,
   Novel,
   NovelId,
@@ -78,6 +79,19 @@ export function createChapter(
 
 export function getChapter(spaceId: string, worldId: WorldId, id: ChapterId): Promise<Chapter> {
   return call<Chapter>('get_chapter', { spaceId, worldId, id });
+}
+
+/**
+ * Get a chapter with all its scenes' overviews (summary, timeline, entity
+ * references) in one call — scene prose (`content`) is excluded. Used by the
+ * agent `get_chapter_overview` tool to quickly survey a chapter's structure.
+ */
+export function getChapterOverview(
+  spaceId: string,
+  worldId: WorldId,
+  id: ChapterId,
+): Promise<ChapterOverview> {
+  return call<ChapterOverview>('get_chapter_overview', { spaceId, worldId, id });
 }
 
 export function listChapters(spaceId: string, worldId: WorldId, novelId: NovelId): Promise<Chapter[]> {
