@@ -184,6 +184,43 @@ export const sceneSummarySchema = z.object({
 
 export type SceneSummary = z.infer<typeof sceneSummarySchema>;
 
+// ─── Scene / Chapter Overview (agent chapter-overview tool) ────────────────
+
+/**
+ * Scene without its `content` body — keeps summary, timeline, and ALL entity
+ * references. The middle tier between `SceneSummary` (id + title) and the full
+ * `Scene`. Returned by `get_chapter_overview`.
+ */
+export const sceneOverviewSchema = z.object({
+  id: sceneIdSchema,
+  chapterId: chapterIdSchema,
+  title: z.string(),
+  /** 场景梗概 — short summary of what happens in this scene. */
+  summary: z.string(),
+  startAt: z.iso.datetime().nullable(),
+  endAt: z.iso.datetime().nullable(),
+  characterRefs: z.array(characterRefSchema),
+  locationId: locationIdSchema.nullable(),
+  itemIds: z.array(itemIdSchema),
+  eventIds: z.array(eventIdSchema),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+
+export type SceneOverview = z.infer<typeof sceneOverviewSchema>;
+
+/**
+ * A chapter together with all its scenes' overviews (no scene prose).
+ * Lets an agent grasp a chapter's structure and entity references in one call
+ * without transferring every scene's `content`.
+ */
+export const chapterOverviewSchema = z.object({
+  chapter: chapterSchema,
+  scenes: z.array(sceneOverviewSchema),
+});
+
+export type ChapterOverview = z.infer<typeof chapterOverviewSchema>;
+
 // ─── Scene image (sidecar) ───────────────────────────────────────────────
 
 /**

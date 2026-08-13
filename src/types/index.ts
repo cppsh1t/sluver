@@ -82,6 +82,10 @@ export {
   type Scene,
   sceneSummarySchema,
   type SceneSummary,
+  sceneOverviewSchema,
+  type SceneOverview,
+  chapterOverviewSchema,
+  type ChapterOverview,
   sceneImageMetaSchema,
   type SceneImageMeta,
 } from './novel';
