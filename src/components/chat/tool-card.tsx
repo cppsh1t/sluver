@@ -40,6 +40,7 @@ import {
   type ToolBlockData,
 } from "./message-render";
 import { PlanToolCard } from "./tool-cards/plan-tool-card";
+import { ChapterOverviewToolCard } from "./tool-cards/chapter-overview-tool-card";
 import { summarizeToolCall } from "./tool-summary";
 import { ToolBody, ToolSummaryLine } from "./tool-cards/tool-body";
 
@@ -64,6 +65,11 @@ export function ToolCard({ tool, worldId, conversationId }: ToolCardProps) {
     // Plan mode (ADR-0029): render the Plan as a read-only checklist instead
     // of generic JSON — Q7.2(a)(i).
     return <PlanToolCard tool={tool} />;
+  }
+  if (tool.toolName === "get_chapter_overview") {
+    // Chapter overview: render a per-scene reference matrix instead of the
+    // generic JSON fallback (parseToolName can't recognize the compound name).
+    return <ChapterOverviewToolCard tool={tool} />;
   }
   return <GenericToolCard tool={tool} worldId={worldId} conversationId={conversationId} />;
 }

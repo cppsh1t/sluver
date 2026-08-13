@@ -77,6 +77,14 @@
       "updating": "更新中…",
       "empty": "计划已清空"
     },
+    "chapterOverview": {
+      "title": "章节概览",
+      "sceneCount": "{{count}} 个场景",
+      "loading": "加载中…",
+      "noScenes": "本章暂无场景",
+      "untitledScene": "（无标题）",
+      "hasLocation": "有地点"
+    },
     "search": {
       "resultCount": "找到 {{count}} 条结果",
       "noResults": "没有找到结果",

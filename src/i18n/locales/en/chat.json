@@ -77,6 +77,14 @@
       "updating": "Updating…",
       "empty": "Plan cleared"
     },
+    "chapterOverview": {
+      "title": "Chapter overview",
+      "sceneCount": "{{count}} scenes",
+      "loading": "Loading…",
+      "noScenes": "No scenes in this chapter",
+      "untitledScene": "(untitled)",
+      "hasLocation": "has location"
+    },
     "search": {
       "resultCount": "{{count}} results found",
       "noResults": "No results found",
