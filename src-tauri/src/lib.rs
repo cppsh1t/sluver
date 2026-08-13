@@ -213,6 +213,7 @@ pub fn run() {
             // Chapter
             commands::novel::create_chapter,
             commands::novel::get_chapter,
+            commands::novel::get_chapter_overview,
             commands::novel::list_chapters,
             commands::novel::update_chapter,
             commands::novel::delete_chapter,

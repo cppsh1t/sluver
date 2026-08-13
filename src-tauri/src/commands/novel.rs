@@ -6,8 +6,8 @@ use crate::commands::events::emit_entity_changed;
 use crate::db::{DbError, DbManager};
 use crate::models::character::CharacterRef;
 use crate::models::novel::{
-    Chapter, CreateChapterInput, CreateNovelInput, CreateSceneInput, Novel, Scene, SceneImageMeta,
-    UpdateChapterInput, UpdateNovelInput, UpdateSceneInput,
+    Chapter, ChapterOverview, CreateChapterInput, CreateNovelInput, CreateSceneInput, Novel,
+    Scene, SceneImageMeta, SceneOverview, UpdateChapterInput, UpdateNovelInput, UpdateSceneInput,
 };
 use crate::util::{decode_and_validate_image, new_id, normalize_iso, now_iso};
 
@@ -654,6 +654,159 @@ pub fn get_chapter(
     state: State<'_, DbManager>,
 ) -> Result<Chapter, DbError> {
     state.with_world(&space_id, &world_id, |conn| load_chapter(conn, &id))
+}
+
+/// Load a chapter with all its scenes' overviews (no `content` body) in one
+/// trip. Used by the agent `get_chapter_overview` tool so the model can grasp
+/// what happens in a chapter and which worldbook entities are referenced
+/// without transferring every scene's prose. Mirrors `list_scenes`' batch
+/// junction-ref loading, but omits the `content` column from the scene SELECT.
+fn load_chapter_overview(conn: &rusqlite::Connection, id: &str) -> Result<ChapterOverview, DbError> {
+    let chapter = load_chapter(conn, id)?;
+
+    // (a) Batch-load ALL scene rows for this chapter — WITHOUT `content`.
+    struct SceneOverviewRaw {
+        id: String,
+        title: String,
+        summary: String,
+        start_at: Option<String>,
+        end_at: Option<String>,
+        location_id: Option<String>,
+        created_at: String,
+        updated_at: String,
+    }
+    let mut stmt = conn.prepare(
+        "SELECT id, title, summary, start_at, end_at, location_id, created_at, updated_at
+         FROM scenes WHERE chapter_id = ?1 ORDER BY position",
+    )?;
+    let raws: Vec<SceneOverviewRaw> = stmt
+        .query_map(params![id], |row| {
+            Ok(SceneOverviewRaw {
+                id: row.get("id")?,
+                title: row.get("title")?,
+                summary: row.get("summary")?,
+                start_at: row.get("start_at")?,
+                end_at: row.get("end_at")?,
+                location_id: row.get("location_id")?,
+                created_at: row.get("created_at")?,
+                updated_at: row.get("updated_at")?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    if raws.is_empty() {
+        return Ok(ChapterOverview {
+            chapter,
+            scenes: Vec::new(),
+        });
+    }
+
+    let ids: Vec<String> = raws.iter().map(|r| r.id.clone()).collect();
+    let placeholders = (1..=ids.len())
+        .map(|i| format!("?{i}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    // (b) Batch-load ALL character refs.
+    let char_sql = format!(
+        "SELECT scene_id, character_id, phase_id FROM scene_character_refs WHERE scene_id IN ({placeholders})"
+    );
+    let mut char_stmt = conn.prepare(&char_sql)?;
+    let all_char_refs: Vec<(String, CharacterRef)> = char_stmt
+        .query_map(rusqlite::params_from_iter(ids.iter()), |row| {
+            Ok((
+                row.get::<_, String>("scene_id")?,
+                CharacterRef {
+                    character_id: row.get("character_id")?,
+                    phase_id: row.get("phase_id")?,
+                },
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // (c) Batch-load ALL item refs.
+    let item_sql = format!(
+        "SELECT scene_id, item_id FROM scene_item_refs WHERE scene_id IN ({placeholders})"
+    );
+    let mut item_stmt = conn.prepare(&item_sql)?;
+    let all_item_refs: Vec<(String, String)> = item_stmt
+        .query_map(rusqlite::params_from_iter(ids.iter()), |row| {
+            Ok((
+                row.get::<_, String>("scene_id")?,
+                row.get::<_, String>("item_id")?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // (d) Batch-load ALL event refs.
+    let event_sql = format!(
+        "SELECT scene_id, event_id FROM scene_event_refs WHERE scene_id IN ({placeholders})"
+    );
+    let mut event_stmt = conn.prepare(&event_sql)?;
+    let all_event_refs: Vec<(String, String)> = event_stmt
+        .query_map(rusqlite::params_from_iter(ids.iter()), |row| {
+            Ok((
+                row.get::<_, String>("scene_id")?,
+                row.get::<_, String>("event_id")?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // (e) Group refs by scene_id.
+    let mut char_map: HashMap<String, Vec<CharacterRef>> = HashMap::new();
+    for (sc_id, r) in all_char_refs {
+        char_map.entry(sc_id).or_default().push(r);
+    }
+    let mut item_map: HashMap<String, Vec<String>> = HashMap::new();
+    for (sc_id, item_id) in all_item_refs {
+        item_map.entry(sc_id).or_default().push(item_id);
+    }
+    let mut event_map: HashMap<String, Vec<String>> = HashMap::new();
+    for (sc_id, event_id) in all_event_refs {
+        event_map.entry(sc_id).or_default().push(event_id);
+    }
+
+    // (f) Assemble results.
+    let scenes: Vec<SceneOverview> = raws
+        .into_iter()
+        .map(|raw| {
+            let character_refs = char_map.remove(&raw.id).unwrap_or_default();
+            let item_ids = item_map.remove(&raw.id).unwrap_or_default();
+            let event_ids = event_map.remove(&raw.id).unwrap_or_default();
+            SceneOverview {
+                id: raw.id,
+                chapter_id: id.to_string(),
+                title: raw.title,
+                summary: raw.summary,
+                start_at: raw.start_at,
+                end_at: raw.end_at,
+                character_refs,
+                location_id: raw.location_id,
+                item_ids,
+                event_ids,
+                created_at: raw.created_at,
+                updated_at: raw.updated_at,
+            }
+        })
+        .collect();
+
+    Ok(ChapterOverview { chapter, scenes })
+}
+
+/// Get a chapter with all its scenes' overviews (summary, timeline, entity
+/// references) in a single call — scene prose (`content`) is excluded so the
+/// agent can quickly understand the chapter's structure and references.
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
+#[tauri::command]
+pub fn get_chapter_overview(
+    space_id: String,
+    world_id: String,
+    id: String,
+    state: State<'_, DbManager>,
+) -> Result<ChapterOverview, DbError> {
+    state.with_world(&space_id, &world_id, |conn| {
+        load_chapter_overview(conn, &id)
+    })
 }
 
 #[tracing::instrument(skip(state, input, id, app), fields(entity_id = %id))]
