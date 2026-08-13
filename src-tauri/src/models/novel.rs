@@ -169,3 +169,37 @@ pub struct SceneSummary {
     pub id: String,
     pub title: String,
 }
+
+// ─── Overview views (agent chapter-overview tool) ───────────────────────────
+//
+// A middle tier between the minimal `*Summary` views (id + title) and the full
+// entities. `SceneOverview` is a `Scene` with the heavy `content` (正文) field
+// stripped — it keeps the summary, timeline, and ALL entity references so an
+// agent can understand what happens in a chapter and which worldbook entities
+// are involved, without paying the cost of transferring every scene's prose.
+
+/// Scene without its `content` body — keeps summary, timeline, and all refs.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneOverview {
+    pub id: String,
+    pub chapter_id: String,
+    pub title: String,
+    pub summary: String,
+    pub start_at: Option<String>,
+    pub end_at: Option<String>,
+    pub character_refs: Vec<CharacterRef>,
+    pub location_id: Option<String>,
+    pub item_ids: Vec<String>,
+    pub event_ids: Vec<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// A chapter together with all its scenes' overviews (no scene prose).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChapterOverview {
+    pub chapter: Chapter,
+    pub scenes: Vec<SceneOverview>,
+}
