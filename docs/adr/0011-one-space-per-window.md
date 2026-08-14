@@ -22,7 +22,7 @@ Rather than continue fighting TanStack Router's singleton architecture, we elimi
 
 - **Startup**: reads `lastOpenedSpaceId` from session → auto-opens that Space's window. If none, stays on the launcher.
 
-- **Tray icon**: dynamically lists all open Space windows as clickable menu items. Clicking focuses that window. Rebuilt on every window open/close/focus event via `tray.set_menu(Some(menu))`.
+- **Tray icon**: lists every Space in the registry as a clickable menu item; Spaces with an open window are shown with a native checkmark. Clicking an open Space focuses its window; clicking a closed Space opens it through the ADR-0008 auth gate (`open_space_impl` with no password first, then `ensure_space_window`), so a protected closed Space still requires its password. Rebuilt on every window open/close event and after every tray Space click via `tray.set_menu(Some(menu))`. *(Amended 2026-08-14: previously listed only open Space windows; changed to list all Spaces — the "open windows only" behavior made the tray useless for switching to or opening a Space that had no window, which was the common case after a restart.)*
 
 - **Session model** simplified to `lastOpenedSpaceId: Option<String>` + `lockedSpaceIds: Vec<String>`. Removes `openSpaceIds` (was the tab list) and `activeSpaceId` (OS window focus replaces it).
 

@@ -1,8 +1,10 @@
 //! System tray: icon + dynamic context menu.
 //!
-//! The menu lists every open Space window (ADR-0011), plus a launcher entry
-//! and a quit entry. The menu is rebuilt (via [`refresh`]) whenever a Space
-//! window opens or closes, and whenever the UI locale changes.
+//! The menu lists every Space in the registry (ADR-0011, amended 2026-08-14:
+//! previously only open windows were listed), marking those with an open
+//! window with a checkmark, plus a launcher entry and a quit entry. The menu
+//! is rebuilt (via [`refresh`]) whenever a Space window opens or closes, after
+//! every tray click, and whenever the UI locale changes.
 //!
 //! ## Locale
 //!
@@ -20,8 +22,9 @@
 //!
 //! The `on_menu_event` handler is registered ONCE at setup time and routes
 //! dynamic items by parsing the menu item id string (prefix `focus-space:`
-//! → focus that Space window; literal `"show"` → launcher; `"quit"` → exit).
-//! This avoids trying to capture dynamic state in the closure.
+//! → focus that Space window, or open it through the ADR-0008 auth gate if
+//! it isn't open yet; literal `"show"` → launcher; `"quit"` → exit). This
+//! avoids trying to capture dynamic state in the closure.
 //!
 //! ## Why concrete `AppHandle` (no `<R: Runtime>`)
 //!
@@ -34,14 +37,9 @@
 
 use std::sync::Mutex;
 
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager};
-
-// `space_name` is shared with `window_manager` (which owns the window-label
-// ↔ Space mapping conceptually); re-export it here so this module has a
-// single canonical name-lookup path.
-use crate::window_manager::space_name;
 
 pub const TRAY_ID: &str = "main-tray";
 
@@ -87,27 +85,38 @@ fn current_locale() -> String {
     }
 }
 
-/// Build the dynamic tray menu: one entry per open Space window, a
-/// separator, then launcher + quit. Each Space item's id is
-/// `focus-space:{space_id}` so the `on_menu_event` closure can route it
-/// without capturing dynamic state.
+/// Build the dynamic tray menu: one entry per Space in the registry (those
+/// with an open window get a native checkmark), a separator, then launcher +
+/// quit. Each Space item's id is `focus-space:{space_id}` so the
+/// `on_menu_event` closure can route it without capturing dynamic state.
+///
+/// Spaces are read from `meta.db` (sorted by `created_at`); the checkmark is
+/// derived from whether a `space-{id}` window currently exists. If the DB
+/// read fails the Space section is simply skipped (launcher + quit still
+/// render) — the tray must never block on a DB error.
 fn build_menu(app: &AppHandle, locale: &str) -> tauri::Result<Menu<tauri::Wry>> {
     let menu = Menu::new(app)?;
     let mut space_count = 0u32;
 
-    // One menu item per open Space window.
-    for label_str in app.webview_windows().keys() {
-        if let Some(space_id) = crate::window_manager::space_id_from_label(label_str) {
-            let name = space_name(app, space_id);
-            let item = MenuItem::with_id(
-                app,
-                format!("focus-space:{}", space_id),
-                name,
-                true,
-                None::<&str>,
-            )?;
-            menu.append(&item)?;
-            space_count += 1;
+    // One entry per Space in the registry (ADR-0011, amended). Open windows
+    // get a checkmark so the user can tell which Spaces are already visible.
+    if let Some(db) = app.try_state::<crate::db::DbManager>() {
+        if let Ok(spaces) = crate::commands::space::do_list_spaces(&db) {
+            for space in spaces {
+                let is_open = app
+                    .get_webview_window(&crate::window_manager::space_window_label(&space.id))
+                    .is_some();
+                let item = CheckMenuItem::with_id(
+                    app,
+                    format!("focus-space:{}", space.id),
+                    space.name,
+                    true,     // enabled
+                    is_open,  // checked
+                    None::<&str>,
+                )?;
+                menu.append(&item)?;
+                space_count += 1;
+            }
         }
     }
 
@@ -141,24 +150,46 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         .on_menu_event(|app, event| {
             let id: &str = event.id().as_ref();
             if let Some(space_id) = id.strip_prefix("focus-space:") {
-                // Focus the corresponding Space window.
+                // Open or focus the Space window. If the window doesn't
+                // exist yet, FIRST route through the ADR-0008 auth gate:
+                // `open_space_impl` with no password puts a protected Space
+                // into the locked state (so the in-page password gate
+                // renders) and is a harmless unlock + cache warm for an
+                // unprotected one. This mirrors the startup path (lib.rs).
+                // The gate is SKIPPED when the window already exists —
+                // re-running the state machine on an open, unlocked
+                // protected Space would re-lock it (gate over already-
+                // visible content), since `was_locked == false` + no
+                // password takes the locked-state-open branch.
                 let label = crate::window_manager::space_window_label(space_id);
-                match app.get_webview_window(&label) {
-                    Some(w) => {
-                        if let Err(e) = w.unminimize() {
-                            tracing::warn!(window_label = %label, error = %e, "window.unminimize_failed");
+                if app.get_webview_window(&label).is_none() {
+                    if let Some(db) = app.try_state::<crate::db::DbManager>() {
+                        if let Err(e) =
+                            crate::commands::session::open_space_impl(space_id, None, &db)
+                        {
+                            tracing::warn!(
+                                error = %e,
+                                entity_id = %space_id,
+                                "tray space auth-gate failed"
+                            );
                         }
-                        if let Err(e) = w.show() {
-                            tracing::warn!(window_label = %label, error = %e, "window.show_failed");
-                        }
-                        if let Err(e) = w.set_focus() {
-                            tracing::warn!(window_label = %label, error = %e, "window.set_focus_failed");
-                        }
-                    }
-                    None => {
-                        tracing::error!(window_label = %label, "window.not_found");
                     }
                 }
+                // `ensure_space_window` focuses an existing window or builds
+                // a new one (refreshing the tray on create so the new Space
+                // shows its checkmark).
+                if let Err(e) = crate::window_manager::ensure_space_window(app, space_id) {
+                    tracing::warn!(
+                        error = %e,
+                        entity_id = %space_id,
+                        "tray space window open failed"
+                    );
+                }
+                // Re-derive checkmarks after the click. Covers the focus-
+                // existing case (where `ensure_space_window` returns early
+                // without refreshing) and neutralizes any OS-level auto-
+                // toggle of the CheckMenuItem.
+                refresh(app);
             } else {
                 match id {
                     "show" => crate::window_manager::focus_launcher(app),
@@ -182,10 +213,12 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Rebuild the tray menu with the stored locale, reflecting the current set
-/// of open Space windows. Called whenever a Space window opens or closes
-/// (see the window-event router in `lib.rs`). Safe to call from anywhere —
-/// it only touches the tray (via the app handle) and the DB read lock.
+/// Rebuild the tray menu with the stored locale, reflecting every Space in
+/// the registry and which ones currently have an open window (checkmark).
+/// Called whenever a Space window opens or closes (see the window-event
+/// router in `lib.rs`) and after every tray Space click. Safe to call from
+/// anywhere — it only touches the tray (via the app handle) and the DB read
+/// lock.
 pub fn refresh(app: &AppHandle) {
     let window_count = app.webview_windows().len() as u32;
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
