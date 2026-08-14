@@ -23,6 +23,7 @@ import { eventTools } from "./event";
 import { itemTools, locationTools, loreTools } from "./element";
 import { chapterTools, novelTools, sceneTools } from "./novel";
 import { worldTools } from "./world";
+import { timelineTools } from "../timeline";
 
 // ─── Query-only filter ────────────────────────────────────────────────────
 
@@ -62,6 +63,8 @@ export function buildExplorerTools(ctx: ToolContext): ToolSet {
       ...itemTools(),
       ...loreTools(),
       ...eventTools(),
+      // Timeline (read-only chronology — ADR-0033)
+      ...timelineTools(),
       // Novel/chapter/scene: query only (includes search_*)
       ...queryOnly(novelTools()),
       ...queryOnly(chapterTools()),
@@ -99,6 +102,8 @@ export function buildWriterTools(ctx: ToolContext): ToolSet {
       ...queryOnly(itemTools()),
       ...queryOnly(loreTools()),
       ...queryOnly(eventTools()),
+      // Timeline (read-only chronology — ADR-0033)
+      ...timelineTools(),
       // System
       ...systemTools(),
       ...webSearchTools(),
