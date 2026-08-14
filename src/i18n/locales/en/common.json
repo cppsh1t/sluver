@@ -8,7 +8,8 @@
     "creating": "Creating…",
     "edit": "Edit",
     "delete": "Delete",
-    "moreActions": "More actions"
+    "moreActions": "More actions",
+    "close": "Close"
   },
   "loading": "Loading…",
   "errorBoundary": {

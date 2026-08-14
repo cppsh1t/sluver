@@ -1,7 +1,10 @@
 import { useTranslation } from "react-i18next";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Cancel01Icon } from "@hugeicons/core-free-icons";
 
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -11,8 +14,9 @@ import {
  *
  * The caller owns the blob URL (typically via `useEntityImageBytes` +
  * `useBlobUrl`) and the open state. This component is purely presentational —
- * a near-fullscreen dark Dialog surface with `object-contain` so the image
- * scales without cropping.
+ * the image floats directly on the dialog's blurred backdrop with no panel or
+ * frame around it, and a custom close button (the default ghost close button
+ * is invisible on a transparent popup over the dark backdrop).
  *
  * For multi-image galleries with prev/next navigation, see
  * `SceneImageLightbox` instead.
@@ -37,29 +41,37 @@ export function ImageLightbox({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        showCloseButton
-        className="grid gap-0 overflow-hidden bg-background/95 p-0 sm:max-w-5xl"
+        showCloseButton={false}
+        className="grid place-items-center gap-0 overflow-hidden rounded-none bg-transparent p-0 ring-0 sm:max-w-5xl"
       >
         <DialogTitle className="sr-only">
           {t("common:lightbox.imagePreview")}
         </DialogTitle>
 
-        <div className="flex items-center justify-center bg-black/90 p-2">
-          <div className="flex min-h-[40vh] w-full items-center justify-center">
-            {src ? (
-              <img
-                src={src}
-                alt={alt ?? ""}
-                className="max-h-[85vh] max-w-full object-contain"
-              />
-            ) : (
-              <div
-                className="flex h-64 w-64 animate-pulse items-center justify-center rounded-md bg-muted/20"
-                aria-hidden="true"
-              />
-            )}
-          </div>
-        </div>
+        <DialogClose
+          render={
+            <button
+              type="button"
+              aria-label={t("common:actions.close")}
+              className="absolute right-3 top-3 z-10 flex size-9 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-sm transition-colors hover:bg-black/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+            />
+          }
+        >
+          <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} className="size-5" />
+        </DialogClose>
+
+        {src ? (
+          <img
+            src={src}
+            alt={alt ?? ""}
+            className="max-h-[85vh] max-w-full object-contain"
+          />
+        ) : (
+          <div
+            className="size-64 animate-pulse rounded-md bg-white/10"
+            aria-hidden="true"
+          />
+        )}
       </DialogContent>
     </Dialog>
   );
