@@ -16,6 +16,7 @@ export * from './setting';
 export * from './character';
 export * from './element';
 export * from './event';
+export * from './timeline';
 export * from './novel';
 export * from './conversation';
 export * from './space';
