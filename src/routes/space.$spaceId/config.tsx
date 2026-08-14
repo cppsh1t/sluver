@@ -245,7 +245,7 @@ function SpaceConfigPage() {
           </section>
 
           {/* ─── AgentConfig Models ─────────────────────────────────── */}
-          <section className="flex flex-col divide-y divide-border border-b border-border">
+          <section className="flex flex-col divide-y divide-border border-b border-border pt-5">
             <div className="flex flex-col gap-0.5 pb-3">
               <h2 className="font-heading text-sm font-medium tracking-tight">
                 {t("ai:agentConfigs.title")}
