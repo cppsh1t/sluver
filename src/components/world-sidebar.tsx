@@ -44,12 +44,6 @@ function WorldSidebar() {
           match: "/space/$spaceId/world/$worldId/events",
         },
         {
-          label: t("nav.worldbook.timeline"),
-          to: "/space/$spaceId/world/$worldId/timeline" as const,
-          icon: Time03Icon,
-          match: "/space/$spaceId/world/$worldId/timeline",
-        },
-        {
           label: t("nav.worldbook.locations"),
           to: "/space/$spaceId/world/$worldId/locations" as const,
           icon: MapPinIcon,
@@ -77,6 +71,12 @@ function WorldSidebar() {
           to: "/space/$spaceId/world/$worldId/novels" as const,
           icon: Book02Icon,
           match: "/space/$spaceId/world/$worldId/novels",
+        },
+        {
+          label: t("nav.writing.timeline"),
+          to: "/space/$spaceId/world/$worldId/timeline" as const,
+          icon: Time03Icon,
+          match: "/space/$spaceId/world/$worldId/timeline",
         },
       ],
     },
