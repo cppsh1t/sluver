@@ -147,6 +147,8 @@ pub fn query_timeline(
             location_name: Option<String>,
             excerpt: Option<String>,
             novel_title: String,
+            novel_id: String,
+            chapter_id: String,
         }
 
         let scene_rows: Vec<SceneRow> = if input.include_scenes {
@@ -154,7 +156,9 @@ pub fn query_timeline(
                 "SELECT s.id, s.title AS name, s.start_at, s.end_at,
                         loc.name AS location_name,
                         SUBSTR(s.summary, 1, 200) AS excerpt,
-                        n.title AS novel_title
+                        n.title AS novel_title,
+                        ch.novel_id AS novel_id,
+                        s.chapter_id AS chapter_id
                  FROM scenes s
                  JOIN chapters ch ON ch.id = s.chapter_id
                  JOIN novels n ON n.id = ch.novel_id
@@ -212,6 +216,8 @@ pub fn query_timeline(
                         location_name: row.get("location_name")?,
                         excerpt: excerpt.filter(|s| !s.is_empty()),
                         novel_title: row.get("novel_title")?,
+                        novel_id: row.get("novel_id")?,
+                        chapter_id: row.get("chapter_id")?,
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
@@ -282,6 +288,8 @@ pub fn query_timeline(
                 narrated_by_scene_names: Some(narrated_by),
                 narrated_event_names: None,
                 novel_title: None,
+                novel_id: None,
+                chapter_id: None,
             });
         }
         for r in scene_rows {
@@ -299,6 +307,8 @@ pub fn query_timeline(
                 narrated_by_scene_names: None,
                 narrated_event_names: Some(narrates),
                 novel_title: Some(r.novel_title),
+                novel_id: Some(r.novel_id),
+                chapter_id: Some(r.chapter_id),
             });
         }
 

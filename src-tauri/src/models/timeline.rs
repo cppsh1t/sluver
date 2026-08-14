@@ -80,6 +80,12 @@ pub struct TimelineEntry {
     pub narrated_event_names: Option<Vec<String>>,
     /// SCENES ONLY: the parent novel's title. `None` for events.
     pub novel_title: Option<String>,
+    /// SCENES ONLY: id of the Novel containing this Scene. `None` for events.
+    pub novel_id: Option<String>,
+    /// SCENES ONLY: id of the Chapter containing this Scene. `None` for
+    /// events. Drives Scene → Novel chapter workspace navigation in the
+    /// Timeline UI (ADR-0034).
+    pub chapter_id: Option<String>,
 }
 
 /// Response from `query_timeline`.

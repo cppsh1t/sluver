@@ -55,8 +55,10 @@ export type TimelineQuery = z.infer<typeof timelineQuerySchema>;
  *
  * Cross-reference fields are optional and kind-specific:
  * - Events carry `narratedBySceneNames` (scenes that reference this event).
- * - Scenes carry `narratedEventNames` (events this scene references) and
- *   `novelTitle` (the containing novel's title).
+ * - Scenes carry `narratedEventNames` (events this scene references),
+ *   `novelTitle` (the containing novel's title), and `novelId` / `chapterId`
+ *   (the ids needed to navigate from a Scene node to its Novel chapter
+ *   workspace — ADR-0034 additive extension).
  */
 export const timelineEntrySchema = z.object({
   /** Discriminator: `"event"` or `"scene"`. */
@@ -85,6 +87,10 @@ export const timelineEntrySchema = z.object({
   narratedEventNames: z.array(z.string()).nullable(),
   /** Title of the Novel containing this Scene. A string for scenes; `null` for events. */
   novelTitle: z.string().nullable(),
+  /** Id of the Novel containing this Scene. A string for scenes; `null` for events (ADR-0034). */
+  novelId: z.string().nullable(),
+  /** Id of the Chapter containing this Scene. A string for scenes; `null` for events (ADR-0034). */
+  chapterId: z.string().nullable(),
 });
 
 export type TimelineEntry = z.infer<typeof timelineEntrySchema>;
