@@ -286,6 +286,9 @@ pub fn run() {
             commands::world_search::search_chapters,
             commands::world_search::list_scene_summaries,
             commands::world_search::search_scenes,
+            // Timeline (derived view — ADR-0033)
+            commands::timeline::query_timeline,
+            commands::timeline::list_timeline_lanes,
         ])
         .on_window_event(|window, event| {
             let label = window.label();

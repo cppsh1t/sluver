@@ -11,6 +11,7 @@ pub mod search;
 pub mod session;
 pub mod setting;
 pub mod space;
+pub mod timeline;
 pub mod tray;
 pub mod window;
 pub mod world;
