@@ -8,6 +8,7 @@ import {
   MapPinIcon,
   Package02Icon,
   Calendar03Icon,
+  Time03Icon,
   UserMultiple02Icon,
   AiChat02Icon,
   Settings02Icon,
@@ -41,6 +42,12 @@ function WorldSidebar() {
           to: "/space/$spaceId/world/$worldId/events" as const,
           icon: Calendar03Icon,
           match: "/space/$spaceId/world/$worldId/events",
+        },
+        {
+          label: t("nav.worldbook.timeline"),
+          to: "/space/$spaceId/world/$worldId/timeline" as const,
+          icon: Time03Icon,
+          match: "/space/$spaceId/world/$worldId/timeline",
         },
         {
           label: t("nav.worldbook.locations"),

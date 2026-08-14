@@ -15,6 +15,7 @@ import { charactersRoute } from "./routes/world.$worldId/characters";
 import { characterDetailRoute } from "./routes/world.$worldId/characters.$characterId";
 import { eventsRoute } from "./routes/world.$worldId/events";
 import { eventDetailRoute } from "./routes/world.$worldId/events.$eventId";
+import { timelineRoute } from "./routes/world.$worldId/timeline";
 import { locationsRoute } from "./routes/world.$worldId/locations";
 import { itemsRoute } from "./routes/world.$worldId/items";
 import { loreRoute } from "./routes/world.$worldId/lore";
@@ -42,6 +43,7 @@ const routeTree = rootRoute.addChildren([
       characterDetailRoute,
       eventsRoute,
       eventDetailRoute,
+      timelineRoute,
       locationsRoute,
       itemsRoute,
       loreRoute,
