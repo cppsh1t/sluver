@@ -33,8 +33,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { EventCard } from "@/components/worldbook/event-card";
 import { EventRefPicker } from "@/components/worldbook/event-ref-picker";
+import { useBlobUrl } from "@/components/worldbook/scene-image-lightbox";
 import { EntityImageField } from "@/components/entity-image-field";
 import { EntityAvatar } from "@/components/ui/entity-avatar";
+import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Cancel01Icon,
@@ -44,9 +46,12 @@ import {
   PencilEdit01Icon,
   SaveIcon,
   UserCircleIcon,
+  ZoomIcon,
 } from "@hugeicons/core-free-icons";
 import { countPhaseRefs, type RefCounts } from "@/api";
 import type { CreatePhaseInput } from "@/api";
+import { cn } from "@/lib/utils";
+import { useEntityImageBytes } from "@/hooks";
 import type {
   CharacterPhase,
   Event,
@@ -102,6 +107,14 @@ function PhaseCard({
   );
   const [loadingCounts, setLoadingCounts] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const { data: phaseImageBytes } = useEntityImageBytes(
+    "phase",
+    spaceId as SpaceId,
+    worldId,
+    phase?.id as PhaseId | undefined,
+  );
+  const phaseImageUrl = useBlobUrl(phaseImageBytes);
 
   function resetToPhase() {
     if (phase) {
@@ -205,7 +218,7 @@ function PhaseCard({
                   outputWidth={300}
                   outputHeight={400}
                   className="flex items-center gap-4"
-                  avatarClassName="size-24 rounded-md"
+                  avatarClassName="w-24 rounded-md"
                   fallbackIcon={
                     <HugeiconsIcon
                       icon={UserCircleIcon}
@@ -347,21 +360,41 @@ function PhaseCard({
               mirroring the avatar-in-title pattern used by EventCard but placed
               in the content area so the CardHeader layout stays untouched. */}
           <div className="flex gap-3">
-            <EntityAvatar
-              kind="phase"
-              spaceId={spaceId as SpaceId}
-              worldId={worldId}
-              id={phase!.id as PhaseId}
-              alt={phase!.name}
-              fallbackIcon={
-                <HugeiconsIcon
-                  icon={UserCircleIcon}
-                  strokeWidth={1.5}
-                  className="size-8 text-muted-foreground"
-                />
-              }
-              className="size-20 shrink-0 rounded-md"
-            />
+            <button
+              type="button"
+              disabled={!phaseImageUrl}
+              onClick={() => phaseImageUrl && setLightboxOpen(true)}
+              aria-label={t("character:detail.viewImage")}
+              className={cn(
+                "group relative shrink-0 rounded-md",
+                phaseImageUrl && "cursor-zoom-in",
+              )}
+            >
+              <EntityAvatar
+                kind="phase"
+                spaceId={spaceId as SpaceId}
+                worldId={worldId}
+                id={phase!.id as PhaseId}
+                alt={phase!.name}
+                fallbackIcon={
+                  <HugeiconsIcon
+                    icon={UserCircleIcon}
+                    strokeWidth={1.5}
+                    className="size-8 text-muted-foreground"
+                  />
+                }
+                className="w-20 shrink-0 rounded-md"
+              />
+              {phaseImageUrl && (
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-md bg-black/0 transition-colors group-hover:bg-black/20">
+                  <HugeiconsIcon
+                    icon={ZoomIcon}
+                    strokeWidth={2}
+                    className="size-8 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                  />
+                </div>
+              )}
+            </button>
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <span className="text-xs font-medium text-muted-foreground">
                 {t("character:phase.appearanceLabel")}
@@ -413,6 +446,13 @@ function PhaseCard({
           )}
         </CardContent>
       </Card>
+
+      <ImageLightbox
+        open={lightboxOpen}
+        onOpenChange={setLightboxOpen}
+        src={phaseImageUrl}
+        alt={phase!.name}
+      />
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
