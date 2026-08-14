@@ -65,7 +65,7 @@ _Avoid_: Sequence, Beat, Moment, Setup, Fragment
 ### Views
 
 **Timeline**:
-The derived, read-only chronological projection of a World's Events and Scenes — a view computed at render time, never persisted or authored. Only Events and Scenes (the entities carrying in-world time) appear as timeline content; Characters, Locations, Items, and Lore appear solely as context on those nodes (who participated, where it happened), never as standalone timeline items. Exposed to the UI as a character-swimlane visualization and to the Agent as the `timeline_lookup` tool, which — unlike the UI — preserves each entity's own `startAt` rather than the UI's visual absorption of Events into their referencing Scenes.
+The derived, read-only chronological projection of a World's Events and Scenes — a view computed at render time, never persisted or authored. Only Events and Scenes (the entities carrying in-world time) appear as timeline content; Characters, Locations, Items, and Lore appear solely as context on those nodes (who participated, where it happened), never as standalone timeline items. Exposed to the UI as a **uniform character-swimlane grid** (one row per Character; entries as equal-width cards on a shared chronological-order axis — non-proportional, so a one-day event and a millennial span stay equally readable; multi-character events auto-align vertically across their participant lanes without connectors) and to the Agent as the `timeline_lookup` tool. Both surfaces show every Event and Scene at its own `startAt` — there is no visual absorption or deduplication; a Scene's narration of an Event is carried as an annotation, not by folding the Event into the Scene's node. See ADR-0034.
 _Avoid_: Chronology, Story Arc, History, Annals
 
 ### World configuration
@@ -75,7 +75,7 @@ A World's own control surface — distinct from global `Settings` and from `Spac
 _Avoid_: World settings, World preferences
 
 **TimeMapper**:
-A per-World, user-authored JavaScript function that renders an ISO timestamp into a world-time display string — the bridge between the database's ISO storage and the World's fictional time. Pure output: maps ISO → string, never the reverse. Stored as JS source under `world_config.time_mapper`. When absent or broken, times display as raw ISO.
+A per-World, user-authored JavaScript function that renders an ISO timestamp into a world-time display string — the bridge between the database's ISO storage and the World's fictional time. Pure output: maps ISO → string, never the reverse. Stored as JS source under `world_config.time_mapper`. When no mapper is saved, the **default template** applies (`YYYY-MM-DD HH:mm:ss`, host local time — the same seed shown in the mapper editor); saving custom code overrides it. When the mapper is broken (compile/runtime failure, or the 50ms worker watchdog fires) or the client is not yet bound to a World, times fall back to raw ISO.
 _Avoid_: TimeFormatter, Calendar, Chronology, WorldClock, TimeSystem
 
 ### Application layer
