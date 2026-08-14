@@ -95,6 +95,38 @@ pub fn run() {
             if let Some(db_manager) = app.try_state::<db::DbManager>() {
                 match determine_startup_space(&db_manager) {
                     Some(space_id) => {
+                        // Enforce the ADR-0008 auth gate on the auto-opened
+                        // startup Space. This path used to open the window
+                        // directly WITHOUT running the lock state machine, so
+                        // a protected Space whose entry in `locked_space_ids`
+                        // had been lost — via a process kill, a crash, or
+                        // closing the Space window directly instead of going
+                        // through the launcher's hide-to-tray — was shown
+                        // without a password prompt. Routing the id through
+                        // `open_space_impl` with no password puts a protected
+                        // Space into the locked state (its id is added to
+                        // `locked_space_ids`, cache NOT warmed); for an
+                        // unprotected Space this is a harmless unlock + cache
+                        // warm. This mirrors the explicit-open path
+                        // (`useOpenSpaceInWindow` → `openSpace` then
+                        // `openSpaceWindow`) and self-corrects regardless of
+                        // how `locked_space_ids` was left by the prior run.
+                        //
+                        // Runs synchronously here, BEFORE the window is
+                        // created (window creation is deferred to the event
+                        // loop via `run_on_main_thread`), so the locked state
+                        // is persisted before the frontend gate reads the
+                        // session — no race. Best-effort: a failure is logged
+                        // but never blocks the window open.
+                        if let Err(e) =
+                            commands::session::open_space_impl(&space_id, None, &db_manager)
+                        {
+                            tracing::warn!(
+                                error = %e,
+                                entity_id = %space_id,
+                                "startup space lock-enforce failed"
+                            );
+                        }
                         let app_for_thread = app_handle.clone();
                         let _ = app_handle.run_on_main_thread(move || {
                             let _ =
