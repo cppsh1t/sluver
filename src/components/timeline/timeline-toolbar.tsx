@@ -6,14 +6,12 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Cancel01Icon } from "@hugeicons/core-free-icons";
+import { EntityCard } from "@/components/worldbook/entity-card";
 import {
-  TimelineFilterPopover,
-  type TimelineFilterOption,
-} from "./timeline-filter-popover";
-import type { WorldId } from "@/types";
-
-// Re-export so existing imports from this module keep working.
-export type { TimelineFilterOption };
+  NovelFilterCard,
+  TimelineFilterPicker,
+} from "./timeline-filter-picker";
+import type { Item, Location, Novel, WorldId } from "@/types";
 
 /** Patch applied to the Timeline filter state (server-side query params). */
 export interface TimelineFilterPatch {
@@ -32,9 +30,9 @@ interface TimelineToolbarProps {
   from: string | undefined;
   to: string | undefined;
   includeScenes: boolean;
-  locations: TimelineFilterOption[];
-  novels: TimelineFilterOption[];
-  items: TimelineFilterOption[];
+  locations: Location[];
+  novels: Novel[];
+  items: Item[];
   hasActiveFilters: boolean;
   onChange: (patch: TimelineFilterPatch) => void;
   onClear: () => void;
@@ -49,9 +47,10 @@ interface TimelineToolbarProps {
  * deliberately not wired — character lanes are a client-side display layer
  * (ADR-0034). The lane multi-select is injected via `laneSelector`.
  *
- * The three entity filters (location/novel/item) use rich card-select
- * popovers (`TimelineFilterPopover`) — thumbnail + name + description + search
- * — instead of bare text dropdowns.
+ * The three entity filters (location/novel/item) open a
+ * `SearchablePickerDialog` (the same pattern as the chapter/scene editor's
+ * LocationRefPicker) showing a searchable grid of EntityCards / NovelFilterCards
+ * with a dashed "All" clear option.
  */
 function TimelineToolbar({
   locationId,
@@ -72,37 +71,92 @@ function TimelineToolbar({
 }: TimelineToolbarProps) {
   const { t } = useTranslation("timeline");
 
+  const selectedLocation = locations.find((l) => l.id === locationId);
+  const selectedNovel = novels.find((n) => n.id === novelId);
+  const selectedItem = items.find((i) => i.id === itemId);
+
   return (
     <div className="mb-4 flex flex-wrap items-center gap-2">
-      <TimelineFilterPopover
-        label={t("filter.location")}
+      <TimelineFilterPicker<Location>
+        triggerLabel={t("filter.location")}
+        selectedLabel={selectedLocation?.name}
+        dialogTitle={t("filter.locationTitle")}
+        searchPlaceholder={t("filter.searchPlaceholder")}
         allLabel={t("filter.locationAll")}
         value={locationId}
-        options={locations}
         onChange={(id) => onChange({ locationId: id })}
-        searchPlaceholder={t("filter.search")}
+        options={locations}
+        getId={(l) => l.id}
+        getSearchText={(l) => l.name}
         spaceId={spaceId}
         worldId={worldId}
+        renderCard={(l, selected, onSelect) => (
+          <EntityCard
+            spaceId={spaceId}
+            worldId={worldId}
+            id={l.id}
+            name={l.name}
+            description={l.description}
+            tags={l.tags}
+            updatedAt={l.updatedAt}
+            entityType="location"
+            selectable
+            selected={selected}
+            onSelect={onSelect}
+          />
+        )}
       />
-      <TimelineFilterPopover
-        label={t("filter.novel")}
+
+      <TimelineFilterPicker<Novel>
+        triggerLabel={t("filter.novel")}
+        selectedLabel={selectedNovel?.title}
+        dialogTitle={t("filter.novelTitle")}
+        searchPlaceholder={t("filter.searchPlaceholder")}
         allLabel={t("filter.novelAll")}
         value={novelId}
-        options={novels}
         onChange={(id) => onChange({ novelId: id })}
-        searchPlaceholder={t("filter.search")}
+        options={novels}
+        getId={(n) => n.id}
+        getSearchText={(n) => n.title}
         spaceId={spaceId}
         worldId={worldId}
+        renderCard={(n, selected, onSelect) => (
+          <NovelFilterCard
+            novel={n}
+            selected={selected}
+            onSelect={onSelect}
+          />
+        )}
       />
-      <TimelineFilterPopover
-        label={t("filter.item")}
+
+      <TimelineFilterPicker<Item>
+        triggerLabel={t("filter.item")}
+        selectedLabel={selectedItem?.name}
+        dialogTitle={t("filter.itemTitle")}
+        searchPlaceholder={t("filter.searchPlaceholder")}
         allLabel={t("filter.itemAll")}
         value={itemId}
-        options={items}
         onChange={(id) => onChange({ itemId: id })}
-        searchPlaceholder={t("filter.search")}
+        options={items}
+        getId={(i) => i.id}
+        getSearchText={(i) => `${i.name} ${i.tags.join(" ")}`}
         spaceId={spaceId}
         worldId={worldId}
+        renderCard={(i, selected, onSelect) => (
+          <EntityCard
+            spaceId={spaceId}
+            worldId={worldId}
+            id={i.id}
+            name={i.name}
+            description={i.description}
+            tags={i.tags}
+            updatedAt={i.updatedAt}
+            entityType="item"
+            selectable
+            selected={selected}
+            onSelect={onSelect}
+          />
+        )}
       />
 
       <div className="flex items-center gap-1.5">

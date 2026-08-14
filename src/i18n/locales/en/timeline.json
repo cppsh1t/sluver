@@ -9,15 +9,19 @@
   "filter": {
     "location": "Location",
     "locationAll": "All locations",
+    "locationTitle": "Filter by location",
     "novel": "Novel",
     "novelAll": "All novels",
+    "novelTitle": "Filter by novel",
     "item": "Item",
     "itemAll": "All items",
+    "itemTitle": "Filter by item",
     "from": "From",
     "to": "To",
     "includeScenes": "Scenes",
     "clear": "Clear filters",
     "search": "Search…",
+    "searchPlaceholder": "Search…",
     "noResults": "No matches"
   },
   "lane": {

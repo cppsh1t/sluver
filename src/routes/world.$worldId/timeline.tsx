@@ -21,7 +21,6 @@ import { TimelineGrid } from "@/components/timeline/timeline-grid";
 import { TimelineLaneSelector } from "@/components/timeline/timeline-lane-selector";
 import {
   TimelineToolbar,
-  type TimelineFilterOption,
   type TimelineFilterPatch,
 } from "@/components/timeline/timeline-toolbar";
 import { cn } from "@/lib/utils";
@@ -71,36 +70,6 @@ function TimelinePage() {
   const charactersById = useMemo(
     () => new Map<string, Character>(characters.map((c) => [c.id, c])),
     [characters],
-  );
-
-  const locationOptions: TimelineFilterOption[] = useMemo(
-    () =>
-      locations.map((l) => ({
-        id: l.id,
-        label: l.name,
-        description: l.description,
-        avatarKind: "location" as const,
-      })),
-    [locations],
-  );
-  const novelOptions: TimelineFilterOption[] = useMemo(
-    () =>
-      novels.map((n) => ({
-        id: n.id,
-        label: n.title,
-        description: n.description,
-      })),
-    [novels],
-  );
-  const itemOptions: TimelineFilterOption[] = useMemo(
-    () =>
-      items.map((i) => ({
-        id: i.id,
-        label: i.name,
-        description: i.description,
-        avatarKind: "item" as const,
-      })),
-    [items],
   );
 
   // ─── Filter state → TimelineQuery ─────────────────────────────────────────
@@ -256,9 +225,9 @@ function TimelinePage() {
           from={filters.from}
           to={filters.to}
           includeScenes={filters.includeScenes}
-          locations={locationOptions}
-          novels={novelOptions}
-          items={itemOptions}
+          locations={locations}
+          novels={novels}
+          items={items}
           hasActiveFilters={hasActiveFilters}
           onChange={handleFilterChange}
           onClear={handleClearFilters}

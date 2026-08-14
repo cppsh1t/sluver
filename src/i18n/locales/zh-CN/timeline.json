@@ -9,15 +9,19 @@
   "filter": {
     "location": "地点",
     "locationAll": "全部地点",
+    "locationTitle": "按地点筛选",
     "novel": "小说",
     "novelAll": "全部小说",
+    "novelTitle": "按小说筛选",
     "item": "物品",
     "itemAll": "全部物品",
+    "itemTitle": "按物品筛选",
     "from": "起",
     "to": "止",
     "includeScenes": "场景",
     "clear": "清除筛选",
     "search": "搜索…",
+    "searchPlaceholder": "搜索…",
     "noResults": "无匹配项"
   },
   "lane": {
