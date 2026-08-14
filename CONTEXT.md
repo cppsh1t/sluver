@@ -62,6 +62,12 @@ _Avoid_: Section, Part
 The leaf unit of prose in a Novel — the only entity that carries narrative text (`content`, plain text). Optionally anchored to a time range and a Location. References the Characters (at specific Phases), Items, and Events that appear in it.
 _Avoid_: Sequence, Beat, Moment, Setup, Fragment
 
+### Views
+
+**Timeline**:
+The derived, read-only chronological projection of a World's Events and Scenes — a view computed at render time, never persisted or authored. Only Events and Scenes (the entities carrying in-world time) appear as timeline content; Characters, Locations, Items, and Lore appear solely as context on those nodes (who participated, where it happened), never as standalone timeline items. Exposed to the UI as a character-swimlane visualization and to the Agent as the `timeline_lookup` tool, which — unlike the UI — preserves each entity's own `startAt` rather than the UI's visual absorption of Events into their referencing Scenes.
+_Avoid_: Chronology, Story Arc, History, Annals
+
 ### World configuration
 
 **World config**:
