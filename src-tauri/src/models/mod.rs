@@ -11,6 +11,7 @@ pub mod novel;
 pub mod provider_credential;
 pub mod ref_counts;
 pub mod space;
+pub mod timeline;
 pub mod world;
 pub mod world_config;
 
