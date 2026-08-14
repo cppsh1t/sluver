@@ -1,0 +1,62 @@
+{
+  "title": "Timeline",
+  "subtitle": "Chronological swimlane of events and scenes by character",
+  "mode": {
+    "swimlane": "Swimlane",
+    "scale": "Scale",
+    "scaleTooltip": "Scale (proportional) view — coming soon"
+  },
+  "filter": {
+    "location": "Location",
+    "locationAll": "All locations",
+    "novel": "Novel",
+    "novelAll": "All novels",
+    "item": "Item",
+    "itemAll": "All items",
+    "from": "From",
+    "to": "To",
+    "includeScenes": "Scenes",
+    "clear": "Clear filters"
+  },
+  "lane": {
+    "selector": "Lanes",
+    "selectorHint": "Choose character lanes to display",
+    "selectNone": "No characters available",
+    "participationCount": "{{count}} entries",
+    "unassigned": "Unassigned",
+    "selected": "{{count}} selected"
+  },
+  "axis": {
+    "time": "Time",
+    "undated": "Undated"
+  },
+  "card": {
+    "participants": "Participants",
+    "location": "Location",
+    "noLocation": "Unspecified",
+    "lanesHidden": "All participant lanes are hidden — enable a participant's lane to see this entry",
+    "narratedBy": "Narrated by",
+    "narrates": "Narrates",
+    "novel": "Novel",
+    "undated": "Undated"
+  },
+  "popover": {
+    "openDetail": "Open detail",
+    "openDetailDisabled": "Chapter not linked"
+  },
+  "kind": {
+    "event": "Event",
+    "scene": "Scene"
+  },
+  "truncation": {
+    "message": "Showing {{shown}} of {{total}} — narrow the filters to see more"
+  },
+  "empty": {
+    "title": "Nothing on the timeline yet",
+    "description": "Create events or write scenes with a start time to see them here."
+  },
+  "noResults": {
+    "title": "No matching entries",
+    "description": "Try widening the time range or clearing filters."
+  }
+}
