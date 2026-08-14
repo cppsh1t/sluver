@@ -68,6 +68,18 @@ export { itemSchema, type Item, itemSummarySchema, type ItemSummary } from './it
 export { loreSchema, type Lore, loreSummarySchema, type LoreSummary } from './lore';
 export { eventSchema, type Event, eventSummarySchema, type EventSummary } from './event';
 
+// ─── Timeline (derived view — ADR-0033) ────────────────────────────────────
+export {
+  timelineQuerySchema,
+  type TimelineQuery,
+  timelineEntrySchema,
+  type TimelineEntry,
+  timelineResponseSchema,
+  type TimelineResponse,
+  timelineLaneSchema,
+  type TimelineLane,
+} from './timeline';
+
 // ─── Novel structure ──────────────────────────────────────────────────────
 export {
   novelSchema,
