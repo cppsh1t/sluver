@@ -16,7 +16,9 @@
     "from": "From",
     "to": "To",
     "includeScenes": "Scenes",
-    "clear": "Clear filters"
+    "clear": "Clear filters",
+    "search": "Search…",
+    "noResults": "No matches"
   },
   "lane": {
     "selector": "Lanes",
@@ -24,7 +26,10 @@
     "selectNone": "No characters available",
     "participationCount": "{{count}} entries",
     "unassigned": "Unassigned",
-    "selected": "{{count}} selected"
+    "selected": "{{count}} selected",
+    "viewCharacter": "View character",
+    "aliasLabel": "Aliases",
+    "appearsIn": "Appears in {{count}} entries"
   },
   "axis": {
     "time": "Time",
@@ -38,11 +43,16 @@
     "narratedBy": "Narrated by",
     "narrates": "Narrates",
     "novel": "Novel",
-    "undated": "Undated"
+    "undated": "Undated",
+    "multiple": "Multiple entries"
   },
   "popover": {
     "openDetail": "Open detail",
-    "openDetailDisabled": "Chapter not linked"
+    "openDetailDisabled": "Chapter not linked",
+    "entryOf": "{{current}} / {{total}}",
+    "multipleHint": "{{count}} entries share this time",
+    "prev": "Previous",
+    "next": "Next"
   },
   "kind": {
     "event": "Event",

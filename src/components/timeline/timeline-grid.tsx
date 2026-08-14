@@ -22,21 +22,31 @@ interface TimelineGridProps {
 const LANE_LABEL_COL = "14rem";
 /** Fixed min width of each entry column. */
 const ENTRY_COL_MIN = "13rem";
+/** Sentinel grouping key for all undated (null-startAt) entries. */
+const UNDATED_KEY = "__undated__";
+
+interface EntryGroup {
+  key: string;
+  entries: TimelineEntry[];
+  isUndated: boolean;
+}
 
 /**
  * The uniform character-swimlane grid (ADR-0034).
  *
- * One horizontal row per visible Character lane; every entry (Event or Scene)
+ * One horizontal row per visible Character lane; every distinct `startAt`
  * occupies exactly one equal-width column on a shared chronological-order
- * axis — NOT time-proportionate. Column index N = the Nth entry in the
- * backend-sorted array (startAt ASC NULLS LAST). A multi-character entry
- * renders one card per participant lane, all at the same column index, so they
- * auto-align vertically (the "convergence" reading) with no connectors.
+ * axis — NOT time-proportionate. Column index N = the Nth distinct time in
+ * the backend-sorted array (startAt ASC NULLS LAST). Entries sharing a
+ * `startAt` collapse into ONE column; within a lane's cell, ONE card paginates
+ * through the stacked entries. A multi-character entry renders one card per
+ * participant lane, all at the same column index, so they auto-align
+ * vertically (the "convergence" reading) with no connectors.
  *
  * Layout is pure CSS Grid with explicit cell placement — no hand-rolled
- * coordinate math, no SVG geometry. Zero-participant entries drop into a bottom
- * "Unassigned" lane; undated entries occupy the right-end "Undated" zone
- * (already last in the sorted array) marked by a visual divider.
+ * coordinate math, no SVG geometry. Zero-participant entries drop into a
+ * bottom "Unassigned" lane; undated entries occupy the right-end "Undated"
+ * zone (already last in the sorted array) marked by a visual divider.
  */
 function TimelineGrid({
   entries,
@@ -70,82 +80,122 @@ function TimelineGrid({
     return m;
   }, [visibleLanes]);
 
-  // Entries WITH participants but where every participant's lane is hidden (or
-  // unrecognized). Without intervention these would produce zero cards yet still
-  // occupy a column — an unexplained empty cell. They are surfaced as distinct
-  // placeholders in the Unassigned lane (Issue 1).
-  const hiddenParticipantEntries = useMemo(() => {
-    const hidden: TimelineEntry[] = [];
+  // Group entries by distinct startAt, preserving first-occurrence order from
+  // the already-sorted array (startAt ASC NULLS LAST). All null-startAt entries
+  // collapse into a single undated bucket. One column per group.
+  const groups = useMemo(() => {
+    const result: EntryGroup[] = [];
+    const indexByKey = new Map<string, number>();
     for (const entry of entries) {
-      if (entry.participants.length === 0) continue;
-      const anyVisible = entry.participants.some((name) => {
-        const laneId = nameToLaneId.get(name);
-        return !!laneId && laneRow.has(laneId);
-      });
-      if (!anyVisible) hidden.push(entry);
+      const isUndated = entry.startAt === null;
+      const key = entry.startAt ?? UNDATED_KEY;
+      const idx = indexByKey.get(key);
+      if (idx !== undefined) {
+        result[idx].entries.push(entry);
+      } else {
+        indexByKey.set(key, result.length);
+        result.push({ key, entries: [entry], isUndated });
+      }
     }
-    return hidden;
-  }, [entries, nameToLaneId, laneRow]);
-
-  const hasUnassignedLane =
-    entries.some((e) => e.participants.length === 0) ||
-    hiddenParticipantEntries.length > 0;
-  const unassignedRow = visibleLanes.length + 2; // row 1 = header
-
-  // Index of the first undated entry — the boundary of the "Undated" zone.
-  const undatedStartCol = useMemo(() => {
-    const idx = entries.findIndex((e) => e.startAt === null);
-    return idx >= 0 ? idx + 2 : -1; // +2: label col + 1-based
+    return result;
   }, [entries]);
 
-  // Flat placement list: one card per (entry × participant-lane). This is what
-  // gives multi-character entries their per-lane cards at a shared column.
+  // True when ANY entry is zero-participant OR has only hidden-participant
+  // lanes. Such entries surface in a bottom "Unassigned" lane so their column
+  // isn't an unexplained empty cell.
+  const hasUnassignedLane = useMemo(
+    () =>
+      entries.some((e) => {
+        if (e.participants.length === 0) return true;
+        return !e.participants.some((name) => {
+          const laneId = nameToLaneId.get(name);
+          return !!laneId && laneRow.has(laneId);
+        });
+      }),
+    [entries, nameToLaneId, laneRow],
+  );
+
+  const unassignedRow = visibleLanes.length + 2; // row 1 = header
+
+  // Index of the first undated group — the boundary of the "Undated" zone.
+  const undatedStartCol = useMemo(() => {
+    const idx = groups.findIndex((g) => g.isUndated);
+    return idx >= 0 ? idx + 2 : -1; // +2: label col + 1-based
+  }, [groups]);
+
+  // Flat placement list: ONE card per (group × lane) cell, carrying the
+  // cell's stacked entries. This is what gives multi-character entries their
+  // per-lane cards at a shared column, and collapses same-time entries into
+  // one paginated card.
   const placements = useMemo(() => {
     const cards: Array<{
       key: string;
-      entry: TimelineEntry;
+      entries: TimelineEntry[];
       row: number;
       col: number;
       hidden?: boolean;
     }> = [];
-    entries.forEach((entry, colIdx) => {
-      const col = colIdx + 2; // col 1 = lane labels
-      if (entry.participants.length === 0) {
-        if (hasUnassignedLane) {
+
+    for (const lane of visibleLanes) {
+      const row = laneRow.get(lane.characterId);
+      if (row === undefined) continue;
+      groups.forEach((group, colIdx) => {
+        const col = colIdx + 2;
+        const cellEntries = group.entries.filter((e) =>
+          e.participants.some(
+            (name) => nameToLaneId.get(name) === lane.characterId,
+          ),
+        );
+        if (cellEntries.length > 0) {
           cards.push({
-            key: `${entry.id}-${col}`,
-            entry,
-            row: unassignedRow,
+            key: `${group.key}-${lane.characterId}-${col}`,
+            entries: cellEntries,
+            row,
             col,
           });
         }
-        return;
-      }
-      const placedRows = new Set<number>();
-      for (const name of entry.participants) {
-        const laneId = nameToLaneId.get(name);
-        if (!laneId) continue;
-        const row = laneRow.get(laneId);
-        if (row === undefined || placedRows.has(row)) continue;
-        placedRows.add(row);
-        cards.push({ key: `${entry.id}-${row}-${col}`, entry, row, col });
-      }
-      // All participants hidden — surface a distinct placeholder in the
-      // Unassigned lane so the column isn't an unexplained empty cell.
-      if (placedRows.size === 0 && hasUnassignedLane) {
+      });
+    }
+
+    // Unassigned lane: zero-participant entries + all-hidden-participant entries.
+    if (hasUnassignedLane) {
+      groups.forEach((group, colIdx) => {
+        const col = colIdx + 2;
+        const unassignedEntries = group.entries.filter((e) => {
+          if (e.participants.length === 0) return true;
+          return !e.participants.some((name) => {
+            const laneId = nameToLaneId.get(name);
+            return !!laneId && laneRow.has(laneId);
+          });
+        });
+        if (unassignedEntries.length === 0) return;
+        // Mark `hidden` when EVERY entry in the cell is an all-hidden-participant
+        // entry (has participants but none visible) — uses the dashed placeholder.
+        // A cell with any zero-participant entry renders as a normal card.
+        const allHidden = unassignedEntries.every(
+          (e) => e.participants.length > 0,
+        );
         cards.push({
-          key: `${entry.id}-hidden-${col}`,
-          entry,
+          key: `${group.key}-unassigned-${col}`,
+          entries: unassignedEntries,
           row: unassignedRow,
           col,
-          hidden: true,
+          hidden: allHidden || undefined,
         });
-      }
-    });
-    return cards;
-  }, [entries, hasUnassignedLane, unassignedRow, nameToLaneId, laneRow]);
+      });
+    }
 
-  const n = entries.length;
+    return cards;
+  }, [
+    groups,
+    visibleLanes,
+    laneRow,
+    nameToLaneId,
+    hasUnassignedLane,
+    unassignedRow,
+  ]);
+
+  const n = groups.length;
   const contentRowCount = visibleLanes.length + (hasUnassignedLane ? 1 : 0);
 
   if (contentRowCount === 0) {
@@ -164,9 +214,41 @@ function TimelineGrid({
   return (
     <div className="overflow-x-auto rounded-lg border">
       <div
-        className="grid gap-1 p-1"
+        className="relative z-0 grid gap-1 p-1"
         style={{ gridTemplateColumns, gridTemplateRows }}
       >
+        {/* ─── Guide lines (graph-paper feel) ─────────────────────────────── */}
+        {/* Vertical column rules — PRIMARY time-axis aid. One per entry column,
+            full height, behind cards. Skip the undated-boundary column (the
+            heavier dashed divider marks it) and the label column (label cells
+            carry their own border-r). */}
+        {groups.map((_, colIdx) => {
+          const col = colIdx + 2;
+          if (col === undatedStartCol) return null;
+          return (
+            <div
+              key={`vrule-${col}`}
+              aria-hidden
+              className={cn(
+                "pointer-events-none border-l border-border/30 -z-10",
+                col >= undatedStartCol && undatedStartCol > 0 && "bg-muted/20",
+              )}
+              style={{ gridColumn: col, gridRow: "1 / -1" }}
+            />
+          );
+        })}
+        {/* Horizontal lane separators — secondary, very subtle. One per content
+            row boundary, full width, behind cards. */}
+        {Array.from({ length: contentRowCount }).map((_, i) => (
+          <div
+            key={`hsep-${i}`}
+            aria-hidden
+            className="pointer-events-none border-t border-border/20 -z-10"
+            style={{ gridColumn: "1 / -1", gridRow: i + 2 }}
+          />
+        ))}
+
+        {/* ─── Header ─────────────────────────────────────────────────────── */}
         {/* Header corner */}
         <div
           className="sticky left-0 z-10 flex items-center bg-background px-2 text-[0.6875rem] font-medium uppercase tracking-wide text-muted-foreground/70"
@@ -175,13 +257,14 @@ function TimelineGrid({
           {t("axis.time")}
         </div>
 
-        {/* Header axis: one time cell per entry column */}
-        {entries.map((entry, colIdx) => {
+        {/* Header axis: one time cell per GROUP column */}
+        {groups.map((group, colIdx) => {
           const col = colIdx + 2;
           const isUndatedBoundary = col === undatedStartCol;
+          const first = group.entries[0];
           return (
             <div
-              key={`h-${entry.id}`}
+              key={`h-${group.key}`}
               className={cn(
                 "flex min-w-0 items-center px-1.5 text-[0.6875rem] text-muted-foreground",
                 col >= undatedStartCol && undatedStartCol > 0 && "bg-muted/30",
@@ -194,8 +277,8 @@ function TimelineGrid({
                 </span>
               )}
               <span className="min-w-0 truncate">
-                {entry.startAt ? (
-                  <FormattedTime iso={entry.startAt} />
+                {first.startAt ? (
+                  <FormattedTime iso={first.startAt} />
                 ) : (
                   t("card.undated")
                 )}
@@ -204,7 +287,7 @@ function TimelineGrid({
           );
         })}
 
-        {/* Lane labels (sticky left so they stay visible during horizontal scroll) */}
+        {/* ─── Lane labels (sticky left) ──────────────────────────────────── */}
         {visibleLanes.map((lane, i) => (
           <div
             key={`lab-${lane.characterId}`}
@@ -230,30 +313,20 @@ function TimelineGrid({
           </div>
         )}
 
-        {/* Cards */}
-        {placements.map(({ key, entry, row, col, hidden }) => (
+        {/* ─── Cards ──────────────────────────────────────────────────────── */}
+        {placements.map(({ key, entries: cellEntries, row, col, hidden }) => (
           <div
             key={key}
-            className="min-w-0"
+            className="relative min-w-0"
             style={{ gridColumn: col, gridRow: row }}
           >
             {hidden ? (
-              <div
-                title={t("card.lanesHidden")}
-                className="flex h-full w-full flex-col items-center justify-center gap-1 rounded-md border border-dashed border-muted-foreground/30 bg-muted/20 p-2 text-center opacity-70"
-              >
-                <span className="min-w-0 w-full truncate text-[0.6875rem] font-medium text-muted-foreground">
-                  {entry.name}
-                </span>
-                <span className="text-[0.5625rem] text-muted-foreground/70">
-                  {t("kind." + entry.kind)}
-                </span>
-              </div>
+              <HiddenStackPlaceholder entries={cellEntries} />
             ) : (
               <TimelineEntryCard
-                entry={entry}
-                canOpenDetail={canOpenDetail(entry)}
-                onOpenDetail={() => onOpenDetail(entry)}
+                entries={cellEntries}
+                canOpenDetail={canOpenDetail}
+                onOpenDetail={onOpenDetail}
               />
             )}
           </div>
@@ -268,6 +341,38 @@ function TimelineGrid({
           />
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Lightweight stack-aware placeholder for cells where every entry's
+ * participant lanes are hidden. No popover — just the current entry's name +
+ * kind + a count pill when multiple, with the dashed "hidden" treatment.
+ */
+function HiddenStackPlaceholder({ entries }: { entries: TimelineEntry[] }) {
+  const { t } = useTranslation("timeline");
+  const current = entries[0];
+  const isMultiple = entries.length > 1;
+
+  return (
+    <div
+      title={t("card.lanesHidden")}
+      className="flex h-full w-full flex-col items-center justify-center gap-1 rounded-md border border-dashed border-muted-foreground/30 bg-muted/20 p-2 text-center opacity-70"
+    >
+      <div className="flex w-full items-center gap-1">
+        <span className="min-w-0 flex-1 truncate text-[0.6875rem] font-medium text-muted-foreground">
+          {current.name}
+        </span>
+        {isMultiple && (
+          <span className="shrink-0 rounded bg-muted px-1 text-[0.625rem] font-medium text-muted-foreground">
+            ×{entries.length}
+          </span>
+        )}
+      </div>
+      <span className="text-[0.5625rem] text-muted-foreground/70">
+        {t(`kind.${current.kind}`)}
+      </span>
     </div>
   );
 }

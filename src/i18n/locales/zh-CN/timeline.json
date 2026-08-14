@@ -16,7 +16,9 @@
     "from": "起",
     "to": "止",
     "includeScenes": "场景",
-    "clear": "清除筛选"
+    "clear": "清除筛选",
+    "search": "搜索…",
+    "noResults": "无匹配项"
   },
   "lane": {
     "selector": "泳道",
@@ -24,7 +26,10 @@
     "selectNone": "没有可用角色",
     "participationCount": "{{count}} 条",
     "unassigned": "未分配",
-    "selected": "已选 {{count}}"
+    "selected": "已选 {{count}}",
+    "viewCharacter": "查看角色",
+    "aliasLabel": "别名",
+    "appearsIn": "出现于 {{count}} 条记录"
   },
   "axis": {
     "time": "时间",
@@ -38,11 +43,16 @@
     "narratedBy": "叙事于",
     "narrates": "叙述",
     "novel": "小说",
-    "undated": "未定时"
+    "undated": "未定时",
+    "multiple": "多条记录"
   },
   "popover": {
     "openDetail": "查看详情",
-    "openDetailDisabled": "章节未关联"
+    "openDetailDisabled": "章节未关联",
+    "entryOf": "{{current}} / {{total}}",
+    "multipleHint": "{{count}} 条记录共享此时间",
+    "prev": "上一条",
+    "next": "下一条"
   },
   "kind": {
     "event": "事件",
