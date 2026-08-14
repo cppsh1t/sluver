@@ -16,6 +16,7 @@
 
 import { getTimeMapper } from "@/api/world-config";
 import { logger } from "@/lib/logger";
+import { DEFAULT_TEMPLATE } from "@/lib/timemapper-template";
 import type { SpaceId, WorldId } from "@/types";
 import { TimeMapperError, type FormatResult } from "./format";
 import type { InboundMessage, OutboundMessage } from "./worker";
@@ -161,10 +162,17 @@ function ensureLoaded(): Promise<void> {
     const { spaceId, worldId } = state;
     try {
       const config = await getTimeMapper(spaceId, worldId);
-      state.mapperCode = config === null ? null : config.code;
+      // No mapper saved → use the DEFAULT_TEMPLATE so the default formatter
+      // (YYYY-MM-DD HH:mm:ss, host local) is actually active. The template is
+      // the default mapper; saving custom code overrides it. Only the unbound
+      // case (no spaceId/worldId, handled above) and IPC failure stay `null`
+      // (raw-ISO passthrough).
+      state.mapperCode = config === null ? DEFAULT_TEMPLATE : config.code;
     } catch (e) {
-      // IPC failure (e.g. World vanished) — degrade to passthrough rather
-      // than blocking every timestamp render.
+      // IPC failure (e.g. World vanished) — degrade to passthrough (raw ISO)
+      // rather than blocking every timestamp render. We do NOT fall back to
+      // the template here: a read failure means we can't confirm state, so the
+      // conservative passthrough is safer than silently running code.
       logger.warn("timemapper.load.failed", { error: String(e) });
       state.mapperCode = null;
     }
@@ -232,8 +240,10 @@ async function format(iso: string): Promise<FormatResult> {
 
   await ensureLoaded();
 
-  // No mapper configured → render raw ISO. The "none" fact is cached in
-  // `state` (loaded + mapperCode === null), so this never hits the worker.
+  // Not bound to a World, or the load IPC failed → render raw ISO. The
+  // "default template" fallback is applied in `ensureLoaded` (so a saved-null
+  // World still gets the default formatter); `null` here means only the
+  // unbound / IPC-failure case, which stays passthrough.
   if (state.mapperCode === null) {
     return { ok: true, display: iso };
   }
