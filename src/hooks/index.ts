@@ -122,3 +122,5 @@ export {
 } from "./use-scene-images";
 
 export { useEntityImageBytes } from "./use-entity-image";
+
+export { timelineKeys, useTimeline, useTimelineLanes } from "./use-timeline";
