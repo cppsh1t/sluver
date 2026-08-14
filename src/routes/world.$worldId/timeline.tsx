@@ -74,15 +74,32 @@ function TimelinePage() {
   );
 
   const locationOptions: TimelineFilterOption[] = useMemo(
-    () => locations.map((l) => ({ id: l.id, label: l.name })),
+    () =>
+      locations.map((l) => ({
+        id: l.id,
+        label: l.name,
+        description: l.description,
+        avatarKind: "location" as const,
+      })),
     [locations],
   );
   const novelOptions: TimelineFilterOption[] = useMemo(
-    () => novels.map((n) => ({ id: n.id, label: n.title })),
+    () =>
+      novels.map((n) => ({
+        id: n.id,
+        label: n.title,
+        description: n.description,
+      })),
     [novels],
   );
   const itemOptions: TimelineFilterOption[] = useMemo(
-    () => items.map((i) => ({ id: i.id, label: i.name })),
+    () =>
+      items.map((i) => ({
+        id: i.id,
+        label: i.name,
+        description: i.description,
+        avatarKind: "item" as const,
+      })),
     [items],
   );
 
@@ -252,6 +269,8 @@ function TimelinePage() {
               onToggle={handleToggleLane}
             />
           }
+          spaceId={spaceId}
+          worldId={wid}
         />
 
         {/* Truncation banner */}
