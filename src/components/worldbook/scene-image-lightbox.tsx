@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowLeft02Icon, ArrowRight02Icon } from "@hugeicons/core-free-icons";
+import { ArrowLeft02Icon, ArrowRight02Icon, Cancel01Icon } from "@hugeicons/core-free-icons";
 
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -101,16 +102,28 @@ export function SceneImageLightbox({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        // Override the default small white popup: a near-fullscreen dark
-        // surface so the artwork reads against a neutral surround.
-        showCloseButton
-        className="grid gap-0 overflow-hidden bg-background/95 p-0 sm:max-w-5xl"
+        // Frameless popup: the image floats on the dialog's blurred backdrop
+        // with no panel around it.
+        showCloseButton={false}
+        className="grid gap-0 overflow-hidden rounded-none bg-transparent p-0 ring-0 sm:max-w-5xl"
       >
         <DialogTitle className="sr-only">
           {t("novel:scene.images.lightboxTitle")}
         </DialogTitle>
 
-        <div className="relative flex items-center justify-center bg-black/90 p-2">
+        <DialogClose
+          render={
+            <button
+              type="button"
+              aria-label={t("common:actions.close")}
+              className="absolute right-3 top-3 z-10 flex size-9 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-sm transition-colors hover:bg-black/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+            />
+          }
+        >
+          <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} className="size-5" />
+        </DialogClose>
+
+        <div className="relative flex items-center justify-center">
           {/* Image stage — bounded so prev/next arrows sit clear of the art. */}
           <div className="flex min-h-[40vh] w-full items-center justify-center">
             {url ? (
@@ -122,7 +135,7 @@ export function SceneImageLightbox({
             ) : (
               <div
                 className={cn(
-                  "flex h-64 w-64 items-center justify-center rounded-md bg-muted/20",
+                  "flex h-64 w-64 items-center justify-center rounded-md bg-white/10",
                   isLoading && "animate-pulse",
                 )}
                 aria-hidden="true"
@@ -156,7 +169,7 @@ export function SceneImageLightbox({
 
         {/* Position counter — only meaningful when there's more than one. */}
         {images.length > 1 && (
-          <div className="flex justify-center bg-background py-1.5 text-xs text-muted-foreground">
+          <div className="mt-2 rounded-full bg-black/50 px-3 py-1 text-xs text-white/80 backdrop-blur-sm">
             {t("novel:scene.images.counter", {
               current: index + 1,
               total: images.length,
