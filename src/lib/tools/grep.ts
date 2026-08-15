@@ -30,6 +30,7 @@ import type { ToolDef } from "./types";
 interface GrepToolInput {
   query: string;
   entityTypes?: GrepEntityType[];
+  offset?: number;
 }
 
 const inputSchema = z.object({
@@ -43,6 +44,14 @@ const inputSchema = z.object({
     .describe(
       "Optional scope filter — entity types to search. Omit to sweep the full corpus.",
     ),
+  offset: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe(
+      "Pagination offset in groups. One call returns the 50 hottest groups; when truncated is true, pass 50, 100, … to walk subsequent pages. Ordering is deterministic, so pages are stable.",
+    ),
 });
 
 /** Grep tool, keyed by `snake_case` name. */
@@ -51,15 +60,16 @@ export function grepTools(): Record<string, ToolDef> {
     grep: {
       description:
         "Search for a substring across ALL author-written text in the current world — characters, phases (appearance/description/conversation_style), locations, items, lore, events, novels, chapters, and scene prose — " +
-        "returning occurrence evidence: match counts plus before/match/after context snippets grouped by (entity, field), sorted by match count descending and capped at 50 groups (a truncated flag signals the cap). " +
+        "returning occurrence evidence: match counts plus before/match/after context snippets grouped by (entity, field), sorted by match count descending. " +
+        "Results are paginated: one call returns up to 50 groups (groupCount carries the full total); when truncated is true and completeness matters, pass offset (50, 100, …) to fetch the next stable page. " +
         'Use it to answer "where does this text occur?" — motif tracking, consistency checks across entity descriptions. ' +
         'For entity discovery ("which entities match a name/description?") use the per-entity search_* tools instead. ' +
         "Optionally narrow the scope with entityTypes (e.g. [\"scene\"] to search prose only).",
       inputSchema,
       consentLevel: "auto",
       execute: async (input, ctx) => {
-        const { query, entityTypes } = input as GrepToolInput;
-        return grep(ctx.spaceId, ctx.worldId, query, entityTypes);
+        const { query, entityTypes, offset } = input as GrepToolInput;
+        return grep(ctx.spaceId, ctx.worldId, query, entityTypes, offset);
       },
     },
   };
