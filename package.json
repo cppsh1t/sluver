@@ -55,6 +55,7 @@
     "ai-gateway-provider": "^3.2.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
     "codemirror": "^6.0.2",
     "dayjs": "^1.11.21",
     "i18next": "^26.3.6",
