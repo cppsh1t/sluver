@@ -75,6 +75,11 @@ function TimelinePage() {
   // ─── Filter state → TimelineQuery ─────────────────────────────────────────
   const [filters, setFilters] = useState<TimelineFilters>(DEFAULT_FILTERS);
 
+  // ─── View state: column density ───────────────────────────────────────────
+  // `sparse` lays columns out on a real time scale (see TimelineGrid) so time
+  // density is perceptible; default `false` keeps the uniform compact grid.
+  const [sparse, setSparse] = useState(false);
+
   const query = useMemo<TimelineQuery>(
     () => ({
       locationId: filters.locationId ?? undefined,
@@ -179,8 +184,11 @@ function TimelinePage() {
   const showEmptyState = !isLoading && entries.length === 0;
 
   return (
-    <div className="flex flex-1 flex-col overflow-y-auto">
-      <div className="mx-auto w-full max-w-7xl px-4 py-10">
+    // The page NEVER scrolls as a whole — the header/toolbar chrome is fixed
+    // and the timeline body fills the remaining height, scrolling internally.
+    <div className="flex flex-1 flex-col overflow-hidden">
+      {/* Fixed chrome: header + toolbar + banner */}
+      <div className="shrink-0 px-6 pt-6">
         {/* Header */}
         <div className="mb-6 flex items-end justify-between gap-4">
           <div>
@@ -191,29 +199,65 @@ function TimelinePage() {
               {t("timeline:subtitle")}
             </p>
           </div>
-          {/* Mode toggle — Scale view reserved but disabled (ADR-0034 MVP) */}
-          <div
-            className="flex rounded-md bg-muted p-0.5"
-            role="group"
-            aria-label={t("timeline:title")}
-          >
-            <button
-              type="button"
-              aria-pressed={true}
-              className="flex items-center gap-1 rounded-sm bg-background px-3 py-1 text-xs font-medium shadow-sm"
+          <div className="flex items-center gap-2">
+            {/* Mode toggle — Scale view reserved but disabled (ADR-0034 MVP) */}
+            <div
+              className="flex rounded-md bg-muted p-0.5"
+              role="group"
+              aria-label={t("timeline:title")}
             >
-              <HugeiconsIcon icon={Time03Icon} strokeWidth={2} className="size-3.5" />
-              {t("timeline:mode.swimlane")}
-            </button>
-            <button
-              type="button"
-              disabled
-              aria-pressed={false}
-              title={t("timeline:mode.scaleTooltip")}
-              className="flex cursor-not-allowed items-center gap-1 rounded-sm px-3 py-1 text-xs font-medium text-muted-foreground/50"
+              <button
+                type="button"
+                aria-pressed={true}
+                className="flex items-center gap-1 rounded-sm bg-background px-3 py-1 text-xs font-medium shadow-sm"
+              >
+                <HugeiconsIcon icon={Time03Icon} strokeWidth={2} className="size-3.5" />
+                {t("timeline:mode.swimlane")}
+              </button>
+              <button
+                type="button"
+                disabled
+                aria-pressed={false}
+                title={t("timeline:mode.scaleTooltip")}
+                className="flex cursor-not-allowed items-center gap-1 rounded-sm px-3 py-1 text-xs font-medium text-muted-foreground/50"
+              >
+                {t("timeline:mode.scale")}
+              </button>
+            </div>
+            {/* Column density: compact (uniform) vs sparse (real time scale) */}
+            <div
+              className="flex rounded-md bg-muted p-0.5"
+              role="group"
+              aria-label={t("timeline:density.label")}
             >
-              {t("timeline:mode.scale")}
-            </button>
+              <button
+                type="button"
+                aria-pressed={!sparse}
+                onClick={() => setSparse(false)}
+                className={cn(
+                  "flex items-center gap-1 rounded-sm px-3 py-1 text-xs font-medium transition-colors",
+                  !sparse
+                    ? "bg-background shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {t("timeline:density.compact")}
+              </button>
+              <button
+                type="button"
+                aria-pressed={sparse}
+                onClick={() => setSparse(true)}
+                title={t("timeline:density.sparseTooltip")}
+                className={cn(
+                  "flex items-center gap-1 rounded-sm px-3 py-1 text-xs font-medium transition-colors",
+                  sparse
+                    ? "bg-background shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {t("timeline:density.sparse")}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -254,8 +298,14 @@ function TimelinePage() {
             })}
           </div>
         )}
+      </div>
 
-        {/* Body */}
+      {/* Timeline body — fills the remaining height. The grid scrolls
+          internally (vertical: hidden scrollbar at the grid root; horizontal:
+          pane). The wrapper itself stays scrollable so the skeleton / empty
+          states remain reachable on short windows (the grid fits it exactly,
+          so no double scrollbar ever appears). */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
         {isLoading ? (
           <TimelineSkeleton />
         ) : showEmptyState && hasActiveFilters ? (
@@ -300,6 +350,7 @@ function TimelinePage() {
             charactersById={charactersById}
             spaceId={spaceId}
             worldId={wid}
+            sparse={sparse}
             canOpenDetail={canOpenDetail}
             onOpenDetail={handleOpenDetail}
           />

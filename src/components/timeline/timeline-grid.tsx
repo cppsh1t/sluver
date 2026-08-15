@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { FormattedTime } from "@/components/timemapper/formatted-time";
@@ -14,6 +14,13 @@ interface TimelineGridProps {
   charactersById: Map<string, Character>;
   spaceId: string;
   worldId: WorldId;
+  /**
+   * Sparse (real-time-scale) column layout. `false` (default) = uniform
+   * columns — chronological ORDER only, no time density. `true` = each
+   * column keeps a readable base width plus spacing proportional to the
+   * time elapsed since the previous column, on a linear px/day scale.
+   */
+  sparse: boolean;
   canOpenDetail: (entry: TimelineEntry) => boolean;
   onOpenDetail: (entry: TimelineEntry) => void;
 }
@@ -22,6 +29,22 @@ interface TimelineGridProps {
 const LANE_LABEL_COL = "14rem";
 /** Fixed min width of each entry column. */
 const ENTRY_COL_MIN = "13rem";
+/**
+ * Nominal px-per-rem, used ONLY to convert the human-friendly px/day scale
+ * below into rem units. Matches the default root font size (16px).
+ */
+const PX_PER_REM = 16;
+/** Sparse-mode base column width, in rem — single source of truth; the
+ *  compact min width above (`13rem`) matches this by convention. */
+const SPARSE_BASE_REM = 13;
+/** Sparse mode: CSS pixels per in-world day (the linear time scale). */
+const SPARSE_PX_PER_DAY = 1;
+/**
+ * Sparse mode: total budget for gap-induced extra width (in rem; ≈8000px).
+ * Caps pathological spans (e.g. one lore event millennia before the story
+ * cluster) so the grid can never balloon to browser-breaking widths.
+ */
+const SPARSE_GAP_BUDGET_REM = 500;
 /** Fixed header (time-axis) row height. */
 const HEADER_ROW = "2.25rem";
 /** Fixed per-lane row height. Fixed (not `auto`) so the frozen label pane and
@@ -55,6 +78,15 @@ interface EntryGroup {
  * aligned with their cards without relying on `position: sticky` (which is
  * unreliable on grid items — its travel can be bounded by the grid area).
  *
+ * SCROLL MODEL: the page never scrolls. The grid ROOT is the only vertical
+ * scroll container (hidden scrollbar — wheel still works): the panes size to
+ * their content (`items-start` + `min-h-full`) so vertical overflow always
+ * lands in the root and wheel events chain up from the pane — this keeps both
+ * panes (labels + cards) locked in vertical sync. HORIZONTAL scrolling lives
+ * on the time-columns pane only (so the label pane stays frozen), and is also
+ * drivable by dragging any blank area of that pane (pointer-capture drag-pan;
+ * cards/buttons are excluded so their popovers keep normal behavior).
+ *
  * Zero-participant entries drop into a bottom "Unassigned" lane; undated
  * entries occupy the right-end "Undated" zone marked by a visual divider.
  */
@@ -65,6 +97,7 @@ function TimelineGrid({
   charactersById,
   spaceId,
   worldId,
+  sparse,
   canOpenDetail,
   onOpenDetail,
 }: TimelineGridProps) {
@@ -133,6 +166,93 @@ function TimelineGrid({
     const idx = groups.findIndex((g) => g.isUndated);
     return idx >= 0 ? idx + 1 : -1;
   }, [groups]);
+
+  // ─── Sparse (real-time-scale) column widths ───────────────────────────────
+  // Per-column widths (rem) on a LINEAR time scale: every column keeps a
+  // readable base width; the space BEFORE each column grows with the time
+  // elapsed since the previous group, so time density is perceptible.
+  // Returns `null` (→ dense uniform template) when sparse is off, when there
+  // are fewer than two dated groups, or when any timestamp fails to parse.
+  const sparseWidths = useMemo<string[] | null>(() => {
+    if (!sparse) return null;
+    const times = groups.map((g) =>
+      g.isUndated ? null : Date.parse(g.entries[0].startAt ?? ""),
+    );
+    if (times.some((t) => t !== null && Number.isNaN(t))) return null;
+    const dated = times.filter((t): t is number => t !== null);
+    if (dated.length < 2) return null;
+    const span = Math.max(...dated) - Math.min(...dated);
+    if (span <= 0) return null;
+    // Shrink the scale when the span would blow the gap budget (e.g. lore
+    // millennia before the story cluster). Relative proportions are preserved.
+    const remPerMs = Math.min(
+      SPARSE_PX_PER_DAY / PX_PER_REM / 86_400_000,
+      SPARSE_GAP_BUDGET_REM / span,
+    );
+    let prev: number | null = null;
+    return groups.map((_, i) => {
+      const t = times[i];
+      if (t === null) return `${SPARSE_BASE_REM}rem`; // undated keeps fixed width
+      const gap = prev === null ? 0 : t - prev;
+      prev = t;
+      return `${Math.round((SPARSE_BASE_REM + Math.max(0, gap) * remPerMs) * 100) / 100}rem`;
+    });
+  }, [groups, sparse]);
+
+  // ─── Drag-to-pan (horizontal, blank areas of the scroll pane) ─────────────
+  const rootRef = useRef<HTMLDivElement>(null); // vertical scroll container
+  const paneRef = useRef<HTMLDivElement>(null); // horizontal scroll pane
+  const dragRef = useRef<{
+    pointerId: number;
+    lastX: number;
+    lastY: number;
+  } | null>(null);
+  const [isPanning, setIsPanning] = useState(false);
+
+  function handlePanePointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (e.button !== 0) return;
+    const pane = paneRef.current;
+    if (!pane) return;
+    const target = e.target as HTMLElement;
+    // Only blank timeline areas — cards, buttons, links and form controls
+    // keep their normal click/popover behavior.
+    if (target.closest("button, a, input, textarea, select")) return;
+    // preventDefault() on pointerdown suppresses the native mousedown that
+    // would move focus, so blur the active element manually — restores the
+    // click-away blur users expect from the toolbar inputs above.
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    dragRef.current = { pointerId: e.pointerId, lastX: e.clientX, lastY: e.clientY };
+    pane.setPointerCapture(e.pointerId);
+    // Suppress the text selection a native drag would otherwise start.
+    e.preventDefault();
+    setIsPanning(true);
+  }
+
+  function handlePanePointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current;
+    const pane = paneRef.current;
+    if (!drag || !pane || e.pointerId !== drag.pointerId) return;
+    const dx = e.clientX - drag.lastX;
+    const dy = e.clientY - drag.lastY;
+    drag.lastX = e.clientX;
+    drag.lastY = e.clientY;
+    pane.scrollLeft -= dx;
+    // Vertical component follows the drag too, feeding the root container.
+    if (rootRef.current) rootRef.current.scrollTop -= dy;
+  }
+
+  function handlePanePointerEnd(e: React.PointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current;
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    dragRef.current = null;
+    setIsPanning(false);
+    const pane = paneRef.current;
+    if (pane?.hasPointerCapture(e.pointerId)) {
+      pane.releasePointerCapture(e.pointerId);
+    }
+  }
 
   // Flat placement list: ONE card per (group × lane) cell, carrying the
   // cell's stacked entries. `col` is the scroll-pane column (1-based).
@@ -221,13 +341,29 @@ function TimelineGrid({
   // with their cards. Fixed lane-row height (no `auto`) is what makes the two
   // independent grids stay in sync.
   const rowsTemplate = `${HEADER_ROW} repeat(${contentRowCount}, ${LANE_ROW})`;
-  const scrollCols = `repeat(${n}, minmax(${ENTRY_COL_MIN}, 1fr))`;
+  const scrollCols = sparseWidths
+    ? sparseWidths.join(" ")
+    : `repeat(${n}, minmax(${ENTRY_COL_MIN}, 1fr))`;
+
+  // Sparse-mode card width — the base track width constant (rem-based so it
+  // can never drift from the column template).
+  const sparseCardWidth = sparseWidths ? `${SPARSE_BASE_REM}rem` : undefined;
 
   return (
-    <div className="flex overflow-hidden rounded-lg border">
+    // Root = the ONLY vertical scroll container (page never scrolls).
+    // Scrollbar hidden — wheel scrolling still works. `items-start` +
+    // `min-h-full` on the panes keep them content-height when the grid is
+    // taller than the viewport (so vertical overflow always lands HERE and
+    // the wheel chains up from the pane) while still filling the root when
+    // the grid is shorter — without this, the `overflow-x-auto` pane would
+    // become a second vertical scroller and desync the frozen labels.
+    <div
+      ref={rootRef}
+      className="flex h-full min-h-0 items-start overflow-y-auto scrollbar-none rounded-lg border"
+    >
       {/* ─── Frozen lane-label pane (never scrolls horizontally) ──────────── */}
       <div
-        className="shrink-0 border-r bg-background"
+        className="min-h-full shrink-0 border-r bg-background"
         style={{ width: LANE_LABEL_COL }}
       >
         <div
@@ -272,8 +408,21 @@ function TimelineGrid({
 
       {/* ─── Scrollable time-columns pane ────────────────────────────────── */}
       {/* min-w-0 lets this flex child shrink below its content so the inner
-          grid can actually overflow and scroll horizontally. */}
-      <div className="min-w-0 flex-1 overflow-x-auto">
+          grid can actually overflow and scroll horizontally. min-h-full (NOT
+          h-full) lets the pane grow past the root's height so vertical
+          overflow always belongs to the root scroller. Dragging blank areas
+          pans horizontally (vertical drag feeds the root scroller). */}
+      <div
+        ref={paneRef}
+        onPointerDown={handlePanePointerDown}
+        onPointerMove={handlePanePointerMove}
+        onPointerUp={handlePanePointerEnd}
+        onPointerCancel={handlePanePointerEnd}
+        className={cn(
+          "min-h-full min-w-0 flex-1 overflow-x-auto",
+          isPanning ? "cursor-grabbing select-none" : "cursor-grab",
+        )}
+      >
         <div
           className="grid gap-1 p-1"
           style={{
@@ -345,7 +494,14 @@ function TimelineGrid({
             <div
               key={key}
               className="relative min-w-0"
-              style={{ gridColumn: col, gridRow: row }}
+              style={{
+                gridColumn: col,
+                gridRow: row,
+                // Sparse mode: columns carry the time gap as trailing space;
+                // anchor the card to the column's left edge (the time point)
+                // at the base card width instead of stretching it.
+                width: sparseCardWidth,
+              }}
             >
               {hidden ? (
                 <HiddenStackPlaceholder entries={cellEntries} />

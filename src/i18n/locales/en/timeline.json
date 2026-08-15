@@ -6,6 +6,12 @@
     "scale": "Scale",
     "scaleTooltip": "Scale (proportional) view — coming soon"
   },
+  "density": {
+    "label": "Spacing",
+    "compact": "Compact",
+    "sparse": "Sparse",
+    "sparseTooltip": "Space entries by real time intervals"
+  },
   "filter": {
     "location": "Location",
     "locationAll": "All locations",

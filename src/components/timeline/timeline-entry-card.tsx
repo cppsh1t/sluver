@@ -70,7 +70,7 @@ function TimelineEntryCard({
           <button
             type="button"
             className={cn(
-              "relative flex h-full w-full flex-col gap-1 rounded-md border bg-card p-2 text-left outline-none transition-colors",
+              "relative flex h-full w-full cursor-pointer flex-col gap-1 rounded-md border bg-card p-2 text-left outline-none transition-colors",
               "hover:border-primary/40 hover:bg-accent/40",
               "focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30",
             )}

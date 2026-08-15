@@ -6,6 +6,12 @@
     "scale": "比例",
     "scaleTooltip": "比例视图（按时长）— 即将推出"
   },
+  "density": {
+    "label": "排列密度",
+    "compact": "紧凑",
+    "sparse": "稀疏",
+    "sparseTooltip": "按真实时间间距排列条目"
+  },
   "filter": {
     "location": "地点",
     "locationAll": "全部地点",
