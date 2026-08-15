@@ -4,10 +4,18 @@
  * JSON.
  *
  * Action matrix:
- * - `create`/`get`/`update`/`addPhase` → {@link EntityPreview} built from the
+ * - `get`   → {@link EntityDetailCard} rich read-only card for worldbook
+ *   entities (Character/Location/Item/Lore/Event), Zod-validated against the
+ *   canonical schemas; falls back to {@link EntityPreview} on parse failure
+ *   and to a compact action line while running.
+ * - `create`/`update`/`addPhase` → {@link EntityPreview} built from the
  *   output entity (done) or the input args (pending/running).
  * - `list`   → "found N" + up to 5 name chips, or a pending label.
- * - `delete` → deleted label + truncated id.
+ * - `delete` → while pending (consent gate, ADR-0025): {@link EntityDetailCard}
+ *   with a "pending deletion" badge, live-fetched by id via
+ *   {@link PendingDeletePreview}; once done: the card rendered from the
+ *   pre-delete snapshot (`{ deleted: true, id, snapshot? }`) with the deleted
+ *   treatment; legacy snapshot-less results keep the id-only line.
  * - `reorder`→ count label.
  * - `count`  → events/scenes ref counts.
  * - `getTime`→ formatted timestamp.
@@ -37,7 +45,9 @@ import {
   type EntityType,
   type ToolSummary,
 } from "../tool-summary";
+import { EntityDetailCard, isDetailEntityKind, parseEntityDetail } from "./entity-detail-card";
 import { EntityPreview } from "./entity-preview";
+import { PendingDeletePreview } from "./pending-delete-preview";
 
 // ─── One-line summary (shared by tool-card header + consent-banner) ─────────
 
@@ -121,8 +131,40 @@ export function ToolBody({ tool }: { readonly tool: ToolBlockData }) {
   const out = unwrapToolOutput(tool.output);
   const hasOutput = out != null;
 
-  // ── create / get / update / addPhase → entity preview ─────────────────
-  if (action === "create" || action === "get" || action === "update" || action === "addPhase") {
+  // ── get → rich read-only entity card (worldbook scope) ────────────────
+  if (action === "get") {
+    if (!entityType) return null;
+    // Full entity present in the output → validate against the canonical Zod
+    // schema and render the rich detail card (CRUD-card vocabulary).
+    if (isDetailEntityKind(entityType)) {
+      const detail = hasOutput ? parseEntityDetail(entityType, out) : null;
+      if (detail) {
+        return <EntityDetailCard detail={detail} />;
+      }
+    }
+    // Output exists but failed parsing (corrupted / unexpected shape) — fall
+    // back to the compact EntityPreview built from raw fields. Never throw.
+    if (hasOutput && isRecord(out)) {
+      const headline =
+        asString(out[ENTITY_META[entityType].headlineKey]) ?? summary.headline;
+      const description =
+        asString(out.description) ?? asString(out.summary) ?? asString(out.appearance);
+      const tags = asStringArray(out.tags);
+      return (
+        <EntityPreview
+          entityType={entityType}
+          headline={headline}
+          description={description}
+          tags={tags}
+        />
+      );
+    }
+    // Running (no output yet) — compact placeholder line.
+    return <MetaLine><ToolSummaryLine summary={summary} /></MetaLine>;
+  }
+
+  // ── create / update / addPhase → entity preview ─────────────────
+  if (action === "create" || action === "update" || action === "addPhase") {
     if (!entityType) return null;
     const outRec = isRecord(out) ? out : null;
     const inRec = isRecord(tool.input) ? tool.input : null;
@@ -211,12 +253,48 @@ export function ToolBody({ tool }: { readonly tool: ToolBlockData }) {
     );
   }
 
-  // ── delete → label + truncated id ─────────────────────────────────────
+  // ── delete → pending preview / rich snapshot card / legacy id line ───
   if (action === "delete") {
     if (!entityType) return null;
     const entityLabel = t(`chat:tool.entity.${entityType}`);
-    const deleted = hasOutput && isRecord(out) && out.deleted === true;
+    const outRec = isRecord(out) ? out : null;
+    const deleted = outRec !== null && outRec.deleted === true;
     const id = idFromInput(tool.input);
+    // Done + fresh: delete results carry the pre-delete entity snapshot (same
+    // shape as the corresponding get_* result) — render the SAME rich card as
+    // `get` with the deleted treatment so the user sees WHAT was removed.
+    // Legacy results (snapshot absent / unparseable / out of worldbook scope)
+    // keep the id-only display below.
+    if (deleted && isDetailEntityKind(entityType) && outRec.snapshot !== undefined) {
+      const detail = parseEntityDetail(entityType, outRec.snapshot);
+      if (detail) {
+        return <EntityDetailCard detail={detail} deleted />;
+      }
+    }
+    // Pending: delete_* tools are consent-gated (ADR-0025) — while the gate
+    // (or the post-approval execution) is in flight, status is "running" and
+    // no output exists yet. Live-fetch the entity by id and show the SAME
+    // rich card with a "pending deletion" badge, so approval happens with
+    // full knowledge of what will be removed. Denied/errored deletes
+    // (status "error") and fetch failures fall back to the compact line.
+    if (tool.status === "running" && isDetailEntityKind(entityType) && id) {
+      return (
+        <PendingDeletePreview
+          kind={entityType}
+          id={id}
+          fallback={
+            <div className="flex flex-col gap-0.5">
+              <MetaLine>
+                <ToolSummaryLine summary={summary} />
+              </MetaLine>
+              <MetaLine>
+                {t("chat:tool.idLabel")}: {id.length > 8 ? `${id.slice(0, 8)}…` : id}
+              </MetaLine>
+            </div>
+          }
+        />
+      );
+    }
     return (
       <div className="flex flex-col gap-0.5">
         <MetaLine>

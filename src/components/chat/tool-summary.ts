@@ -328,12 +328,15 @@ export function summarizeToolCall(
   const { action, entityType } = parseToolName(toolName);
   const inRec = isRecord(input) ? input : {};
 
-  // Headline: prefer the name/title from the output entity, then the input.
+  // Headline: prefer the name/title from the output entity, then the output's
+  // nested delete snapshot (`{ deleted, id, snapshot }` — the entity lives
+  // under `snapshot`), then the input.
   let headline: string | undefined;
   if (entityType) {
     const key = ENTITY_META[entityType].headlineKey;
     const outRec = isRecord(unwrapToolOutput(output)) ? (unwrapToolOutput(output) as Record<string, unknown>) : {};
-    headline = asString(outRec[key]) ?? asString(inRec[key]);
+    const snapshotRec = isRecord(outRec.snapshot) ? outRec.snapshot : {};
+    headline = asString(outRec[key]) ?? asString(snapshotRec[key]) ?? asString(inRec[key]);
   } else if (action === "webSearch") {
     headline = asString(inRec.query);
   } else if (action === "webFetch") {
