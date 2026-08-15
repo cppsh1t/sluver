@@ -486,7 +486,7 @@ function ChapterWorkspacePage() {
                   displayScenes.map((scene, i) => (
                     <div key={scene.id}>
                       {i > 0 && <div className="h-6" />}
-                      <p className="whitespace-pre-wrap text-base leading-loose">
+                      <p className="whitespace-pre-wrap text-base font-article leading-loose">
                         {scene.content}
                       </p>
                       <SceneImageGallery

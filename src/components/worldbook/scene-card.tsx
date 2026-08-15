@@ -358,7 +358,7 @@ function SceneCard({
           onChange={(e) => onFieldChange({ content: e.currentTarget.value })}
           onFocus={onActiveFocus}
           placeholder=""
-          className="min-h-[120px] resize-none border-0 bg-transparent p-0 text-base leading-relaxed shadow-none focus-visible:ring-0"
+          className="min-h-[120px] resize-none border-0 bg-transparent p-0 font-article text-base leading-relaxed shadow-none focus-visible:ring-0"
           style={{
             fontSize: "18px",
             lineHeight: "1.8",

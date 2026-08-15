@@ -14,8 +14,14 @@ import {
 } from "@/i18n";
 import i18n from "@/i18n";
 import { setDayjsLocale } from "@/lib/format";
+import {
+  applyArticleFont,
+  applyUiFont,
+  DEFAULT_FONT,
+} from "@/lib/font";
 import { logger } from "@/lib/logger";
 import { flush as flushLogBuffer } from "@/lib/logger/buffer";
+import type { AppSetting } from "@/types";
 
 import "./index.css";
 
@@ -30,9 +36,14 @@ const queryClient = new QueryClient({
 });
 
 /**
- * Resolve the active UI locale at startup.
+ * Bootstrap appearance settings and resolve the active UI locale at startup.
  *
- * Priority chain (first wins):
+ * The persisted {@link AppSetting} is fetched ONCE and shared: font prefs
+ * (appearance.fontUi / fontArticle) are applied to the document root BEFORE
+ * the first React render so the initial paint already has the user's fonts —
+ * no flash of the default — and `locale` feeds the resolution chain below.
+ *
+ * Locale priority chain (first wins):
  *   1. User's saved preference in `AppSetting.locale`
  *        - `"auto"` → defer to OS locale (step 2)
  *        - any BCP-47 tag → use as-is (normalized by `resolveLocale`)
@@ -40,18 +51,34 @@ const queryClient = new QueryClient({
  *   3. {@link DEFAULT_LOCALE} ("en")
  *
  * Each external call is independently guarded so that a failure at any
- * step (DB locked, plugin permission missing, OS API unavailable) falls
- * through to the next source instead of blocking app startup.
+ * step (DB locked, plugin permission missing, OS API unavailable, malformed
+ * font value) falls through to the next source instead of blocking app
+ * startup.
  */
-async function resolveInitialLocale(): Promise<string> {
-  // 1. Saved preference
-  let saved: string | undefined;
+async function bootstrapSettings(): Promise<string> {
+  // 1. Saved preference (single fetch — shared by fonts + locale)
+  let setting: AppSetting | undefined;
   try {
-    saved = (await getAppSetting()).locale;
+    setting = await getAppSetting();
   } catch {
     // AppSetting unreachable (e.g. migration issue) — fall through.
   }
 
+  // Apply fonts before the first render. `?? DEFAULT_FONT` covers a payload
+  // from an older backend that predates the font fields; each application
+  // is guarded so one bad value never blocks the other or the locale chain.
+  try {
+    applyUiFont(setting?.appearance.fontUi ?? DEFAULT_FONT);
+  } catch {
+    // Stylesheet default (Inter Variable) stays in effect.
+  }
+  try {
+    applyArticleFont(setting?.appearance.fontArticle ?? DEFAULT_FONT);
+  } catch {
+    // Stylesheet default (Inter Variable) stays in effect.
+  }
+
+  const saved = setting?.locale;
   if (saved && saved !== AUTO_LOCALE) {
     return resolveLocale(saved);
   }
@@ -108,7 +135,7 @@ window.addEventListener("error", (event) => {
  * not surfaced: i18next falls back to `FALLBACK_LOCALE` internally and
  * React still mounts, so the user is never stuck on a blank window.
  */
-resolveInitialLocale()
+bootstrapSettings()
   .then(async (lng) => {
     await i18n.changeLanguage(lng);
     setDayjsLocale(lng);
@@ -128,7 +155,7 @@ resolveInitialLocale()
       logger.warn("bootstrap.catalog_warm.failed", { error: String(e) }),
     );
     // Locale/theme setup succeeded and at least one Tauri IPC round-trip
-    // (getAppSetting in resolveInitialLocale) has completed — the bridge
+    // (getAppSetting in bootstrapSettings) has completed — the bridge
     // is alive. Drain any log entries that arrived before it came up.
     void flushLogBuffer();
   })
