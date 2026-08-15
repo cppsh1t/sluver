@@ -7,7 +7,7 @@
 
 @theme inline {
     --font-heading: var(--font-sans);
-    --font-sans: 'Inter Variable', sans-serif;
+    --font-sans: var(--font-ui);
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -57,6 +57,11 @@
 
 /* ── Neutral (shadcn default) ─────────────────────────────────────────── */
 :root {
+    /* Font stacks — user-configurable at runtime (Settings → font rows).
+       Overridden via inline style on <html> by src/lib/font.ts; `font-sans`
+       resolves to var(--font-ui), so the whole app follows. */
+    --font-ui: 'Inter Variable', sans-serif;
+    --font-article: 'Inter Variable', sans-serif;
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);
@@ -244,6 +249,13 @@
   &::-webkit-scrollbar {
     display: none;
   }
+}
+
+/* Prose font for novel-writing surfaces (scene textarea, chapter read-mode
+   paragraphs). Follows the user's 正文字体 setting; distinct from the UI
+   font so writers can mix a neutral chrome font with a reading font. */
+@utility font-article {
+  font-family: var(--font-article);
 }
 
 /* ── tauri-plugin-decorum: injected window caption buttons ────────────── */
