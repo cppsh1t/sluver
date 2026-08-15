@@ -43,6 +43,7 @@ import { createAgentEventLogger } from "@/lib/ai/agent-logging";
 import { getRoleBehavior } from "@/lib/ai-roles";
 import { TauriSessionStore } from "@/lib/ai-store";
 import { logger } from "@/lib/logger";
+import { notifyToolConsentRequested } from "@/lib/notify";
 import type { ApprovalGate, ConsentLevel, ToolContext } from "@/lib/tools/types";
 import type { Conversation, ContextCompaction, Message, SpaceId, WorldId } from "@/types";
 
@@ -675,6 +676,16 @@ export function createConversationRuntimeStore(
                   },
                 },
               };
+            });
+
+            // Native OS notification — fire-and-forget, never blocks the gate.
+            // Fired here (store layer) rather than the ConsentBanner so it
+            // catches consent requests in non-visible conversations too
+            // (in-flight runs survive switches — ADR-0024).
+            void notifyToolConsentRequested({
+              worldId,
+              conversationId,
+              toolName: req.toolName,
             });
           }),
       };
