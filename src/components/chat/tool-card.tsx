@@ -42,6 +42,7 @@ import {
 import { PlanToolCard } from "./tool-cards/plan-tool-card";
 import { ChapterOverviewToolCard } from "./tool-cards/chapter-overview-tool-card";
 import { TimelineToolCard } from "./tool-cards/timeline-tool-card";
+import { GrepToolCard } from "./tool-cards/grep-tool-card";
 import { summarizeToolCall } from "./tool-summary";
 import { ToolBody, ToolSummaryLine } from "./tool-cards/tool-body";
 
@@ -76,6 +77,12 @@ export function ToolCard({ tool, worldId, conversationId }: ToolCardProps) {
     // Timeline lookup: render the in-world chronology entry list (story-time
     // via FormattedTime) instead of the generic JSON fallback.
     return <TimelineToolCard tool={tool} />;
+  }
+  if (tool.toolName === "grep") {
+    // Grep (ADR-0035): render the field-grouped match rows with highlighted
+    // snippets instead of the generic JSON fallback (bare name, no
+    // action_entity prefix to parse).
+    return <GrepToolCard tool={tool} />;
   }
   return <GenericToolCard tool={tool} worldId={worldId} conversationId={conversationId} />;
 }
