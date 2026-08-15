@@ -116,6 +116,10 @@
     "deny": "拒绝",
     "pendingCount": "{{count}} 个工具等待同意"
   },
+  "notification": {
+    "toolConsentTitle": "工具调用需要批准",
+    "toolConsentBody": "工具「{{tool}}」正在等待你的批准"
+  },
   "step": "第 {{n}} 步",
   "error": {
     "modelNotConfigured": "该角色未配置模型，请在设置中绑定。",

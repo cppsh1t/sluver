@@ -116,6 +116,10 @@
     "deny": "Deny",
     "pendingCount": "{{count}} tool(s) awaiting approval"
   },
+  "notification": {
+    "toolConsentTitle": "Tool approval required",
+    "toolConsentBody": "“{{tool}}” is waiting for your approval"
+  },
   "step": "Step {{n}}",
   "error": {
     "modelNotConfigured": "No model configured for this role. Bind a model in Settings.",
