@@ -15,6 +15,17 @@ export const appSettingSchema = z.object({
     theme: z.enum(['light', 'dark', 'system']),
     /** Controls the `data-color-theme` attribute: the active color palette. */
     colorTheme: z.enum(['neutral', 'parchment']),
+    /**
+     * Font family for app chrome (everything `font-sans` touches). The
+     * sentinel {@link DEFAULT_FONT} ("default") means the app default
+     * (Inter Variable); any other value is a system font family name.
+     */
+    fontUi: z.string(),
+    /**
+     * Font family for prose surfaces (scene writing textarea, chapter
+     * read-mode paragraphs). Same sentinel semantics as {@link fontUi}.
+     */
+    fontArticle: z.string(),
   }),
   /**
    * Active UI locale. Either {@link AUTO_LOCALE} (follow OS) or one of
