@@ -26,7 +26,11 @@ use crate::models::timeline::{TimelineEntry, TimelineLane, TimelineQueryInput, T
 /// clamp keeps a pathologically large request bounded.
 const DEFAULT_LIMIT: i64 = 50;
 const MIN_LIMIT: i64 = 1;
-const MAX_LIMIT: i64 = 100;
+/// Hard ceiling for a single response. The Timeline UI steps toward this via
+/// its "load more" control. Note the union is fully materialized before
+/// truncation anyway, so the limit bounds the IPC payload, not the query
+/// cost. Mirrored by `TIMELINE_LIMIT_MAX` in `src/types/timeline.ts`.
+const MAX_LIMIT: i64 = 500;
 
 /// Run a `SELECT <key>, <name> ... WHERE <key> IN (...)` query and group the
 /// `(key, name)` pairs into a `HashMap<String, Vec<String>>`. Used to
