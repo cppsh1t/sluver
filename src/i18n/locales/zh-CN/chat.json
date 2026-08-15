@@ -36,6 +36,11 @@
     "reorderPending": "{{action}} {{count}} 个 {{entity}}",
     "reorderDone": "已重排序 {{count}} 个 {{entity}}",
     "countResult": "引用：{{events}} 事件 · {{scenes}} 场景",
+    "grepTitle": "全文检索",
+    "grepGroups": "{{count}} 组命中",
+    "grepTruncated": "已达 50 组上限，可缩小范围重试",
+    "grepNoMatch": "未找到匹配",
+    "grepPhaseContext": "{{name}} · {{phase}}",
     "action": {
       "create": "创建",
       "update": "更新",
