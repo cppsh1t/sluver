@@ -235,6 +235,17 @@
   background-color: color-mix(in oklch, var(--muted-foreground) 55%, transparent);
 }
 
+/* Hides scrollbars entirely while keeping the element scrollable (wheel,
+   drag-pan, API). Used by surfaces that provide their own panning affordance,
+   e.g. the Timeline grid's vertical scroll. */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 /* ── tauri-plugin-decorum: injected window caption buttons ────────────── */
 /* Windows/Linux only — macOS uses native traffic lights. Decorum injects
    native buttons (#decorum-tb-minimize/maximize/close) for Snap Layout. We
