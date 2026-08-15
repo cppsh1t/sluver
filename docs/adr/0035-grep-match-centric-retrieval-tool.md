@@ -38,9 +38,11 @@ Results group by `(entityType, entityId, fieldName)`. Each group carries `matchC
 
 Character-based truncation (UTF-8 boundary safe on the Rust side), no `...`/`【】` marker glyphs — markers collide with characters that occur in prose and mislead the model.
 
-### 5. Return package: ≤50 groups, `matchCount` desc, deterministic tie-break
+### 5. Return package: 50 groups per page, `matchCount` desc, deterministic tie-break, `offset` pagination
 
-Ties broken by fixed entity-type enum order, then title ascending. `truncated: true` when the cap is hit (the model can re-query with a narrower `entityTypes` or a more specific query). Same input → same output: reproducibility lets the model diff two greps across turns.
+> **Amendment** (after real-world use): the original design was a hard 50-group cap with a `truncated` flag. Common queries (a protagonist's name matches hundreds of fields) reached the cap trivially, and raising it was rejected — a 50-group page already carries up to ~25K chars of snippets into the model's context, and a bigger cap just moves the wall while bloating every hot query. Completeness is served by pagination instead: `offset` walks pages of 50, and the deterministic total order (matchCount desc → entity-type order → title → entity id) is precisely what makes offset pagination correct — same input → same ordering → stable pages the model can walk (0, 50, 100, …) when `truncated` reports more. Concurrent edits between page fetches can shift boundaries — inherent to any offset scheme, acceptable at desktop scale.
+
+`truncated: true` when `offset + groups.length < groupCount` (more pages exist); `groupCount` remains the FULL count. Same input → same output: reproducibility lets the model diff two greps across turns.
 
 ### 6. Matching: ASCII case folding only
 

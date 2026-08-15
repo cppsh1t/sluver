@@ -121,7 +121,7 @@ The Agent's single match-centric retrieval tool — searches a substring query a
 _Avoid_: search_all, find_mentions, global_search
 
 **Match Group**:
-The unit of grep results — all occurrences of the query within one (entity, field) pair, carrying the occurrence count, a small number of Snippets, and redundant entity identity (title or name; the owning character's id and name for phase hits) so the model can act without a follow-up get_* call. Groups are capped per call (with an explicit truncated flag) and ordered by occurrence count descending with a deterministic tie-break. Phase hits are their own entity type whose id is directly usable against the entity's own fields.
+The unit of grep results — all occurrences of the query within one (entity, field) pair, carrying the occurrence count, a small number of Snippets, and redundant entity identity (title or name; the owning character's id and name for phase hits) so the model can act without a follow-up get_* call. Groups are served 50 per page (a truncated flag reports further pages; the model walks a stable offset across the deterministic ordering) and ordered by occurrence count descending with a deterministic tie-break. Phase hits are their own entity type whose id is directly usable against the entity's own fields.
 _Avoid_: Hit, Match, Result, Entry
 
 **Snippet**:
