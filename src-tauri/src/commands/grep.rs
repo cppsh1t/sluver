@@ -1,0 +1,767 @@
+//! Match-centric full-corpus retrieval IPC for the agent-chat tool surface
+//! (ADR-0035).
+//!
+//! Division of labor with `world_search.rs` (entity-centric): the `search_*`
+//! commands answer "WHICH entities match a keyword" and return entity
+//! summaries; `grep` answers "WHERE does this text occur across the World"
+//! and returns field-grouped occurrence evidence — match count, context
+//! snippets, and redundant entity identity — so the model can judge usage
+//! without a second `get_*` call. Find entities with `search_*`; find where
+//! text occurs with `grep`. That boundary is load-bearing (ADR-0035: a
+//! blurred one makes models double-call both for the same question).
+//!
+//! Implementation: per-table SQL `LIKE` prefilter (plain `%{query}%` pattern,
+//! same as `world_search.rs` — no escaping, so the prefilter is intentionally
+//! a superset: `%`/`_` in the query act as wildcards and ASCII folding may
+//! admit rows the literal scan rejects), followed by an in-memory Rust scan
+//! that applies the literal semantics, counts NON-overlapping occurrences,
+//! and extracts UTF-8-boundary-safe snippets. JSON-array columns
+//! (`aliases` / `tags`) prefilter via `json_each` ELEMENT matching rather
+//! than raw column `LIKE` — serde-escaped element text (`\"`, `\\`) would
+//! otherwise hide queries spanning those characters and break the superset
+//! invariant (ADR-0035 §6; see {@link json_array_prefilter}).
+//!
+//! Logging (ADR-0014 / ADR-0016): `query` is user creative content and is
+//! NEVER logged at any level; snippet content never leaves the IPC response.
+//! The command records only `world_id`, `entity_types`, and the aggregate
+//! `group_count` / `truncated` outcome.
+
+use std::collections::HashSet;
+
+use rusqlite::{params, Connection};
+use tauri::State;
+
+use crate::db::{DbError, DbManager};
+use crate::models::{GrepMatchGroup, GrepResult, GrepSnippet};
+
+/// Soft ceiling on returned match groups. A broader query can still report
+/// its full `group_count`, but only the 50 strongest groups ride the IPC
+/// payload — bounded so a pathological query can't flood the model's context.
+const MAX_GROUPS: usize = 50;
+
+/// Context snippets kept per group. Three suffice to judge the surrounding
+/// usage; anything deeper is a `get_*` call away (ADR-0035 §3).
+const SNIPPETS_PER_GROUP: usize = 3;
+
+/// Context window on each side of a match, measured in CHARS (not bytes —
+/// the primary language of this app's content is Chinese). Excludes marker
+/// glyphs by design (ADR-0035 §4).
+const SNIPPET_CONTEXT_CHARS: usize = 40;
+
+/// The 9 entity types of the grep corpus in fixed order. Doubles as (a) the
+/// tie-break order for deterministic sorting (ADR-0035 §5) and (b) the
+/// known-values filter for the `entity_types` argument.
+const ALL_ENTITY_TYPES: [&str; 9] = [
+    "character",
+    "phase",
+    "location",
+    "item",
+    "lore",
+    "event",
+    "novel",
+    "chapter",
+    "scene",
+];
+
+// ─── matching helpers ────────────────────────────────────────────────────────
+
+/// Wrap a user query in SQL LIKE wildcards. Mirrors `world_search.rs` — no
+/// escaping; the prefilter is a superset and literal semantics come from the
+/// Rust scan. The query itself is never logged.
+fn like_pattern(query: &str) -> String {
+    format!("%{query}%")
+}
+
+/// SQL prefilter predicate for a JSON-array column: any ELEMENT matches.
+///
+/// Raw column `LIKE` is WRONG here: serde_json escapes `"` → `\"` and `\` →
+/// `\\` inside the stored JSON TEXT, so a query spanning an escaped
+/// character (alias `6"9" 身高`, query `9" 身`) would miss the row at the
+/// prefilter stage — a false negative that breaks the prefilter-is-a-
+/// superset invariant (ADR-0035 §6). `json_each` matches against the
+/// UNESCAPED element text instead. The `json_valid` CASE degrades malformed
+/// JSON (NULL / corrupt text) to an empty array — `json_each` on invalid
+/// JSON would error the whole statement, while the Rust-side
+/// `serde_json … unwrap_or_default()` already tolerates the same rows.
+fn json_array_prefilter(col: &str) -> String {
+    format!(
+        "EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid({col}) THEN {col} ELSE '[]' END) \
+         WHERE json_each.value LIKE ?1)"
+    )
+}
+
+/// ASCII-only case folding: lowercase ASCII letters, every other char
+/// untouched. This matches SQLite's `LIKE` folding exactly (ADR-0035 §6) —
+/// `str::to_lowercase` would apply Unicode folding and create false
+/// negatives between the SQL prefilter and this scan.
+///
+/// The fold is byte-length preserving (ASCII chars stay single bytes,
+/// multi-byte sequences pass through), so char boundaries — and therefore
+/// `str::find` byte offsets — coincide between the folded and original
+/// strings: offsets found in the folded haystack are safe slicing offsets
+/// into the original.
+fn fold_ascii(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_ascii_uppercase() { c.to_ascii_lowercase() } else { c })
+        .collect()
+}
+
+/// Up to `max_chars` CHARS of `s` immediately before byte offset `end`
+/// (exclusive). Walks back over char boundaries, so it never slices mid
+/// UTF-8 sequence. `end` must itself be a char boundary (all call sites pass
+/// a match offset from `find` on the byte-length-preserving folded string).
+fn context_before(s: &str, end: usize, max_chars: usize) -> String {
+    let mut start = end;
+    let mut taken = 0usize;
+    while start > 0 && taken < max_chars {
+        let mut prev = start - 1;
+        while prev > 0 && !s.is_char_boundary(prev) {
+            prev -= 1;
+        }
+        start = prev;
+        taken += 1;
+    }
+    s[start..end].to_string()
+}
+
+/// Scan one plain-text field: ASCII-folded, NON-overlapping substring
+/// occurrences. Counts every match (uncapped — the "mentioned 50 times"
+/// signal survives the snippet sample) and turns the first
+/// `SNIPPETS_PER_GROUP` occurrences into context snippets. Returns `None`
+/// when the field has zero matches (no group is emitted).
+fn scan_text_field(haystack: &str, folded_needle: &str) -> Option<(i64, Vec<GrepSnippet>)> {
+    let folded_haystack = fold_ascii(haystack);
+    let mut count: i64 = 0;
+    let mut snippets = Vec::new();
+    let mut search_from = 0usize;
+    while let Some(relative) = folded_haystack[search_from..].find(folded_needle) {
+        let start = search_from + relative;
+        let end = start + folded_needle.len();
+        if snippets.len() < SNIPPETS_PER_GROUP {
+            snippets.push(GrepSnippet {
+                before: context_before(haystack, start, SNIPPET_CONTEXT_CHARS),
+                r#match: haystack[start..end].to_string(),
+                after: haystack[end..]
+                    .chars()
+                    .take(SNIPPET_CONTEXT_CHARS)
+                    .collect(),
+            });
+        }
+        count += 1;
+        // Advance past the whole match → non-overlapping counting.
+        search_from = end;
+    }
+    if count > 0 {
+        Some((count, snippets))
+    } else {
+        None
+    }
+}
+
+/// Scan one JSON-array field (`aliases` / `tags`): the raw JSON TEXT is
+/// deserialized first and ELEMENTS are matched individually — a raw LIKE on
+/// the stored JSON column would hit JSON syntax noise (ADR-0035 §2). Each
+/// matching element counts once and becomes a whole-element snippet with no
+/// context: the element itself is the unit. Returns `None` when no element
+/// matches.
+fn scan_json_array_field(raw: &str, folded_needle: &str) -> Option<(i64, Vec<GrepSnippet>)> {
+    let elements: Vec<String> = serde_json::from_str(raw).unwrap_or_default();
+    let mut count: i64 = 0;
+    let mut snippets = Vec::new();
+    for element in &elements {
+        if fold_ascii(element).contains(folded_needle) {
+            if snippets.len() < SNIPPETS_PER_GROUP {
+                snippets.push(GrepSnippet {
+                    before: String::new(),
+                    r#match: element.clone(),
+                    after: String::new(),
+                });
+            }
+            count += 1;
+        }
+    }
+    if count > 0 {
+        Some((count, snippets))
+    } else {
+        None
+    }
+}
+
+/// Fixed entity-type rank for deterministic tie-breaking (ADR-0035 §5):
+/// character=0 … scene=8, mirroring `ALL_ENTITY_TYPES` order. Unreachable
+/// `u8::MAX` arm exists only because the type string is dynamic.
+fn entity_type_rank(entity_type: &str) -> u8 {
+    ALL_ENTITY_TYPES
+        .iter()
+        .position(|t| *t == entity_type)
+        .map_or(u8::MAX, |i| i as u8)
+}
+
+/// Result shape shared by the defensive early returns (blank query / empty
+/// entity-type selection after normalization): zero groups, not truncated.
+fn empty_result(query: String) -> GrepResult {
+    GrepResult {
+        query,
+        groups: Vec::new(),
+        group_count: 0,
+        truncated: false,
+    }
+}
+
+// ─── command ─────────────────────────────────────────────────────────────────
+
+#[tracing::instrument(skip(state, query), fields(world_id = %world_id))]
+#[tauri::command]
+pub fn grep(
+    space_id: String,
+    world_id: String,
+    query: String,
+    entity_types: Option<Vec<String>>,
+    state: State<'_, DbManager>,
+) -> Result<GrepResult, DbError> {
+    // Defensive: a whitespace query would build a `'%…%'` pattern that
+    // matches (nearly) every row and then match nothing literally — a full
+    // table sweep for an empty result. Bail before touching SQLite.
+    if query.trim().is_empty() {
+        return Ok(empty_result(query));
+    }
+
+    // Normalize the entity-type filter: `None` = full corpus; unknown values
+    // are silently dropped. An empty selection (explicit empty vec, or only
+    // unknown values supplied) short-circuits to the empty result.
+    let selected: HashSet<&str> = match &entity_types {
+        None => ALL_ENTITY_TYPES.iter().copied().collect(),
+        Some(types) => types
+            .iter()
+            .map(String::as_str)
+            .filter(|t| ALL_ENTITY_TYPES.contains(t))
+            .collect(),
+    };
+    if selected.is_empty() {
+        return Ok(empty_result(query));
+    }
+
+    let pat = like_pattern(&query);
+    let needle = fold_ascii(&query);
+
+    let mut groups = state.with_world(&space_id, &world_id, |conn| {
+        let mut groups = Vec::new();
+        if selected.contains("character") {
+            groups.extend(scan_characters(conn, &pat, &needle)?);
+        }
+        if selected.contains("phase") {
+            groups.extend(scan_phases(conn, &pat, &needle)?);
+        }
+        if selected.contains("location") {
+            groups.extend(scan_locations(conn, &pat, &needle)?);
+        }
+        if selected.contains("item") {
+            groups.extend(scan_items(conn, &pat, &needle)?);
+        }
+        if selected.contains("lore") {
+            groups.extend(scan_lores(conn, &pat, &needle)?);
+        }
+        if selected.contains("event") {
+            groups.extend(scan_events(conn, &pat, &needle)?);
+        }
+        if selected.contains("novel") {
+            groups.extend(scan_novels(conn, &pat, &needle)?);
+        }
+        if selected.contains("chapter") {
+            groups.extend(scan_chapters(conn, &pat, &needle)?);
+        }
+        if selected.contains("scene") {
+            groups.extend(scan_scenes(conn, &pat, &needle)?);
+        }
+        Ok(groups)
+    })?;
+
+    // Deterministic ordering (ADR-0035 §5): match_count desc → fixed
+    // entity-type order → title asc. entity_id as the final stabilizer
+    // guards same-shape ties (e.g. same-title chapters in different novels)
+    // against SQLite's unspecified row order — same input, same output.
+    groups.sort_by(|a, b| {
+        b.match_count
+            .cmp(&a.match_count)
+            .then_with(|| {
+                entity_type_rank(&a.entity_type).cmp(&entity_type_rank(&b.entity_type))
+            })
+            .then_with(|| a.entity_title.cmp(&b.entity_title))
+            .then_with(|| a.entity_id.cmp(&b.entity_id))
+    });
+
+    let group_count = groups.len() as i64;
+    let truncated = groups.len() > MAX_GROUPS;
+    groups.truncate(MAX_GROUPS);
+
+    let result = GrepResult {
+        query,
+        groups,
+        group_count,
+        truncated,
+    };
+    tracing::debug!(
+        group_count = %result.group_count,
+        truncated = result.truncated,
+        "grep completed"
+    );
+    Ok(result)
+}
+
+// ─── per-table scans ─────────────────────────────────────────────────────────
+//
+// Each scan runs the SQL LIKE prefilter and hands surviving rows' text
+// fields to the Rust matcher. Tables not selected by `entity_types` are
+// skipped wholesale by the command above.
+
+/// One candidate field of a row, classified by storage shape.
+enum Field<'a> {
+    /// Plain-text column — scanned as one haystack.
+    Text(&'a str, &'a str),
+    /// JSON-array column (`aliases` / `tags`) — matched per element, never
+    /// against the raw JSON TEXT.
+    JsonArray(&'a str, &'a str),
+}
+
+/// Scan one row's fields against the folded needle, appending one group per
+/// field with ≥1 match. `character` carries the redundant owner identity and
+/// is `Some` only for phase rows (ADR-0035 §3).
+fn push_field_groups(
+    groups: &mut Vec<GrepMatchGroup>,
+    entity_type: &str,
+    entity_id: &str,
+    entity_title: &str,
+    character: Option<(&str, &str)>,
+    fields: &[Field<'_>],
+    folded_needle: &str,
+) {
+    for field in fields {
+        let (field_name, scanned) = match field {
+            Field::Text(name, value) => (*name, scan_text_field(value, folded_needle)),
+            Field::JsonArray(name, value) => (*name, scan_json_array_field(value, folded_needle)),
+        };
+        if let Some((match_count, snippets)) = scanned {
+            groups.push(GrepMatchGroup {
+                entity_type: entity_type.to_string(),
+                entity_id: entity_id.to_string(),
+                entity_title: entity_title.to_string(),
+                character_id: character.map(|(id, _)| id.to_string()),
+                character_name: character.map(|(_, name)| name.to_string()),
+                field_name: field_name.to_string(),
+                match_count,
+                snippets,
+            });
+        }
+    }
+}
+
+/// Characters: `aliases` + `tags` are JSON arrays; the rest is plain text.
+fn scan_characters(
+    conn: &Connection,
+    pat: &str,
+    needle: &str,
+) -> Result<Vec<GrepMatchGroup>, DbError> {
+    let sql = format!(
+        "SELECT id, name, aliases, description, notes, tags FROM characters
+         WHERE name LIKE ?1 OR description LIKE ?1 OR notes LIKE ?1
+            OR {} OR {}",
+        json_array_prefilter("aliases"),
+        json_array_prefilter("tags")
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let mut groups = Vec::new();
+    let mut rows = stmt.query(params![pat])?;
+    while let Some(row) = rows.next()? {
+        let id: String = row.get("id")?;
+        let name: String = row.get("name")?;
+        let aliases: String = row.get("aliases")?;
+        let description: String = row.get("description")?;
+        let notes: String = row.get("notes")?;
+        let tags: String = row.get("tags")?;
+        push_field_groups(
+            &mut groups,
+            "character",
+            &id,
+            &name,
+            None,
+            &[
+                Field::Text("name", &name),
+                Field::JsonArray("aliases", &aliases),
+                Field::Text("description", &description),
+                Field::Text("notes", &notes),
+                Field::JsonArray("tags", &tags),
+            ],
+            needle,
+        );
+    }
+    Ok(groups)
+}
+
+/// Phases are the blind spot of `search_characters` (independent table) —
+/// grep covers their four author-written fields (ADR-0035 §2). The JOIN
+/// resolves the redundant owner identity so the model can act on a phase
+/// hit without a second `get_*` call. `entity_id` is the PHASE id.
+fn scan_phases(
+    conn: &Connection,
+    pat: &str,
+    needle: &str,
+) -> Result<Vec<GrepMatchGroup>, DbError> {
+    let mut stmt = conn.prepare(
+        "SELECT p.id AS phase_id, p.name AS phase_name, p.appearance,
+                p.description, p.conversation_style,
+                p.character_id, c.name AS character_name
+         FROM character_phases p
+         JOIN characters c ON c.id = p.character_id
+         WHERE p.name LIKE ?1 OR p.appearance LIKE ?1
+            OR p.description LIKE ?1 OR p.conversation_style LIKE ?1",
+    )?;
+    let mut groups = Vec::new();
+    let mut rows = stmt.query(params![pat])?;
+    while let Some(row) = rows.next()? {
+        let phase_id: String = row.get("phase_id")?;
+        let phase_name: String = row.get("phase_name")?;
+        let appearance: String = row.get("appearance")?;
+        let description: String = row.get("description")?;
+        let conversation_style: String = row.get("conversation_style")?;
+        let character_id: String = row.get("character_id")?;
+        let character_name: String = row.get("character_name")?;
+        push_field_groups(
+            &mut groups,
+            "phase",
+            &phase_id,
+            &phase_name,
+            Some((&character_id, &character_name)),
+            &[
+                Field::Text("name", &phase_name),
+                Field::Text("appearance", &appearance),
+                Field::Text("description", &description),
+                Field::Text("conversation_style", &conversation_style),
+            ],
+            needle,
+        );
+    }
+    Ok(groups)
+}
+
+// ─── Location / Item / Lore (shared shape: name, description, notes, tags) ───
+//
+// The three "element" tables share identical SELECT columns and predicates
+// for this use case, so we generate the scan per table via one macro
+// instantiated 3× — the same pattern as `impl_element_summary_commands!` in
+// `world_search.rs`.
+
+macro_rules! impl_element_grep_scan {
+    ($scan:ident, $table:literal, $entity_type:literal) => {
+        fn $scan(
+            conn: &Connection,
+            pat: &str,
+            needle: &str,
+        ) -> Result<Vec<GrepMatchGroup>, DbError> {
+            let sql = format!(
+                "SELECT id, name, description, notes, tags FROM {}
+                 WHERE name LIKE ?1 OR description LIKE ?1 OR notes LIKE ?1 OR {}",
+                $table,
+                json_array_prefilter("tags")
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let mut groups = Vec::new();
+            let mut rows = stmt.query(params![pat])?;
+            while let Some(row) = rows.next()? {
+                let id: String = row.get("id")?;
+                let name: String = row.get("name")?;
+                let description: String = row.get("description")?;
+                let notes: String = row.get("notes")?;
+                let tags: String = row.get("tags")?;
+                push_field_groups(
+                    &mut groups,
+                    $entity_type,
+                    &id,
+                    &name,
+                    None,
+                    &[
+                        Field::Text("name", &name),
+                        Field::Text("description", &description),
+                        Field::Text("notes", &notes),
+                        Field::JsonArray("tags", &tags),
+                    ],
+                    needle,
+                );
+            }
+            Ok(groups)
+        }
+    };
+}
+
+impl_element_grep_scan!(scan_locations, "locations", "location");
+impl_element_grep_scan!(scan_items, "items", "item");
+impl_element_grep_scan!(scan_lores, "lores", "lore");
+
+/// Events: `start_at` / `end_at` are deliberately NOT searched — timestamps
+/// are not creative text (ADR-0035 §2), unlike `search_events` which does
+/// match them for entity discovery.
+fn scan_events(
+    conn: &Connection,
+    pat: &str,
+    needle: &str,
+) -> Result<Vec<GrepMatchGroup>, DbError> {
+    let sql = format!(
+        "SELECT id, name, description, notes, tags FROM events
+         WHERE name LIKE ?1 OR description LIKE ?1 OR notes LIKE ?1 OR {}",
+        json_array_prefilter("tags")
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let mut groups = Vec::new();
+    let mut rows = stmt.query(params![pat])?;
+    while let Some(row) = rows.next()? {
+        let id: String = row.get("id")?;
+        let name: String = row.get("name")?;
+        let description: String = row.get("description")?;
+        let notes: String = row.get("notes")?;
+        let tags: String = row.get("tags")?;
+        push_field_groups(
+            &mut groups,
+            "event",
+            &id,
+            &name,
+            None,
+            &[
+                Field::Text("name", &name),
+                Field::Text("description", &description),
+                Field::Text("notes", &notes),
+                Field::JsonArray("tags", &tags),
+            ],
+            needle,
+        );
+    }
+    Ok(groups)
+}
+
+/// Novels: `title` (not `name`) + `description` + `author` + `tags`.
+fn scan_novels(
+    conn: &Connection,
+    pat: &str,
+    needle: &str,
+) -> Result<Vec<GrepMatchGroup>, DbError> {
+    let sql = format!(
+        "SELECT id, title, description, author, tags FROM novels
+         WHERE title LIKE ?1 OR description LIKE ?1 OR author LIKE ?1 OR {}",
+        json_array_prefilter("tags")
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let mut groups = Vec::new();
+    let mut rows = stmt.query(params![pat])?;
+    while let Some(row) = rows.next()? {
+        let id: String = row.get("id")?;
+        let title: String = row.get("title")?;
+        let description: String = row.get("description")?;
+        let author: String = row.get("author")?;
+        let tags: String = row.get("tags")?;
+        push_field_groups(
+            &mut groups,
+            "novel",
+            &id,
+            &title,
+            None,
+            &[
+                Field::Text("title", &title),
+                Field::Text("description", &description),
+                Field::Text("author", &author),
+                Field::JsonArray("tags", &tags),
+            ],
+            needle,
+        );
+    }
+    Ok(groups)
+}
+
+/// Chapters: `title` + `summary` — no tags column on this table.
+fn scan_chapters(
+    conn: &Connection,
+    pat: &str,
+    needle: &str,
+) -> Result<Vec<GrepMatchGroup>, DbError> {
+    let mut stmt = conn.prepare(
+        "SELECT id, title, summary FROM chapters WHERE title LIKE ?1 OR summary LIKE ?1",
+    )?;
+    let mut groups = Vec::new();
+    let mut rows = stmt.query(params![pat])?;
+    while let Some(row) = rows.next()? {
+        let id: String = row.get("id")?;
+        let title: String = row.get("title")?;
+        let summary: String = row.get("summary")?;
+        push_field_groups(
+            &mut groups,
+            "chapter",
+            &id,
+            &title,
+            None,
+            &[
+                Field::Text("title", &title),
+                Field::Text("summary", &summary),
+            ],
+            needle,
+        );
+    }
+    Ok(groups)
+}
+
+/// Scenes: `content` is the largest creative payload in the schema and the
+/// grep corpus's heaviest table — the SQL prefilter matters most here
+/// (only surviving rows' content reaches the in-memory scan).
+fn scan_scenes(
+    conn: &Connection,
+    pat: &str,
+    needle: &str,
+) -> Result<Vec<GrepMatchGroup>, DbError> {
+    let mut stmt = conn.prepare(
+        "SELECT id, title, summary, content FROM scenes
+         WHERE title LIKE ?1 OR summary LIKE ?1 OR content LIKE ?1",
+    )?;
+    let mut groups = Vec::new();
+    let mut rows = stmt.query(params![pat])?;
+    while let Some(row) = rows.next()? {
+        let id: String = row.get("id")?;
+        let title: String = row.get("title")?;
+        let summary: String = row.get("summary")?;
+        let content: String = row.get("content")?;
+        push_field_groups(
+            &mut groups,
+            "scene",
+            &id,
+            &title,
+            None,
+            &[
+                Field::Text("title", &title),
+                Field::Text("summary", &summary),
+                Field::Text("content", &content),
+            ],
+            needle,
+        );
+    }
+    Ok(groups)
+}
+
+// ─── tests ───────────────────────────────────────────────────────────────────
+//
+// The prefilter SQL is runtime text — `cargo check` cannot catch a malformed
+// `json_each` predicate — so these tests exercise the scan fns against an
+// in-memory SQLite, focusing on the JSON-array prefilter invariant
+// (ADR-0035 §6: the prefilter must be a superset of the literal scan, which
+// raw column `LIKE` breaks for serde-escaped element text).
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Minimal schema covering the three prefilter shapes under test:
+    /// characters (aliases + tags), locations (macro-generated tags shape),
+    /// novels (title/author + tags).
+    fn test_conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE characters (id TEXT PRIMARY KEY, name TEXT NOT NULL,
+                aliases TEXT NOT NULL, description TEXT NOT NULL,
+                notes TEXT NOT NULL, tags TEXT NOT NULL);
+             CREATE TABLE locations (id TEXT PRIMARY KEY, name TEXT NOT NULL,
+                description TEXT NOT NULL, notes TEXT NOT NULL, tags TEXT NOT NULL);
+             CREATE TABLE novels (id TEXT PRIMARY KEY, title TEXT NOT NULL,
+                description TEXT NOT NULL, author TEXT NOT NULL, tags TEXT NOT NULL);",
+        )
+        .unwrap();
+        conn
+    }
+
+    fn find<'a>(groups: &'a [GrepMatchGroup], field: &str) -> Option<&'a GrepMatchGroup> {
+        groups.iter().find(|g| g.field_name == field)
+    }
+
+    /// A query spanning a serde-escaped `"` inside an alias must still be
+    /// found: the stored JSON TEXT (`6\"9\" 身高`) does not contain the
+    /// literal `9" 身`, so only the `json_each` element prefilter can pass
+    /// the row through. This is the exact false-negative raw `LIKE` would
+    /// produce.
+    #[test]
+    fn json_prefilter_finds_queries_spanning_escaped_characters() {
+        let conn = test_conn();
+        conn.execute(
+            "INSERT INTO characters (id, name, aliases, description, notes, tags)
+             VALUES ('c1', '艾琳', '[\"6\\\"9\\\" 身高\"]', '', '', '[\"北境\"]')",
+            [],
+        )
+        .unwrap();
+
+        let query = "9\" 身";
+        let groups =
+            scan_characters(&conn, &like_pattern(query), &fold_ascii(query)).unwrap();
+
+        let alias_group = find(&groups, "aliases").expect("escaped-quote alias must be found");
+        assert_eq!(alias_group.match_count, 1);
+        assert_eq!(alias_group.snippets[0].r#match, "6\"9\" 身高");
+    }
+
+    /// Tags match per ELEMENT across every table shape that carries them
+    /// (characters, the element macro via locations, novels) — including
+    /// when the plain-text columns of the same row do NOT match, proving
+    /// the json_each predicate is what selected the row.
+    #[test]
+    fn json_prefilter_matches_tag_elements_across_table_shapes() {
+        let conn = test_conn();
+        conn.execute(
+            "INSERT INTO characters (id, name, aliases, description, notes, tags)
+             VALUES ('c1', '艾琳', '[]', '', '', '[\"北境\", \"史诗\"]')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO locations (id, name, description, notes, tags)
+             VALUES ('l1', '临冬城', '', '', '[\"北境\"]')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO novels (id, title, description, author, tags)
+             VALUES ('n1', '冰与火', '', '', '[\"北境\"]')",
+            [],
+        )
+        .unwrap();
+
+        let query = "北境";
+        let pat = like_pattern(query);
+        let needle = fold_ascii(query);
+
+        for groups in [
+            scan_characters(&conn, &pat, &needle).unwrap(),
+            scan_locations(&conn, &pat, &needle).unwrap(),
+            scan_novels(&conn, &pat, &needle).unwrap(),
+        ] {
+            let tag_group = find(&groups, "tags").expect("tag element must be found");
+            assert_eq!(tag_group.match_count, 1);
+            assert_eq!(tag_group.snippets[0].r#match, "北境");
+        }
+    }
+
+    /// Malformed / non-array JSON in a JSON column must degrade to "no
+    /// matches" — never error the statement (`json_valid` guard) and never
+    /// panic the Rust scan (`unwrap_or_default`) — while plain-text columns
+    /// on the same row keep working.
+    #[test]
+    fn malformed_json_columns_are_tolerated() {
+        let conn = test_conn();
+        conn.execute(
+            "INSERT INTO locations (id, name, description, notes, tags)
+             VALUES ('l1', '临冬城', '北境要塞', '', 'not json at all')",
+            [],
+        )
+        .unwrap();
+
+        let query = "北境";
+        let groups =
+            scan_locations(&conn, &like_pattern(query), &fold_ascii(query)).unwrap();
+
+        // Row selected via its plain-text columns; the corrupt tags column
+        // contributes no group and no error.
+        assert!(find(&groups, "name").is_some());
+        assert!(find(&groups, "description").is_some());
+        assert!(find(&groups, "tags").is_none());
+    }
+}

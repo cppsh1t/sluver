@@ -318,6 +318,8 @@ pub fn run() {
             commands::world_search::search_chapters,
             commands::world_search::list_scene_summaries,
             commands::world_search::search_scenes,
+            // grep (match-centric full-corpus retrieval — ADR-0035)
+            commands::grep::grep,
             // Timeline (derived view — ADR-0033)
             commands::timeline::query_timeline,
             commands::timeline::list_timeline_lanes,
