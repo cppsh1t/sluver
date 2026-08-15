@@ -32,7 +32,7 @@ import {
   useTimeline,
   useTimelineLanes,
 } from "@/hooks";
-import type { Character, TimelineEntry, TimelineQuery, WorldId } from "@/types";
+import { TIMELINE_LIMIT_MAX, type Character, type TimelineEntry, type TimelineQuery, type WorldId } from "@/types";
 
 /** Internal filter state (subset of TimelineQuery, normalized for UI controls). */
 interface TimelineFilters {
@@ -52,6 +52,11 @@ const DEFAULT_FILTERS: TimelineFilters = {
   to: undefined,
   includeScenes: true,
 };
+
+/** Base result window requested on mount and after any filter change. */
+const LIMIT_BASE = 100;
+/** Entries added per "load more" click, up to `TIMELINE_LIMIT_MAX`. */
+const LIMIT_STEP = 100;
 
 function TimelinePage() {
   const { t } = useTranslation(["timeline", "common"]);
@@ -80,6 +85,12 @@ function TimelinePage() {
   // density is perceptible; default `false` keeps the uniform compact grid.
   const [sparse, setSparse] = useState(false);
 
+  // ─── View state: result window ───────────────────────────────────────────
+  // Starts at the base window; each "load more" click steps it up (bounded by
+  // TIMELINE_LIMIT_MAX). Reset to base whenever filters change — narrowing
+  // the filters is the primary way to fit the chronology in one window.
+  const [limit, setLimit] = useState(LIMIT_BASE);
+
   const query = useMemo<TimelineQuery>(
     () => ({
       locationId: filters.locationId ?? undefined,
@@ -88,17 +99,20 @@ function TimelinePage() {
       from: filters.from,
       to: filters.to,
       includeScenes: filters.includeScenes,
-      // Always fetch the max window; lane visibility is client-side (ADR-0034).
-      limit: 100,
+      // Accumulated result window; lane visibility stays client-side
+      // (ADR-0034) — toggling lanes never re-queries.
+      limit,
     }),
-    [filters],
+    [filters, limit],
   );
 
   function handleFilterChange(patch: TimelineFilterPatch) {
     setFilters((prev) => ({ ...prev, ...patch }));
+    setLimit(LIMIT_BASE);
   }
   function handleClearFilters() {
     setFilters(DEFAULT_FILTERS);
+    setLimit(LIMIT_BASE);
   }
 
   const hasActiveFilters =
@@ -110,7 +124,7 @@ function TimelinePage() {
     !filters.includeScenes;
 
   // ─── Data ─────────────────────────────────────────────────────────────────
-  const { data: response, isLoading } = useTimeline(spaceId, wid, query);
+  const { data: response, isLoading, isFetching } = useTimeline(spaceId, wid, query);
   const { data: lanes = [] } = useTimelineLanes(spaceId, wid);
 
   const entries = response?.entries ?? [];
@@ -286,16 +300,34 @@ function TimelinePage() {
           worldId={wid}
         />
 
-        {/* Truncation banner */}
+        {/* Truncation banner — "load more" steps the window up until capped */}
         {truncated && entries.length > 0 && (
           <div
             role="status"
-            className="mb-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400"
+            className="mb-3 flex items-center gap-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400"
           >
-            {t("timeline:truncation.message", {
-              shown: entries.length,
-              total,
-            })}
+            <span className="min-w-0 flex-1">
+              {t(
+                limit >= TIMELINE_LIMIT_MAX
+                  ? "timeline:truncation.messageCapped"
+                  : "timeline:truncation.message",
+                { shown: entries.length, total },
+              )}
+            </span>
+            {limit < TIMELINE_LIMIT_MAX && (
+              <button
+                type="button"
+                disabled={isFetching}
+                onClick={() =>
+                  setLimit((prev) =>
+                    Math.min(prev + LIMIT_STEP, TIMELINE_LIMIT_MAX),
+                  )
+                }
+                className="shrink-0 rounded-sm border border-amber-500/40 bg-amber-500/15 px-2 py-1 font-medium transition-colors hover:bg-amber-500/25 disabled:pointer-events-none disabled:opacity-50"
+              >
+                {t("timeline:truncation.loadMore")}
+              </button>
+            )}
           </div>
         )}
       </div>

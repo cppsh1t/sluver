@@ -69,7 +69,9 @@
     "scene": "场景"
   },
   "truncation": {
-    "message": "显示 {{shown}} / 共 {{total}} 条 — 收窄筛选可查看更多"
+    "message": "已显示 {{shown}} / 共 {{total}} 条",
+    "loadMore": "加载更多",
+    "messageCapped": "已显示 {{shown}} / 共 {{total}} 条 — 收窄筛选可查看更多"
   },
   "empty": {
     "title": "时间线上还没有内容",

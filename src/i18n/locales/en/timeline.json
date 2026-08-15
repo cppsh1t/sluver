@@ -69,7 +69,9 @@
     "scene": "Scene"
   },
   "truncation": {
-    "message": "Showing {{shown}} of {{total}} — narrow the filters to see more"
+    "message": "Showing {{shown}} of {{total}}",
+    "loadMore": "Load more",
+    "messageCapped": "Showing {{shown}} of {{total}} — narrow the filters to see more"
   },
   "empty": {
     "title": "Nothing on the timeline yet",

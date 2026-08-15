@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 import { listTimelineLanes, queryTimeline } from "@/api";
 import type { TimelineQuery } from "@/types";
@@ -30,6 +30,10 @@ export const useTimeline = (
   useQuery({
     queryKey: timelineKeys.list(spaceId, worldId, query),
     queryFn: () => queryTimeline(spaceId, worldId, query),
+    // The query key includes `limit` (the UI's "load more" steps it up).
+    // Keep the previous window mounted while the next one fetches — without
+    // this, every step unmounts the grid (skeleton flash + scroll reset).
+    placeholderData: keepPreviousData,
     enabled: !!spaceId && !!worldId,
   });
 
