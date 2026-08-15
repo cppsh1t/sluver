@@ -60,6 +60,7 @@ import type {
   AgentLoopOptions,
   AgentLoopRunInput,
   AgentLoopRunResult,
+  ModelInputTransform,
 } from "./types";
 
 // ─── Public handle ───────────────────────────────────────────────────────
@@ -233,6 +234,7 @@ export class AgentLoop {
           signal,
           emitter,
           input.systemPrompt,
+          input.inputTransform,
         );
 
         if (outcome.kind === "aborted") {
@@ -330,6 +332,7 @@ export class AgentLoop {
     signal: AbortSignal,
     emitter: AgentEmitter,
     systemPrompt: string | undefined,
+    inputTransform: ModelInputTransform | undefined,
   ): Promise<StepOutcome> {
     let stepError: AgentError | undefined;
     let abortedDuringStream = false;
@@ -349,7 +352,10 @@ export class AgentLoop {
       result = streamText({
         model: this.#options.model,
         system: systemPrompt ?? this.#options.systemPrompt,
-        messages,
+        // The caller-supplied pure transform (ModelInputTransform contract)
+        // reshapes ONLY what the model sees; the working `messages` array
+        // and the run result keep the untransformed originals.
+        messages: inputTransform ? inputTransform(messages) : messages,
         tools: this.#options.tools,
         stopWhen: isStepCount(1),
         temperature: this.#options.temperature,

@@ -103,6 +103,20 @@ export interface AgentLoopOptions {
 // ─── Run input ───────────────────────────────────────────────────────────
 
 /**
+ * A pure transform applied to the model input at EVERY `streamText`
+ * boundary (each step, including the first). The loop stays application-
+ * agnostic — callers supply domain-specific shaping (e.g. delete-snapshot
+ * compaction from the pipeline, ADR-0028).
+ *
+ * Contract: MUST be pure (same input → same output), MUST NOT mutate the
+ * input array or its elements, and MUST preserve array length (the caller's
+ * `inputLength` bookkeeping for delta slicing depends on it). Transforms
+ * reshape what the MODEL sees only — the loop's working array, run result,
+ * and persisted deltas always carry the untransformed originals.
+ */
+export type ModelInputTransform = (messages: ModelMessage[]) => ModelMessage[];
+
+/**
  * Input to a single {@link AgentLoop.run} call.
  *
  * `messages` is the conversation thread **without** a `SystemModelMessage` —
@@ -121,6 +135,13 @@ export interface AgentLoopRunInput {
   systemPrompt?: string;
   /** Optional external abort signal; forwarded to the internal controller. */
   abortSignal?: AbortSignal;
+  /**
+   * Optional pure transform applied to `messages` at every `streamText`
+   * boundary (see {@link ModelInputTransform}). Covers both the entry
+   * thread and in-run accumulated tool results, so payload hygiene holds
+   * for multi-step runs without the caller pre-transforming the input.
+   */
+  inputTransform?: ModelInputTransform;
 }
 
 // ─── Run result ──────────────────────────────────────────────────────────
