@@ -36,6 +36,9 @@ tauri-plugin-os = "2"
 # Native dialog plugin (directory picker for log export — replaces the old
 # "dump to downloads dir" default with a user-chosen destination).
 tauri-plugin-dialog = "2"
+# Native OS notifications (tool consent gate — ADR-0025): surfaces pending
+# approvals even when the conversation is not the visible one.
+tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-decorum = "1"
