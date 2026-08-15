@@ -36,9 +36,12 @@ tauri-plugin-os = "2"
 # Native dialog plugin (directory picker for log export — replaces the old
 # "dump to downloads dir" default with a user-chosen destination).
 tauri-plugin-dialog = "2"
-# Native OS notifications (tool consent gate — ADR-0025): surfaces pending
-# approvals even when the conversation is not the visible one.
-tauri-plugin-notification = "2"
+# Native OS notifications (tool consent gate — ADR-0025 / ADR-0036): surfaces
+# pending approvals even when the conversation is not the visible one. Used
+# directly (notify-rust) rather than via tauri-plugin-notification — see
+# ADR-0036 for why the plugin's dev-mode AUMID fallback is broken on
+# Windows 11 24H2+.
+notify-rust = "4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-decorum = "1"
@@ -131,4 +134,9 @@ tempfile = "3"
 webview2-com = "0.38"
 # `HSTRING` + `PCWSTR` for the `ICoreWebView2::ExecuteScript` call.
 windows = { version = "0.61", default-features = false }
+# HKCU registry access for the AUMID self-registration in
+# commands/notification.rs (ADR-0036) — DisplayName/IconUri under
+# `Software\Classes\AppUserModelId\{id}` so toasts render for this
+# unpackaged app in dev builds.
+winreg = "0.55"
 

@@ -8,6 +8,7 @@ pub mod event;
 pub mod export_book;
 pub mod grep;
 pub mod novel;
+pub mod notification;
 pub mod search;
 pub mod session;
 pub mod setting;

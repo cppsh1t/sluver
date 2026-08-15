@@ -16,7 +16,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_decorum::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
@@ -78,6 +77,10 @@ pub fn run() {
             // English menu; the frontend pushes the resolved locale via
             // `set_tray_locale` right after bootstrap. See `tray.rs`.
             tray::setup(app.handle())?;
+
+            // Native notifications: self-register the Windows AUMID so
+            // toasts render in dev builds too (ADR-0036). Best-effort.
+            commands::notification::register_aumid(app.handle());
 
             // Decide which window to show on startup (ADR-0011). Priority:
             //   1. lastOpenedSpaceId (if the Space still exists)
@@ -324,6 +327,8 @@ pub fn run() {
             // Timeline (derived view — ADR-0033)
             commands::timeline::query_timeline,
             commands::timeline::list_timeline_lanes,
+            // Native notifications (notify-rust + explicit AUMID — ADR-0036)
+            commands::notification::show_notification,
         ])
         .on_window_event(|window, event| {
             let label = window.label();
