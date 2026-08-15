@@ -27,6 +27,20 @@
       "en": "English"
     }
   },
+  "font": {
+    "ui": {
+      "title": "UI font",
+      "description": "Font used for the app interface (menus, buttons, sidebars, etc.)."
+    },
+    "article": {
+      "title": "Article font",
+      "description": "Font used for novel prose — scene writing and chapter reading."
+    },
+    "default": "Default (Inter)",
+    "placeholder": "Search fonts…",
+    "empty": "No matching fonts.",
+    "loadFailed": "Failed to load system fonts"
+  },
   "toast": {
     "loadFailed": "Failed to load settings",
     "saveFailed": "Failed to save"

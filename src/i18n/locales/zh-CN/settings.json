@@ -27,6 +27,20 @@
       "en": "English"
     }
   },
+  "font": {
+    "ui": {
+      "title": "界面字体",
+      "description": "应用于软件界面（菜单、按钮、侧栏等）的字体。"
+    },
+    "article": {
+      "title": "正文字体",
+      "description": "应用于小说正文的字体，包括场景写作与章节阅读。"
+    },
+    "default": "默认（Inter）",
+    "placeholder": "搜索字体…",
+    "empty": "未找到匹配的字体。",
+    "loadFailed": "加载系统字体失败"
+  },
   "toast": {
       "loadFailed": "加载设置失败",
     "saveFailed": "保存失败"

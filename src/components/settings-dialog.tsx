@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useRouterState } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { locale as detectOsLocale } from "@tauri-apps/plugin-os";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { downloadDir, join } from "@tauri-apps/api/path";
 import dayjs from "dayjs";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { ChevronDownIcon } from "@hugeicons/core-free-icons";
 
 import { resolveLocale, AUTO_LOCALE } from "@/i18n";
 import i18n from "@/i18n";
@@ -17,6 +20,7 @@ import {
   getAppSetting,
   getLogLevel,
   getLogsDir,
+  listSystemFonts,
   setLogLevel,
   setTrayLocale,
   updateAppSetting,
@@ -26,6 +30,12 @@ import {
 import { toErrorPayload } from "@/api/client";
 import { setDayjsLocale } from "@/lib/format";
 import { logger, setLevel, type LogLevel } from "@/lib/logger";
+import {
+  applyArticleFont,
+  applyUiFont,
+  DEFAULT_FONT,
+  fontStack,
+} from "@/lib/font";
 import {
   applyColorTheme,
   applyTheme,
@@ -64,6 +74,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 
 interface SettingsDialogProps {
   open: boolean;
@@ -125,7 +148,28 @@ function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [theme, setTheme] = useState<ThemeMode>("system");
   const [colorTheme, setColorTheme] = useState<ColorTheme>("neutral");
   const [locale, setLocale] = useState<AppSetting["locale"]>("auto");
+  const [fontUi, setFontUi] = useState<string>(DEFAULT_FONT);
+  const [fontArticle, setFontArticle] = useState<string>(DEFAULT_FONT);
   const [loading, setLoading] = useState(true);
+
+  // ── System font list ────────────────────────────────────────────────
+  // Fonts installed on the OS rarely change while the app is open, so an
+  // effectively permanent staleTime avoids re-querying on every dialog
+  // open. Shared by both font pickers.
+  const fontsQuery = useQuery({
+    queryKey: ["system-fonts"],
+    queryFn: listSystemFonts,
+    staleTime: Infinity,
+  });
+  const systemFonts = fontsQuery.data ?? [];
+
+  useEffect(() => {
+    if (fontsQuery.isError) {
+      toast.error(i18n.t("settings:font.loadFailed"), {
+        description: toErrorPayload(fontsQuery.error).message,
+      });
+    }
+  }, [fontsQuery.isError, fontsQuery.error]);
 
   // ── Diagnostics state ───────────────────────────────────────────────
   const currentSpaceId = useCurrentSpaceId();
@@ -173,6 +217,8 @@ function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         setTheme(c.appearance.theme);
         setColorTheme(c.appearance.colorTheme);
         setLocale(c.locale);
+        setFontUi(c.appearance.fontUi ?? DEFAULT_FONT);
+        setFontArticle(c.appearance.fontArticle ?? DEFAULT_FONT);
       })
       .catch((e) => {
         // Async catch handler runs outside React's render cycle — use the
@@ -205,12 +251,16 @@ function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     theme?: ThemeMode;
     colorTheme?: ColorTheme;
     locale?: AppSetting["locale"];
+    fontUi?: string;
+    fontArticle?: string;
   }) {
     try {
       await updateAppSetting({
         appearance: {
           theme: next.theme ?? theme,
           colorTheme: next.colorTheme ?? colorTheme,
+          fontUi: next.fontUi ?? fontUi,
+          fontArticle: next.fontArticle ?? fontArticle,
         },
         locale: next.locale ?? locale,
       });
@@ -246,6 +296,32 @@ function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     } catch {
       setColorTheme(prev);
       applyColorTheme(prev);
+    }
+  }
+
+  async function handleChangeUiFont(next: string) {
+    if (next === fontUi) return;
+    const prev = fontUi;
+    setFontUi(next);
+    applyUiFont(next);
+    try {
+      await persist({ fontUi: next });
+    } catch {
+      setFontUi(prev);
+      applyUiFont(prev);
+    }
+  }
+
+  async function handleChangeArticleFont(next: string) {
+    if (next === fontArticle) return;
+    const prev = fontArticle;
+    setFontArticle(next);
+    applyArticleFont(next);
+    try {
+      await persist({ fontArticle: next });
+    } catch {
+      setFontArticle(prev);
+      applyArticleFont(prev);
     }
   }
 
@@ -467,6 +543,38 @@ function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 options={languageOptions}
                 value={locale}
                 onChange={(v) => handleChangeLanguage(v as AppSetting["locale"])}
+              />
+            </SettingRow>
+
+            <SettingRow
+              title={t("settings:font.ui.title")}
+              description={t("settings:font.ui.description")}
+            >
+              <FontCombobox
+                ariaLabel={t("settings:font.ui.title")}
+                value={fontUi}
+                fonts={systemFonts}
+                loading={loading || fontsQuery.isPending}
+                placeholder={t("settings:font.placeholder")}
+                defaultLabel={t("settings:font.default")}
+                emptyLabel={t("settings:font.empty")}
+                onSelect={handleChangeUiFont}
+              />
+            </SettingRow>
+
+            <SettingRow
+              title={t("settings:font.article.title")}
+              description={t("settings:font.article.description")}
+            >
+              <FontCombobox
+                ariaLabel={t("settings:font.article.title")}
+                value={fontArticle}
+                fonts={systemFonts}
+                loading={loading || fontsQuery.isPending}
+                placeholder={t("settings:font.placeholder")}
+                defaultLabel={t("settings:font.default")}
+                emptyLabel={t("settings:font.empty")}
+                onSelect={handleChangeArticleFont}
               />
             </SettingRow>
           </section>
@@ -766,6 +874,110 @@ function RadioCard({
       </span>
       <span>{label}</span>
     </button>
+  );
+}
+
+/**
+ * Searchable single-select combobox for font family picking — a Popover +
+ * Command (cmdk) combo rather than a plain Select because system font lists
+ * run into the hundreds and need filtering.
+ *
+ * Options are the "default" sentinel (app default font) plus the supplied
+ * system fonts, each rendered in its own family as a live preview. Selection
+ * is reported up via `onSelect`; persistence/rollback is owned by the parent
+ * (same optimistic pattern as the theme/color rows).
+ *
+ * Note: `onSelect` closes over the option name directly rather than using
+ * cmdk's callback argument — the closed-over name is the exact persisted
+ * setting value, avoiding any reliance on cmdk's argument semantics.
+ */
+function FontCombobox({
+  ariaLabel,
+  value,
+  fonts,
+  loading,
+  placeholder,
+  defaultLabel,
+  emptyLabel,
+  onSelect,
+}: {
+  ariaLabel: string;
+  /** Persisted setting value — "default" sentinel or a font family name. */
+  value: string;
+  fonts: string[];
+  loading: boolean;
+  placeholder: string;
+  defaultLabel: string;
+  emptyLabel: string;
+  onSelect: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const label = value === DEFAULT_FONT ? defaultLabel : value;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        render={
+          <Button
+            variant="outline"
+            size="sm"
+            type="button"
+            role="combobox"
+            aria-label={ariaLabel}
+            aria-expanded={open}
+            disabled={loading}
+            className="w-56 justify-between font-normal"
+          />
+        }
+      >
+        <span
+          className="min-w-0 flex-1 truncate text-left"
+          style={{ fontFamily: fontStack(value) }}
+        >
+          {label}
+        </span>
+        <HugeiconsIcon
+          icon={ChevronDownIcon}
+          strokeWidth={2}
+          data-icon="inline-end"
+          className="shrink-0 opacity-50"
+        />
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-64 p-0">
+        <Command>
+          <CommandInput placeholder={placeholder} />
+          <CommandList>
+            <CommandEmpty>{emptyLabel}</CommandEmpty>
+            <CommandGroup>
+              <CommandItem
+                value={DEFAULT_FONT}
+                data-checked={value === DEFAULT_FONT || undefined}
+                onSelect={() => {
+                  onSelect(DEFAULT_FONT);
+                  setOpen(false);
+                }}
+              >
+                {defaultLabel}
+              </CommandItem>
+              {fonts.map((name) => (
+                <CommandItem
+                  key={name}
+                  value={name}
+                  data-checked={name === value || undefined}
+                  onSelect={() => {
+                    onSelect(name);
+                    setOpen(false);
+                  }}
+                  style={{ fontFamily: fontStack(name) }}
+                >
+                  <span className="min-w-0 flex-1 truncate">{name}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
 
