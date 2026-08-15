@@ -20,7 +20,8 @@ import { call } from './client';
  * @param worldId  The World to query.
  * @param query    Optional filters (character, location, time window, novel,
  *                 `includeScenes`, `limit`). An empty/absent query returns the
- *                 whole chronology up to `limit` (default 50, max 100).
+ *                 whole chronology up to `limit` (default 50, max
+ *                 `TIMELINE_LIMIT_MAX`).
  */
 export function queryTimeline(
   spaceId: string,
