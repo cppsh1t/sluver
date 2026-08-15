@@ -3,7 +3,8 @@
  *
  * Explorer gets full worldbook CRUD + novel/chapter/scene query-only tools.
  * Writer gets full novel/chapter/scene CRUD + worldbook query-only tools.
- * Both get system tools (time) and all 8 search_* tools (read-only).
+ * Both get system tools (time), all 8 search_* tools, and grep
+ * (match-centric full-corpus retrieval — ADR-0035), all read-only.
  *
  * The `queryOnly` helper filters a domain's tools down to read operations
  * (list / get / count / search) by tool-name prefix, so domain files export
@@ -12,6 +13,7 @@
 
 import type { ToolSet } from "@/lib/ai";
 
+import { grepTools } from "../grep";
 import { systemTools } from "../system";
 import type { ToolDef, ToolContext } from "../types";
 import { buildToolSet } from "../types";
@@ -47,7 +49,7 @@ function queryOnly(tools: Record<string, ToolDef>): Record<string, ToolDef> {
 
 /**
  * Explorer toolset: full worldbook CRUD + novel/chapter/scene query + system.
- * 52 tools (44 + 8 search). The Explorer surveys and builds the world
+ * 53 tools (45 + 8 search). The Explorer surveys and builds the world
  * (characters, locations, items, lore, events) and can read (but not modify)
  * the novel structure.
  */
@@ -65,6 +67,8 @@ export function buildExplorerTools(ctx: ToolContext): ToolSet {
       ...eventTools(),
       // Timeline (read-only chronology — ADR-0033)
       ...timelineTools(),
+      // Grep (cross-entity match-centric retrieval — ADR-0035)
+      ...grepTools(),
       // Novel/chapter/scene: query only (includes search_*)
       ...queryOnly(novelTools()),
       ...queryOnly(chapterTools()),
@@ -83,7 +87,7 @@ export function buildExplorerTools(ctx: ToolContext): ToolSet {
 
 /**
  * Writer toolset: full novel/chapter/scene CRUD + worldbook query + system.
- * 44 tools (36 + 8 search). The Writer drafts and refines prose (novels,
+ * 45 tools (37 + 8 search). The Writer drafts and refines prose (novels,
  * chapters, scenes) and can read (but not modify) the worldbook for reference.
  */
 export function buildWriterTools(ctx: ToolContext): ToolSet {
@@ -104,6 +108,8 @@ export function buildWriterTools(ctx: ToolContext): ToolSet {
       ...queryOnly(eventTools()),
       // Timeline (read-only chronology — ADR-0033)
       ...timelineTools(),
+      // Grep (cross-entity match-centric retrieval — ADR-0035)
+      ...grepTools(),
       // System
       ...systemTools(),
       ...webSearchTools(),
