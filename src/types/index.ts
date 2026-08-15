@@ -81,6 +81,18 @@ export {
   type TimelineLane,
 } from './timeline';
 
+// ─── Grep (match-centric retrieval — ADR-0035) ─────────────────────────────
+export {
+  grepEntityTypeSchema,
+  type GrepEntityType,
+  grepSnippetSchema,
+  type GrepSnippet,
+  grepMatchGroupSchema,
+  type GrepMatchGroup,
+  grepResultSchema,
+  type GrepResult,
+} from './grep';
+
 // ─── Novel structure ──────────────────────────────────────────────────────
 export {
   novelSchema,
