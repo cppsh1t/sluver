@@ -14,7 +14,7 @@
 import { z } from "zod";
 
 import { queryTimeline } from "@/api/timeline";
-import type { TimelineQuery } from "@/types";
+import { TIMELINE_LIMIT_MAX, type TimelineQuery } from "@/types";
 import type { ToolDef } from "./types";
 
 const inputSchema = z.object({
@@ -56,9 +56,11 @@ const inputSchema = z.object({
     .number()
     .int()
     .min(1)
-    .max(100)
+    .max(TIMELINE_LIMIT_MAX)
     .optional()
-    .describe("Maximum entries to return (default 50, max 100)."),
+    .describe(
+      `Maximum entries to return (default 50, max ${TIMELINE_LIMIT_MAX}).`,
+    ),
 });
 
 /** Timeline tools, keyed by `snake_case` name. */
@@ -73,7 +75,7 @@ export function timelineTools(): Record<string, ToolDef> {
         "Filterable by character, location, time window (from/to), novel, and limit. " +
         "Unlike list_events, this returns time-ordered, cross-entity-joined entries; call get_event/get_scene for full detail. " +
         "NOTE: every event and scene appears at its own startAt (events referenced by scenes are NOT deduplicated) so the chronology is chronologically truthful. " +
-        "Results are capped at limit (default 50, max 100); if truncated, total reports the full match count — narrow your filters or request a later window.",
+        `Results are capped at limit (default 50, max ${TIMELINE_LIMIT_MAX}); if truncated, total reports the full match count — narrow your filters or request a later window.`,
       inputSchema,
       consentLevel: "auto",
       execute: async (input, ctx) =>
