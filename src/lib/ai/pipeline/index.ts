@@ -5,6 +5,8 @@
  *   block to the role's static system prompt (Plan mode, ADR-0029 Phase 1).
  * - {@link ./tool-compactor} — `compactToolCalls`: stubs aged tool-call +
  *   tool-result pairs to short text (Context mode, ADR-0031 Phase 1).
+ * - {@link ./delete-snapshot} — `stripDeleteSnapshots`: compacts delete-tool
+ *   snapshot payloads to a `{ deleted, id, name }` echo (payload hygiene).
  * - {@link ./types}          — `SystemPromptComposerInput`, `CompactionPolicy`.
  *
  * Purity: this module and its siblings import only from siblings,
@@ -15,4 +17,5 @@
 
 export { composeSystemPrompt } from "./plan-injector";
 export { compactToolCalls, deriveStatus } from "./tool-compactor";
+export { stripDeleteSnapshots } from "./delete-snapshot";
 export type { SystemPromptComposerInput, CompactionPolicy } from "./types";
