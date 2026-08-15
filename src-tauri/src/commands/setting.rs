@@ -26,6 +26,22 @@ pub fn get_app_setting(state: State<'_, DbManager>) -> Result<AppSetting, DbErro
             )
             .unwrap_or_else(|_| "neutral".to_string());
 
+        let font_ui = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'appearance.fontUi'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap_or_else(|_| "default".to_string());
+
+        let font_article = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'appearance.fontArticle'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap_or_else(|_| "default".to_string());
+
         let locale = conn
             .query_row(
                 "SELECT value FROM settings WHERE key = 'app.locale'",
@@ -35,7 +51,12 @@ pub fn get_app_setting(state: State<'_, DbManager>) -> Result<AppSetting, DbErro
             .unwrap_or_else(|_| "auto".to_string());
 
         Ok(AppSetting {
-            appearance: Appearance { theme, color_theme },
+            appearance: Appearance {
+                theme,
+                color_theme,
+                font_ui,
+                font_article,
+            },
             locale,
         })
     })
@@ -49,6 +70,8 @@ pub fn update_app_setting(
 ) -> Result<AppSetting, DbError> {
     let theme = setting.appearance.theme.clone();
     let color_theme = setting.appearance.color_theme.clone();
+    let font_ui = setting.appearance.font_ui.clone();
+    let font_article = setting.appearance.font_article.clone();
     let locale = setting.locale.clone();
     state.with_meta(|conn| {
         conn.execute(
@@ -60,6 +83,16 @@ pub fn update_app_setting(
             "INSERT INTO settings (key, value) VALUES ('appearance.colorTheme', ?1)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             params![color_theme],
+        )?;
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('appearance.fontUi', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![font_ui],
+        )?;
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('appearance.fontArticle', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![font_article],
         )?;
         conn.execute(
             "INSERT INTO settings (key, value) VALUES ('app.locale', ?1)

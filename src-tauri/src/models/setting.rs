@@ -17,6 +17,12 @@ pub struct Appearance {
     pub theme: String,
     /// "neutral" | "parchment"
     pub color_theme: String,
+    /// UI font family name (from `list_system_fonts`); `"default"`
+    /// follows the app base font.
+    pub font_ui: String,
+    /// Long-form reading (article) font family name; `"default"`
+    /// follows the app base font.
+    pub font_article: String,
 }
 
 impl Default for AppSetting {
@@ -25,6 +31,8 @@ impl Default for AppSetting {
             appearance: Appearance {
                 theme: "system".to_string(),
                 color_theme: "neutral".to_string(),
+                font_ui: "default".to_string(),
+                font_article: "default".to_string(),
             },
             locale: "auto".to_string(),
         }
