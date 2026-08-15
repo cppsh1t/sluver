@@ -34,6 +34,7 @@ import {
 import {
   compactToolCalls,
   composeSystemPrompt,
+  stripDeleteSnapshots,
   type CompactionPolicy,
 } from "@/lib/ai/pipeline";
 import type {
@@ -312,6 +313,12 @@ export class Agent {
     //    default) it returns the input array verbatim (zero-cost no-op). When
     //    enabled, it allocates a fresh array; the original Persisted Thread
     //    (`this.messages`) is never mutated.
+    //
+    //    stripDeleteSnapshots (passed as the loop's inputTransform below) is
+    //    applied at every step's model-input boundary — it compacts
+    //    `{ deleted, id, snapshot }` tool results to a `{ deleted, id, name }`
+    //    echo so the model never carries deleted-entity prose. The Persisted
+    //    Thread keeps the full snapshots (UI delete cards + `context_read`).
     const rawMessages = [...this.messages, userMessage].map(toModelMessage);
     const modelMessages = compactToolCalls(rawMessages, this.compactionPolicy);
     const inputLength = modelMessages.length;
@@ -331,6 +338,7 @@ export class Agent {
       messages: modelMessages,
       systemPrompt,
       abortSignal: options?.abortSignal,
+      inputTransform: stripDeleteSnapshots,
     });
 
     // 4. Loop accepted — NOW commit side effects.
