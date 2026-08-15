@@ -41,6 +41,7 @@ import {
 } from "./message-render";
 import { PlanToolCard } from "./tool-cards/plan-tool-card";
 import { ChapterOverviewToolCard } from "./tool-cards/chapter-overview-tool-card";
+import { TimelineToolCard } from "./tool-cards/timeline-tool-card";
 import { summarizeToolCall } from "./tool-summary";
 import { ToolBody, ToolSummaryLine } from "./tool-cards/tool-body";
 
@@ -70,6 +71,11 @@ export function ToolCard({ tool, worldId, conversationId }: ToolCardProps) {
     // Chapter overview: render a per-scene reference matrix instead of the
     // generic JSON fallback (parseToolName can't recognize the compound name).
     return <ChapterOverviewToolCard tool={tool} />;
+  }
+  if (tool.toolName === "timeline_lookup") {
+    // Timeline lookup: render the in-world chronology entry list (story-time
+    // via FormattedTime) instead of the generic JSON fallback.
+    return <TimelineToolCard tool={tool} />;
   }
   return <GenericToolCard tool={tool} worldId={worldId} conversationId={conversationId} />;
 }

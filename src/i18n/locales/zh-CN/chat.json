@@ -85,6 +85,17 @@
       "untitledScene": "（无标题）",
       "hasLocation": "有地点"
     },
+    "timeline": {
+      "title": "时间线查询",
+      "entryCount": "{{count}} 条记录",
+      "shownCount": "显示 {{shown}}/{{total}} 条",
+      "truncated": "已截断，共 {{total}} 条",
+      "loading": "查询时间线中…",
+      "noEntries": "时间线暂无记录",
+      "undated": "未标注时间",
+      "kindEvent": "事件",
+      "kindScene": "场景"
+    },
     "search": {
       "resultCount": "找到 {{count}} 条结果",
       "noResults": "没有找到结果",

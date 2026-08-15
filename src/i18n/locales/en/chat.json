@@ -85,6 +85,17 @@
       "untitledScene": "(untitled)",
       "hasLocation": "has location"
     },
+    "timeline": {
+      "title": "Timeline lookup",
+      "entryCount": "{{count}} entries",
+      "shownCount": "Showing {{shown}} of {{total}}",
+      "truncated": "truncated — {{total}} total",
+      "loading": "Querying timeline…",
+      "noEntries": "No timeline entries",
+      "undated": "Undated",
+      "kindEvent": "Event",
+      "kindScene": "Scene"
+    },
     "search": {
       "resultCount": "{{count}} results found",
       "noResults": "No results found",
