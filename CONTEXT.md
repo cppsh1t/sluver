@@ -116,6 +116,18 @@ _Avoid_: ChatMessage, StoredMessage, MessageRecord
 A persisted, Conversation-scoped working agenda authored by the Agent via the `plan` tool — an ordered TODO list that implicitly guides the Agent's subsequent turns within that Conversation. At most one **active Plan** per Conversation; calling the `plan` tool replaces the prior Plan wholesale (last-write-wins). Persistence is per-Conversation (lives in `conversations.meta.plan`); the Plan survives app restarts and Conversation switches. The Plan is **NOT** a Message — it is never appended to the persisted thread; instead it is re-injected into the Derived Model Input on every subsequent turn (see ADR-0028). Each Plan item carries a status of `pending` (not yet started), `in_progress` (an item the Agent has started but not yet finished), or `done` (completed).
 _Avoid_: TodoList, Scratchpad, Agenda, Outline, Checklist
 
+**Grep**:
+The Agent's single match-centric retrieval tool — searches a substring query across all author-written text fields of the 8 entity types (including CharacterPhase fields) and returns Match Groups as occurrence evidence, optionally narrowed to selected entity types. Distinct from the per-entity `search_*` tools, which are entity discovery returning entity summaries: grep answers "where does this text occur?", not "which entities match?". Read-only (consent auto); available to both Explorer and Writer. Matching is case-insensitive for ASCII only, mirroring the search_* behavior. (See ADR-0035.)
+_Avoid_: search_all, find_mentions, global_search
+
+**Match Group**:
+The unit of grep results — all occurrences of the query within one (entity, field) pair, carrying the occurrence count, a small number of Snippets, and redundant entity identity (title or name; the owning character's id and name for phase hits) so the model can act without a follow-up get_* call. Groups are capped per call (with an explicit truncated flag) and ordered by occurrence count descending with a deterministic tie-break. Phase hits are their own entity type whose id is directly usable against the entity's own fields.
+_Avoid_: Hit, Match, Result, Entry
+
+**Snippet**:
+Three-part occurrence evidence inside a Match Group — the text before, the matched text itself, and the text after, each side truncated to a short fixed length. No marker glyphs; the parts are structured fields, not a concatenated string, so characters that occur in prose can never be mistaken for delimiters.
+_Avoid_: Fragment, Excerpt, Quote
+
 **Launcher**:
 The app's anchor window outside any Space — the OS window whose label is the statically configured `"main"` (`tauri.conf.json`), rendering the Space picker / landing UI where Spaces are selected and created. Distinct from Space windows in two ways: it hides to tray on close (keeping the process alive) rather than being destroyed, and closing all Space windows does NOT auto-show it — the user returns to it via the tray menu or by relaunching the app (which auto-reopens `lastOpenedSpaceId`). Identity is its fixed label `"main"` (single instance).
 _Avoid_: Dashboard, Home, Welcome screen, Hub, Shell
