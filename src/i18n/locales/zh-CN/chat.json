@@ -101,6 +101,24 @@
       "kindEvent": "事件",
       "kindScene": "场景"
     },
+    "detail": {
+      "deleted": "已删除",
+      "pendingDeletion": "待删除",
+      "aliases": "别名",
+      "description": "描述",
+      "notes": "备注",
+      "phases": "阶段",
+      "noPhases": "暂无阶段",
+      "appearance": "外观",
+      "conversationStyle": "对话风格",
+      "triggerEvent": "触发事件",
+      "participantsCount": "{{count}} 位角色",
+      "noParticipants": "无参与角色",
+      "noLocation": "未指定地点",
+      "noTime": "未标注时间",
+      "createdAt": "创建于 {{time}}",
+      "updatedAt": "更新于 {{time}}"
+    },
     "search": {
       "resultCount": "找到 {{count}} 条结果",
       "noResults": "没有找到结果",

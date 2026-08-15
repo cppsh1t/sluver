@@ -101,6 +101,24 @@
       "kindEvent": "Event",
       "kindScene": "Scene"
     },
+    "detail": {
+      "deleted": "Deleted",
+      "pendingDeletion": "Pending deletion",
+      "aliases": "Aliases",
+      "description": "Description",
+      "notes": "Notes",
+      "phases": "Phases",
+      "noPhases": "No phases yet",
+      "appearance": "Appearance",
+      "conversationStyle": "Conversation style",
+      "triggerEvent": "Triggered by",
+      "participantsCount": "{{count}} participant(s)",
+      "noParticipants": "No participants",
+      "noLocation": "No location",
+      "noTime": "Undated",
+      "createdAt": "Created {{time}}",
+      "updatedAt": "Updated {{time}}"
+    },
     "search": {
       "resultCount": "{{count}} results found",
       "noResults": "No results found",
