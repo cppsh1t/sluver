@@ -44,6 +44,7 @@ import {
   PencilEdit01Icon,
 } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
+import { countWords } from "@/lib/word-count";
 import type {
   Character,
   Event as EventType,
@@ -174,10 +175,7 @@ function SceneCard({
     setTitleEditing(false);
   }
 
-  const isCJK = ["zh", "ja", "ko"].some((l) => i18n.language.startsWith(l));
-  const wordCount = isCJK
-    ? scene.content.replace(/\s/g, "").length
-    : scene.content.trim() ? scene.content.trim().split(/\s+/).length : 0;
+  const wordCount = countWords(scene.content, i18n.language);
   const hasTime = scene.startAt || scene.endAt;
 
   const timeLabel = (() => {

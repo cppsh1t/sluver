@@ -35,6 +35,7 @@ import { SceneRefSidebar } from "@/components/worldbook/scene-ref-sidebar";
 import { toErrorPayload } from "@/api/client";
 import { translateError } from "@/i18n/errors";
 import { cn } from "@/lib/utils";
+import { countWords } from "@/lib/word-count";
 import {
   useChapters,
   useScenes,
@@ -175,6 +176,18 @@ function ChapterWorkspacePage() {
   }, [serverScenes]);
 
   const displayScenes = overrideScenes ?? localScenes;
+
+  // ─── Chapter body word count (scene content only, live) ──────────────────
+  // Sums over displayScenes so in-flight (pre-autosave) edits are reflected.
+  const language = i18n.language;
+  const chapterWordCount = useMemo(
+    () =>
+      displayScenes.reduce(
+        (sum, s) => sum + countWords(s.content, language),
+        0,
+      ),
+    [displayScenes, language],
+  );
 
   // ─── Debounced auto-save ────────────────────────────────────────────────
   const timersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -398,6 +411,11 @@ function ChapterWorkspacePage() {
                 {chapter.title}
               </h1>
             )}
+
+            {/* Chapter body word count (scene content only) */}
+            <p className="mt-1 text-xs text-muted-foreground/50">
+              {t("novel:chapter.wordCount", { count: chapterWordCount })}
+            </p>
 
             {/* Collapsible summary (edit mode only) */}
             {mode === "edit" && (
