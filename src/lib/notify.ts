@@ -1,27 +1,23 @@
 /**
- * Native OS notification helpers (tauri-plugin-notification).
+ * Native OS notification helpers (Rust-side notify-rust — ADR-0036).
  *
  * Fire-and-forget by design: callers `void` these promises — the consent
- * gate (ADR-0025) must never block on the OS. Every function here is
- * no-throw; failures surface as WARN logs only.
- */
-
-import {
-  isPermissionGranted,
-  requestPermission,
-  sendNotification,
-} from "@tauri-apps/plugin-notification";
-
-import i18n from "@/i18n";
-import { logger } from "@/lib/logger";
-
-/**
- * Notify the user via the OS that a tool call is awaiting consent.
+ * gate (ADR-0025) must never block on the OS. The function is no-throw;
+ * failures reject with an ErrorPayload from the `show_notification`
+ * command and surface as WARN logs only.
  *
  * Strings come from the GLOBAL `i18n.t` (async non-render context — the
  * hook `t` is for JSX render bodies only, per AGENTS.md). Redaction
  * policy: only ids + tool_name are ever logged — tool input/args may
  * contain user creative content.
+ */
+
+import { call } from "@/api/client";
+import i18n from "@/i18n";
+import { logger } from "@/lib/logger";
+
+/**
+ * Notify the user via the OS that a tool call is awaiting consent.
  */
 export async function notifyToolConsentRequested(args: {
   worldId: string;
@@ -30,19 +26,7 @@ export async function notifyToolConsentRequested(args: {
 }): Promise<void> {
   const { worldId, conversationId, toolName } = args;
   try {
-    let granted = await isPermissionGranted();
-    if (!granted) {
-      granted = (await requestPermission()) === "granted";
-    }
-    if (!granted) {
-      logger.warn("notify.tool_consent.permission_denied", {
-        world_id: worldId,
-        conversation_id: conversationId,
-      });
-      return;
-    }
-
-    sendNotification({
+    await call("show_notification", {
       title: i18n.t("chat:notification.toolConsentTitle"),
       body: i18n.t("chat:notification.toolConsentBody", { tool: toolName }),
     });
