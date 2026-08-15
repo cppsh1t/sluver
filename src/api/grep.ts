@@ -16,9 +16,10 @@ import { call } from './client';
 
 /**
  * Grep the World's full text corpus for a substring (ASCII case folding).
- * Returns match groups (entity + field + matchCount + up to 3 snippets),
- * sorted by match count descending, capped at 50 groups (`truncated`
- * flags the cap). Omit `entityTypes` to sweep the full corpus; pass e.g.
+ * Returns one PAGE of match groups (entity + field + matchCount + up to 3
+ * snippets), sorted by match count descending — 50 groups per page
+ * (`groupCount` carries the full total; `truncated` reports further
+ * pages). Omit `entityTypes` to sweep the full corpus; pass e.g.
  * `['scene']` to narrow to prose.
  *
  * @param spaceId     The Space owning the World.
@@ -26,12 +27,16 @@ import { call } from './client';
  * @param query       Substring to search for (non-empty).
  * @param entityTypes Optional scope filter; omit to search all 9 entity
  *                    types.
+ * @param offset      Pagination offset in groups (0-based). Deterministic
+ *                    ordering makes pages stable — walk 0, 50, 100, … while
+ *                    `truncated` is true.
  */
 export function grep(
   spaceId: string,
   worldId: WorldId,
   query: string,
   entityTypes?: readonly GrepEntityType[],
+  offset?: number,
 ): Promise<GrepResult> {
-  return call<GrepResult>('grep', { spaceId, worldId, query, entityTypes });
+  return call<GrepResult>('grep', { spaceId, worldId, query, entityTypes, offset });
 }

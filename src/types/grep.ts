@@ -96,24 +96,28 @@ export type GrepMatchGroup = z.infer<typeof grepMatchGroupSchema>;
 // ─── Response ─────────────────────────────────────────────────────────────
 
 /**
- * Result of a `grep` query. Groups are sorted by `matchCount` descending,
- * ties broken by fixed entity-type enum order then title ascending —
- * deterministic, so the model can diff two greps across turns. Capped at
- * 50 groups; `truncated` is `true` when the cap was hit (re-query with a
- * narrower `entityTypes` or a more specific query).
+ * Result of a `grep` query — one PAGE of a deterministically ordered result
+ * set. Groups are sorted by `matchCount` descending, ties broken by fixed
+ * entity-type enum order then title ascending — deterministic, so the model
+ * can diff two greps across turns AND paginate stably: 50 groups per page,
+ * walk `offset` (0, 50, 100, …) while `truncated` is `true`.
  */
 export const grepResultSchema = z.object({
   /** Echo of the query string. */
   query: z.string(),
-  /** Match groups, `matchCount` desc, capped at 50. */
+  /** One page of match groups, `matchCount` desc, up to 50 entries. */
   groups: z.array(grepMatchGroupSchema),
   /**
-   * FULL group count before the 50-group cap was applied — may exceed
-   * `groups.length` when `truncated` is `true` (pairs with `truncated`
-   * to tell the model how much was cut).
+   * FULL group count before pagination — may exceed `groups.length` when
+   * further pages exist (pairs with `truncated` to tell the model how much
+   * was cut).
    */
   groupCount: z.number().int(),
-  /** Whether the 50-group cap cut the result short. */
+  /**
+   * `true` when more groups exist BEYOND this page
+   * (`offset + groups.length < groupCount`) — fetch the next page by
+   * passing an increased `offset`.
+   */
   truncated: z.boolean(),
 });
 
