@@ -34,9 +34,10 @@ use tauri::State;
 use crate::db::{DbError, DbManager};
 use crate::models::{GrepMatchGroup, GrepResult, GrepSnippet};
 
-/// Soft ceiling on returned match groups. A broader query can still report
-/// its full `group_count`, but only the 50 strongest groups ride the IPC
-/// payload — bounded so a pathological query can't flood the model's context.
+/// Soft ceiling on match groups returned PER PAGE (ADR-0035 §5, amended).
+/// A broader query still reports its full `group_count` and the model
+/// paginates via `offset` — the deterministic sort makes pages stable, so
+/// completeness costs more tool calls, not bigger context payloads.
 const MAX_GROUPS: usize = 50;
 
 /// Context snippets kept per group. Three suffice to judge the surrounding
@@ -208,6 +209,25 @@ fn empty_result(query: String) -> GrepResult {
     }
 }
 
+/// Deterministic pagination over the SORTED groups (ADR-0035 §5, amended):
+/// keep one page of `MAX_GROUPS` starting at `offset`. Negative offsets are
+/// clamped to 0 (the model may misremember its page position); an offset
+/// past the end yields an empty page with `has_more = false`. Returns
+/// `(page, total_group_count, has_more)`.
+///
+/// Correctness rests on the caller having applied the full deterministic
+/// sort first: same input → same ordering → stable pages across calls, so
+/// the model can walk `offset` 0, 50, 100, … without duplicates or gaps
+/// (concurrent edits between fetches can shift boundaries — inherent to any
+/// offset scheme, acceptable at desktop scale).
+fn paginate(sorted: Vec<GrepMatchGroup>, offset: i64) -> (Vec<GrepMatchGroup>, i64, bool) {
+    let total = sorted.len() as i64;
+    let offset = offset.max(0) as usize;
+    let page: Vec<GrepMatchGroup> = sorted.into_iter().skip(offset).take(MAX_GROUPS).collect();
+    let has_more = offset + page.len() < total as usize;
+    (page, total, has_more)
+}
+
 // ─── command ─────────────────────────────────────────────────────────────────
 
 #[tracing::instrument(skip(state, query), fields(world_id = %world_id))]
@@ -217,6 +237,7 @@ pub fn grep(
     world_id: String,
     query: String,
     entity_types: Option<Vec<String>>,
+    offset: Option<i64>,
     state: State<'_, DbManager>,
 ) -> Result<GrepResult, DbError> {
     // Defensive: a whitespace query would build a `'%…%'` pattern that
@@ -290,13 +311,11 @@ pub fn grep(
             .then_with(|| a.entity_id.cmp(&b.entity_id))
     });
 
-    let group_count = groups.len() as i64;
-    let truncated = groups.len() > MAX_GROUPS;
-    groups.truncate(MAX_GROUPS);
+    let (page, group_count, truncated) = paginate(groups, offset.unwrap_or(0));
 
     let result = GrepResult {
         query,
-        groups,
+        groups: page,
         group_count,
         truncated,
     };
@@ -763,5 +782,47 @@ mod tests {
         assert!(find(&groups, "name").is_some());
         assert!(find(&groups, "description").is_some());
         assert!(find(&groups, "tags").is_none());
+    }
+
+    /// Offset pagination walks stable pages over the deterministic sort:
+    /// first page caps at 50 with `has_more`, the tail page lands exactly,
+    /// past-the-end and negative offsets degrade gracefully (ADR-0035 §5,
+    /// amended).
+    #[test]
+    fn paginate_slices_stable_pages() {
+        let groups: Vec<GrepMatchGroup> = (0..60)
+            .map(|i| GrepMatchGroup {
+                entity_type: "location".to_string(),
+                entity_id: format!("id{i:02}"),
+                entity_title: format!("loc{i:02}"),
+                character_id: None,
+                character_name: None,
+                field_name: "name".to_string(),
+                match_count: 1,
+                snippets: Vec::new(),
+            })
+            .collect();
+
+        let (page, total, has_more) = paginate(groups.clone(), 0);
+        assert_eq!((total, page.len(), has_more), (60, 50, true));
+        assert_eq!(page[0].entity_id, "id00");
+        assert_eq!(page[49].entity_id, "id49");
+
+        let (page, total, has_more) = paginate(groups.clone(), 50);
+        assert_eq!((total, page.len(), has_more), (60, 10, false));
+        assert_eq!(page[0].entity_id, "id50");
+        assert_eq!(page[9].entity_id, "id59");
+
+        // Past the end: empty page, no more.
+        let (page, _, has_more) = paginate(groups.clone(), 60);
+        assert!((page.is_empty()) && !has_more);
+        let (page, _, has_more) = paginate(groups.clone(), 9999);
+        assert!((page.is_empty()) && !has_more);
+
+        // Negative offset clamps to page 0.
+        let (page, _, has_more) = paginate(groups, -5);
+        assert_eq!(page.len(), 50);
+        assert!(has_more);
+        assert_eq!(page[0].entity_id, "id00");
     }
 }
