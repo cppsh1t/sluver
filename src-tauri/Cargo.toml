@@ -90,9 +90,15 @@ zip = { version = "8", default-features = false, features = ["deflate"] }
 
 # Per-entity image upload (BLOB + mime). Used by the `update_*_image`
 # commands to decode base64 payloads sent from the frontend before
-# writing them to SQLite. `default-features = false` keeps the crate
+# writing to SQLite. `default-features = false` keeps the crate
 # minimal — we only need the standard alphabet.
 base64 = { version = "0.22", default-features = false }
+
+# System font enumeration (commands/font.rs): the resvg project's
+# cross-platform in-memory font database. `load_system_fonts` scans the
+# predefined OS font directories (no system API interaction); we only
+# read family names — no rasterization, no querying.
+fontdb = "0.24"
 
 # Novel export to EPUB (src/export.rs). `default-features = false` +
 # `zip-library` selects the pure-Rust zip backend (no system `zip` binary

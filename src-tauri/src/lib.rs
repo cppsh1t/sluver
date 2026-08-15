@@ -166,6 +166,8 @@ pub fn run() {
             // App settings
             commands::setting::get_app_setting,
             commands::setting::update_app_setting,
+            // System fonts (settings font pickers)
+            commands::font::list_system_fonts,
             // Space (meta.db)
             commands::space::create_space,
             commands::space::list_spaces,
