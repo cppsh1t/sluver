@@ -24,8 +24,8 @@ export const DEFAULT_TEMPLATE = `/**
  *   - new Date(iso) is available for parsing.
  *   - No access to DOM, window, localStorage, or Tauri APIs.
  *
- * Default output: "YYYY-MM-DD HH:mm:ss" (host local time).
- *   e.g. "2024-03-15T10:30:00Z" → "2024-03-15 18:30:00" in UTC+8.
+ * Default output: "YYYY-MM-DD HH:mm:ss" (UTC).
+ *   e.g. "2024-03-15T10:30:00Z" → "2024-03-15 10:30:00".
  * Replace the body below to implement your World's custom calendar.
  *
  * Need help? Copy this entire file (comments + code), paste it into
@@ -40,17 +40,17 @@ export default function format(iso) {
   }
   const pad = (n) => String(n).padStart(2, "0");
   return (
-    d.getFullYear() +
+    d.getUTCFullYear() +
     "-" +
-    pad(d.getMonth() + 1) +
+    pad(d.getUTCMonth() + 1) +
     "-" +
-    pad(d.getDate()) +
+    pad(d.getUTCDate()) +
     " " +
-    pad(d.getHours()) +
+    pad(d.getUTCHours()) +
     ":" +
-    pad(d.getMinutes()) +
+    pad(d.getUTCMinutes()) +
     ":" +
-    pad(d.getSeconds())
+    pad(d.getUTCSeconds())
   );
 }
 `;
