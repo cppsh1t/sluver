@@ -4,6 +4,7 @@ pub mod character;
 pub mod conversation;
 pub mod setting;
 pub mod event;
+pub mod grep;
 pub mod item;
 pub mod location;
 pub mod lore;
@@ -15,4 +16,5 @@ pub mod timeline;
 pub mod world;
 pub mod world_config;
 
+pub use grep::{GrepMatchGroup, GrepResult, GrepSnippet};
 pub use world_config::TimeMapperConfig;
