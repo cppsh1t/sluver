@@ -1,5 +1,5 @@
-import { useSyncExternalStore } from "react"
-import { Toaster as Sonner, type ToasterProps } from "sonner"
+import { useEffect, useSyncExternalStore } from "react"
+import { Toaster as Sonner, toast, type ToasterProps } from "sonner"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { CheckmarkCircle02Icon, InformationCircleIcon, Alert02Icon, MultiplicationSignCircleIcon, Loading03Icon } from "@hugeicons/core-free-icons"
 
@@ -22,9 +22,27 @@ function useIsDarkMode(): boolean {
 const Toaster = ({ ...props }: ToasterProps) => {
   const isDark = useIsDarkMode()
 
+  // Click-anywhere-on-toast-body dismissal. Buttons (action/cancel/close) handle themselves.
+  // Element (not HTMLElement) so clicks landing on the SVG status icons dismiss too.
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target
+      if (!(target instanceof Element)) return
+      if (!target.closest("[data-sonner-toast]")) return
+      if (target.closest("[data-button]") || target.closest("[data-close-button]")) {
+        return
+      }
+      toast.dismiss()
+    }
+    document.addEventListener("click", handleClick)
+    return () => document.removeEventListener("click", handleClick)
+  }, [])
+
   return (
     <Sonner
       theme={isDark ? "dark" : "light"}
+      duration={2000}
+      closeButton
       className="toaster group"
       icons={{
         success: (
