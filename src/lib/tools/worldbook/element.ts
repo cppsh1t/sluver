@@ -123,8 +123,14 @@ export function locationTools(): Record<string, ToolDef> {
       consentLevel: "always",
       execute: async (input, ctx) => {
         const { id } = input as { id: string };
+        let snapshot: Awaited<ReturnType<typeof getLocation>> | undefined;
+        try {
+          snapshot = await getLocation(ctx.spaceId, ctx.worldId, id as never);
+        } catch {
+          // Snapshot is best-effort — omit it on failure, never block the delete.
+        }
         await deleteLocation(ctx.spaceId, ctx.worldId, id as never);
-        return { deleted: true, id };
+        return snapshot ? { deleted: true, id, snapshot } : { deleted: true, id };
       },
     },
 
@@ -221,8 +227,14 @@ export function itemTools(): Record<string, ToolDef> {
       consentLevel: "always",
       execute: async (input, ctx) => {
         const { id } = input as { id: string };
+        let snapshot: Awaited<ReturnType<typeof getItem>> | undefined;
+        try {
+          snapshot = await getItem(ctx.spaceId, ctx.worldId, id as never);
+        } catch {
+          // Snapshot is best-effort — omit it on failure, never block the delete.
+        }
         await deleteItem(ctx.spaceId, ctx.worldId, id as never);
-        return { deleted: true, id };
+        return snapshot ? { deleted: true, id, snapshot } : { deleted: true, id };
       },
     },
 
@@ -318,8 +330,14 @@ export function loreTools(): Record<string, ToolDef> {
       consentLevel: "always",
       execute: async (input, ctx) => {
         const { id } = input as { id: string };
+        let snapshot: Awaited<ReturnType<typeof getLore>> | undefined;
+        try {
+          snapshot = await getLore(ctx.spaceId, ctx.worldId, id as never);
+        } catch {
+          // Snapshot is best-effort — omit it on failure, never block the delete.
+        }
         await deleteLore(ctx.spaceId, ctx.worldId, id as never);
-        return { deleted: true, id };
+        return snapshot ? { deleted: true, id, snapshot } : { deleted: true, id };
       },
     },
 

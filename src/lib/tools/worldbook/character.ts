@@ -29,6 +29,7 @@ import {
   updatePhase,
 } from "@/api/character";
 import { updateCharacterImage, updatePhaseImage } from "@/api/image";
+import type { CharacterPhase } from "@/types";
 import type { ToolDef } from "../types";
 import {
   ENTITY_IMAGE_CROP_SPEC,
@@ -242,8 +243,14 @@ export function characterTools(): Record<string, ToolDef> {
       consentLevel: "always",
       execute: async (input, ctx) => {
         const { id } = input as { id: string };
+        let snapshot: Awaited<ReturnType<typeof getCharacter>> | undefined;
+        try {
+          snapshot = await getCharacter(ctx.spaceId, ctx.worldId, id as never);
+        } catch {
+          // Snapshot is best-effort — omit it on failure, never block the delete.
+        }
         await deleteCharacter(ctx.spaceId, ctx.worldId, id as never);
-        return { deleted: true, id };
+        return snapshot ? { deleted: true, id, snapshot } : { deleted: true, id };
       },
     },
 
@@ -256,8 +263,15 @@ export function characterTools(): Record<string, ToolDef> {
       consentLevel: "always",
       execute: async (input, ctx) => {
         const { phaseId } = input as { phaseId: string };
+        let snapshot: CharacterPhase | undefined;
+        try {
+          const characters = await listCharacters(ctx.spaceId, ctx.worldId);
+          snapshot = characters.flatMap((c) => c.phases).find((p) => p.id === phaseId);
+        } catch {
+          // Snapshot is best-effort — omit it on failure, never block the delete.
+        }
         await deletePhase(ctx.spaceId, ctx.worldId, phaseId as never);
-        return { deleted: true, id: phaseId };
+        return snapshot ? { deleted: true, id: phaseId, snapshot } : { deleted: true, id: phaseId };
       },
     },
 

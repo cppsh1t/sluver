@@ -128,8 +128,14 @@ export function eventTools(): Record<string, ToolDef> {
       consentLevel: "always",
       execute: async (input, ctx) => {
         const { id } = input as { id: string };
+        let snapshot: Awaited<ReturnType<typeof getEvent>> | undefined;
+        try {
+          snapshot = await getEvent(ctx.spaceId, ctx.worldId, id as never);
+        } catch {
+          // Snapshot is best-effort — omit it on failure, never block the delete.
+        }
         await deleteEvent(ctx.spaceId, ctx.worldId, id as never);
-        return { deleted: true, id };
+        return snapshot ? { deleted: true, id, snapshot } : { deleted: true, id };
       },
     },
 
