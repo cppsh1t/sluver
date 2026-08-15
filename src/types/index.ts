@@ -70,6 +70,7 @@ export { eventSchema, type Event, eventSummarySchema, type EventSummary } from '
 
 // ─── Timeline (derived view — ADR-0033) ────────────────────────────────────
 export {
+  TIMELINE_LIMIT_MAX,
   timelineQuerySchema,
   type TimelineQuery,
   timelineEntrySchema,

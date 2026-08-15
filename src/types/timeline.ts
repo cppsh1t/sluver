@@ -19,6 +19,13 @@ import { z } from "zod";
 // ─── Query ────────────────────────────────────────────────────────────────
 
 /**
+ * Hard ceiling on `limit` — mirrored from `MAX_LIMIT` in
+ * `src-tauri/src/commands/timeline.rs`; keep both in sync. The Timeline UI
+ * steps toward this via its "load more" control.
+ */
+export const TIMELINE_LIMIT_MAX = 500;
+
+/**
  * Filter parameters for a Timeline query. All fields optional; an empty query
  * returns the whole chronology (up to `limit`, default 50).
  */
@@ -37,8 +44,8 @@ export const timelineQuerySchema = z.object({
   itemId: z.string().optional(),
   /** Whether to include Scene entries alongside Events (default `true`). */
   includeScenes: z.boolean().optional(),
-  /** Maximum entries to return (default 50, max 100). */
-  limit: z.number().int().min(1).max(100).optional(),
+  /** Maximum entries to return (default 50, max `TIMELINE_LIMIT_MAX`). */
+  limit: z.number().int().min(1).max(TIMELINE_LIMIT_MAX).optional(),
 });
 
 export type TimelineQuery = z.infer<typeof timelineQuerySchema>;
