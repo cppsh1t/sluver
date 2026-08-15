@@ -36,6 +36,11 @@ Tauri v2 desktop app for **worldbuilding & novel writing**. React 19 + TypeScrip
 - [ADR-0028](./docs/adr/0028-three-layer-message-model.md) — Three-layer message model (Persisted Thread / Derived Model Input / Run Delta) underpinning Plan and Context modes
 - [ADR-0029](./docs/adr/0029-toolcontext-extension-for-plan-and-context-modes.md) — ToolContext extension: `planAccess` (Phase 1, Plan mode) + `threadLookup` (Phase 2, Context mode — designed, deferred)
 - [ADR-0030](./docs/adr/0030-token-usage-persistence.md) — Token usage persistence through the SessionStore boundary (per-turn input/output on last assistant message; cache/occupancy kept ephemeral)
+- [ADR-0031](./docs/adr/0031-tool-call-stub-compaction.md) — Tool-call stub compaction (Context mode Phase 1): aged tool pairs become `[tool_call {id}]` stubs, expandable via `context_read`
+- [ADR-0032](./docs/adr/0032-world-export-import-format.md) — World export/import as `.sluver-world` archive
+- [ADR-0033](./docs/adr/0033-timeline-derived-character-swimlane-view.md) — Timeline derived character-swimlane view (agent `timeline_lookup` surface; UI surface superseded by ADR-0034)
+- [ADR-0034](./docs/adr/0034-timeline-ui-uniform-character-swimlane-grid.md) — Timeline UI as uniform character-swimlane grid (non-proportional, order-based; supersedes ADR-0033 UI surface)
+- [ADR-0035](./docs/adr/0035-grep-match-centric-retrieval-tool.md) — `grep` match-centric full-corpus retrieval tool (occurrence evidence across all entity text fields; distinct from entity-discovery `search_*`)
 
 ## Git commit style
 
