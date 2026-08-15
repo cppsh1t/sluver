@@ -40,7 +40,8 @@ Tauri v2 desktop app for **worldbuilding & novel writing**. React 19 + TypeScrip
 - [ADR-0032](./docs/adr/0032-world-export-import-format.md) — World export/import as `.sluver-world` archive
 - [ADR-0033](./docs/adr/0033-timeline-derived-character-swimlane-view.md) — Timeline derived character-swimlane view (agent `timeline_lookup` surface; UI surface superseded by ADR-0034)
 - [ADR-0034](./docs/adr/0034-timeline-ui-uniform-character-swimlane-grid.md) — Timeline UI as uniform character-swimlane grid (non-proportional, order-based; supersedes ADR-0033 UI surface)
-- [ADR-0035](./docs/adr/0035-grep-match-centric-retrieval-tool.md) — `grep` match-centric full-corpus retrieval tool (occurrence evidence across all entity text fields; distinct from entity-discovery `search_*`)
+  - [ADR-0035](./docs/adr/0035-grep-match-centric-retrieval-tool.md) — `grep` match-centric full-corpus retrieval tool (occurrence evidence across all entity text fields; distinct from entity-discovery `search_*`)
+  - [ADR-0036](./docs/adr/0036-native-notifications-notify-rust-explicit-aumid.md) — Native notifications via notify-rust with explicit AUMID + startup self-registration (replaces tauri-plugin-notification, whose dev-mode PowerShell AUMID is silently dropped on Win11 24H2+)
 
 ## Git commit style
 
