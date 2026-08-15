@@ -38,7 +38,7 @@
     "countResult": "Refs: {{events}} events · {{scenes}} scenes",
     "grepTitle": "Full-text search",
     "grepGroups": "{{count}} match groups",
-    "grepTruncated": "Result capped at 50 groups — narrow entityTypes or refine the query",
+    "grepTruncated": "{{count}} match groups total — showing the top {{shown}}",
     "grepNoMatch": "No matches",
     "grepPhaseContext": "{{name}} · {{phase}}",
     "action": {

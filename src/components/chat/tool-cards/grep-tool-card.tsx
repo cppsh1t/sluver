@@ -303,7 +303,10 @@ export function GrepToolCard({ tool }: GrepToolCardProps) {
               </ul>
               {grep.truncated && (
                 <p className="text-[0.625rem] text-muted-foreground/70">
-                  {t("chat:tool.grepTruncated")}
+                  {t("chat:tool.grepTruncated", {
+                    count: grep.groupCount,
+                    shown: grep.groups.length,
+                  })}
                 </p>
               )}
             </div>
