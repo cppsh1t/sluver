@@ -31,5 +31,6 @@
   "WORLD_IMPORT_ALREADY_EXISTS": "A world with this ID already exists",
   "NOTE_PARENT_NOT_FOLDER": "Parent is not a folder",
   "NOTE_MOVE_CYCLE": "Cannot move a note under itself or one of its descendants",
+  "NOTE_DUPLICATE_TITLE": "A note or folder named \"{{title}}\" already exists at the destination",
   "INTERNAL_ERROR": "An internal error occurred"
 }

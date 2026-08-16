@@ -182,6 +182,15 @@ pub enum DbError {
     /// with `{ id }` (the moved id).
     #[error("Note move would create a cycle: {0}")]
     NoteMoveCycle(String),
+
+    /// A write violated the sibling-title uniqueness rule (ADR-0038 §2):
+    /// `create_note` (duplicate title under the parent), `update_note`
+    /// (rename onto an existing sibling's title), or `move_note` (target
+    /// folder already holds that title). Detected by mapping the raw
+    /// `UNIQUE constraint failed: index 'idx_notes_sibling_title'` SQLite
+    /// error. Surfaces as `NOTE_DUPLICATE_TITLE` with `{ title }`.
+    #[error("Note title already taken by a sibling: {0}")]
+    NoteDuplicateTitle(String),
 }
 
 impl DbError {
@@ -293,6 +302,12 @@ impl DbError {
             DbError::NoteMoveCycle(id) => (
                 "NOTE_MOVE_CYCLE",
                 HashMap::from([("id".to_string(), id.clone())]),
+            ),
+            // Unlike the two above, the title IS user-meaningful — the
+            // translated message interpolates it ({{title}}).
+            DbError::NoteDuplicateTitle(title) => (
+                "NOTE_DUPLICATE_TITLE",
+                HashMap::from([("title".to_string(), title.clone())]),
             ),
         };
         ErrorPayload {

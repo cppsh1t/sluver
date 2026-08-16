@@ -134,6 +134,26 @@ fn next_sibling_position(conn: &Connection, parent_id: Option<&str>) -> Result<i
 
 // ─── CRUD ───────────────────────────────────────────────────────────────────
 
+/// Map a raw SQLite UNIQUE violation on `idx_notes_sibling_title` to the
+/// `NoteDuplicateTitle` business error (ADR-0038 §2). The index fires on
+/// create (duplicate title under the parent), rename (title taken by a
+/// sibling), and move (target folder already holds that title) — without
+/// this mapping the user sees an opaque INTERNAL_ERROR carrying raw SQLite
+/// text.
+fn map_sibling_title_violation(err: DbError, title: &str) -> DbError {
+    match &err {
+        // The index name lives in the `SqliteFailure` variant's message
+        // string (ffi::Error itself carries only the codes).
+        DbError::Sqlite(rusqlite::Error::SqliteFailure(e, Some(msg)))
+            if e.code == rusqlite::ErrorCode::ConstraintViolation
+                && msg.contains("idx_notes_sibling_title") =>
+        {
+            DbError::NoteDuplicateTitle(title.to_string())
+        }
+        _ => err,
+    }
+}
+
 #[tracing::instrument(skip(state, input, app), fields(entity_id))]
 #[tauri::command]
 pub fn create_note(
@@ -177,7 +197,8 @@ pub fn create_note(
                 now,
                 now
             ],
-        )?;
+        )
+        .map_err(|e| map_sibling_title_violation(e.into(), &input.title))?;
         tx.commit()?;
 
         load_note(conn, &id)
@@ -281,14 +302,16 @@ pub fn update_note(
     let now = now_iso();
 
     let result = state.with_world(&space_id, &world_id, |conn| {
-        let updated = conn.execute(
-            "UPDATE notes
-             SET title = ?1,
-                 content = CASE WHEN kind = 'folder' THEN '' ELSE ?2 END,
-                 updated_at = ?3
-             WHERE id = ?4",
-            params![input.title, input.content, now, id],
-        )?;
+        let updated = conn
+            .execute(
+                "UPDATE notes
+                 SET title = ?1,
+                     content = CASE WHEN kind = 'folder' THEN '' ELSE ?2 END,
+                     updated_at = ?3
+                 WHERE id = ?4",
+                params![input.title, input.content, now, id],
+            )
+            .map_err(|e| map_sibling_title_violation(e.into(), &input.title))?;
         if updated == 0 {
             return Err(DbError::NotFound("Note", id.clone()));
         }
@@ -411,8 +434,12 @@ pub fn move_note(
         let tx = conn.transaction()?;
 
         // (a) Existence pre-check — a missing row would otherwise be a
-        // silent no-op UPDATE + an empty renumber below.
-        tx.query_row("SELECT 1 FROM notes WHERE id = ?1", params![&id], |_| Ok(()))
+        // silent no-op UPDATE + an empty renumber below. The title rides
+        // along for the sibling-title violation mapping in (d).
+        let moved_title: String = tx
+            .query_row("SELECT title FROM notes WHERE id = ?1", params![&id], |row| {
+                row.get(0)
+            })
             .map_err(|e| match e {
                 rusqlite::Error::QueryReturnedNoRows => DbError::NotFound("Note", id.clone()),
                 other => DbError::Sqlite(other),
@@ -452,11 +479,14 @@ pub fn move_note(
         }
 
         // (d) Reparent. Position is rewritten by (e) regardless of the
-        // stale value carried over from the old sibling set.
+        // stale value carried over from the old sibling set. A UNIQUE
+        // violation here means the target folder already holds a
+        // same-titled sibling → business error, not a raw SQLite dump.
         tx.execute(
             "UPDATE notes SET parent_id = ?1, updated_at = ?2 WHERE id = ?3",
             params![new_parent_id, now, &id],
-        )?;
+        )
+        .map_err(|e| map_sibling_title_violation(e.into(), &moved_title))?;
 
         // (e) Renumber the target parent's children with the moved note at
         // `index`. `id` tiebreaker keeps the pre-insert order

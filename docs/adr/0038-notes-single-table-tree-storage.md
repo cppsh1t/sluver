@@ -66,6 +66,6 @@ The agent cannot reorder or reparent notes in v1 (not requested); the UI's move/
 ## Consequences
 
 - `WORLD_MIGRATION_011` adds the table + both indexes; `commands/note.rs` + `models/note.rs` follow the novel.rs templates; `.sluver-world` export/import (ADR-0032) picks notes up as ordinary world.db rows — no format change.
-- Duplicate-title violations currently surface as `INTERNAL_ERROR` with a raw SQLite message (`DbError` has no `DuplicateName` variant). A friendly duplicate-title error needs a new variant + `errors.json` keys in both locales — deferred until asked for.
+- Duplicate-title violations are mapped to the business error `NoteDuplicateTitle` (`NOTE_DUPLICATE_TITLE` with `{ title }`) at the three write sites — create (duplicate under parent), rename (title taken by a sibling), move (target folder already holds that title) — by intercepting the raw `UNIQUE constraint failed: index 'idx_notes_sibling_title'` SQLite error. The earlier deferral (raw `INTERNAL_ERROR`) was revoked after real-use move collisions proved too opaque. The worldbook entities still surface duplicate-name as `INTERNAL_ERROR`; a shared `DuplicateName` variant remains unbuilt.
 - `delete_note` on a folder cascades to all descendants; the UI must show the ADR-0006-style pre-delete disclosure (count of notes/folders inside).
 - If a future feature needs DB-enforced position uniqueness (e.g. multi-writer sync), migrating to the chapters-style index + temp-shift reorder is additive — the application-layer renumbering contract does not change.
