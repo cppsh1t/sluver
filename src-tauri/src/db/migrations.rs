@@ -519,6 +519,23 @@ const WORLD_MIGRATION_011: &str = r#"
     CREATE INDEX IF NOT EXISTS idx_notes_parent_pos ON notes(parent_id, position);
 "#;
 
+/// Migration 12 for each world DB: the `scene_lore_refs` junction table —
+/// Scene ↔ Lore refs, mirroring `scene_item_refs` / `scene_event_refs`
+/// (composite PK = set semantics). The `ON DELETE CASCADE` on both FKs
+/// means deleting a scene or a lore automatically removes the junction rows
+/// (`delete_lore` stays a plain DELETE — the cascade is FK-driven). Added
+/// as a separate migration so existing world DB files get the table via
+/// `rusqlite_migration`'s incremental migration tracking — modifying the
+/// original `WORLD_SQL` would NOT re-run for already-migrated databases.
+const WORLD_MIGRATION_012: &str = r#"
+    -- Scene ↔ Lore refs (junction)
+    CREATE TABLE IF NOT EXISTS scene_lore_refs (
+        scene_id TEXT NOT NULL REFERENCES scenes(id) ON DELETE CASCADE,
+        lore_id  TEXT NOT NULL REFERENCES lores(id) ON DELETE CASCADE,
+        PRIMARY KEY (scene_id, lore_id)
+    );
+"#;
+
 const WORLD_SLICE: &[M] = &[
     M::up(WORLD_SQL),
     M::up(WORLD_MIGRATION_002),
@@ -531,5 +548,6 @@ const WORLD_SLICE: &[M] = &[
     M::up(WORLD_MIGRATION_009),
     M::up(WORLD_MIGRATION_010),
     M::up(WORLD_MIGRATION_011),
+    M::up(WORLD_MIGRATION_012),
 ];
 pub const WORLD_MIGRATIONS: Migrations = Migrations::from_slice(WORLD_SLICE);
