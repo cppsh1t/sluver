@@ -501,7 +501,7 @@ function NotesWorkspacePage() {
               </p>
             </div>
           ) : mode === "read" ? (
-            <div className="mx-auto w-full max-w-3xl px-4 py-8">
+            <div className="mx-auto w-full max-w-none px-8 py-8">
               {editor ? (
                 <NoteMarkdown content={editor.content} />
               ) : (
@@ -509,7 +509,7 @@ function NotesWorkspacePage() {
               )}
             </div>
           ) : (
-            <div className="mx-auto w-full max-w-3xl px-4 py-6">
+            <div className="mx-auto w-full max-w-none px-8 py-6">
               <Textarea
                 ref={textareaRef}
                 value={editor?.content ?? ""}
