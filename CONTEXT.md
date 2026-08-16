@@ -45,7 +45,7 @@ A physical object within a World that can appear in Scenes.
 _Avoid_: Object, Artifact, Thing, Prop, Relic
 
 **Lore**:
-Supplementary setting material within the Worldbook — history, culture, magic systems, cosmology, mythology, organizations, or any background knowledge the author wants to record. Standalone by design: never participates in Events or Scenes. (An organization that needs to "act" in the story is modeled as individual Characters plus a Lore entry describing the org itself; purely mythological deities live here, active deities live as Characters.)
+Supplementary setting material within the Worldbook — history, culture, magic systems, cosmology, mythology, organizations, or any background knowledge the author wants to record. Never participates in story action and is not referenced by Events, but can be referenced by Scenes as background context. (An organization that needs to "act" in the story is modeled as individual Characters plus a Lore entry describing the org itself; purely mythological deities live here, active deities live as Characters.)
 _Avoid_: Background, Wiki Entry, Encyclopedia Entry, Setting Note
 
 ### Novels
@@ -59,7 +59,7 @@ An ordered subdivision of a Novel. An ordered collection of Scenes. Has a `title
 _Avoid_: Section, Part
 
 **Scene**:
-The leaf unit of prose in a Novel — the only entity that carries narrative text (`content`, plain text). Optionally anchored to a time range and a Location. References the Characters (at specific Phases), Items, and Events that appear in it.
+The leaf unit of prose in a Novel — the only entity that carries narrative text (`content`, plain text). Optionally anchored to a time range and a Location. References the Characters (at specific Phases), Items, and Events that appear in it, plus the Lore entries that provide its background context.
 _Avoid_: Sequence, Beat, Moment, Setup, Fragment
 
 ### Notes
