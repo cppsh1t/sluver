@@ -13,7 +13,9 @@
 //!
 //! Our command always tags toasts with the app's bundle identifier and
 //! propagates errors, so both dev and installed builds render reliably and
-//! failures surface to the frontend.
+//! failures surface to the frontend. Toasts also request the default OS
+//! notification sound (see `.sound_name("Default")` below — leaving it unset
+//! explicitly mutes the toast).
 
 use tauri::AppHandle;
 
@@ -32,6 +34,13 @@ pub fn show_notification(app: AppHandle, title: String, body: String) -> Result<
         .app_id(&identifier)
         .summary(&title)
         .body(&body)
+        // DO NOT REMOVE: an unset sound name makes notify-rust pass
+        // `sound(None)` to the WinRT backend, which emits `<audio
+        // silent="true"/>` — an explicit mute Windows user settings cannot
+        // override. "Default" (case-sensitive! "default" parses to None and
+        // silently mutes again) maps to `Sound::Default`, emitting no
+        // `<audio>` element, so the OS plays its default notification sound.
+        .sound_name("Default")
         .show()
         .map_err(|e| DbError::Internal(format!("notification failed: {e}")))?;
     tracing::debug!("notify.notification_shown");
