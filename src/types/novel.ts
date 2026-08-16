@@ -51,6 +51,13 @@ export const novelSchema = z.object({
   /** User-defined tags for categorization / filtering. */
   tags: z.array(z.string()),
   hasImage: z.boolean(),
+  /**
+   * Total word count across all scene contents of this novel (non-whitespace
+   * characters, CJK semantics — matches `src/lib/word-count.ts`). Computed
+   * by the backend; `0` when the novel has no content. Read-only: not part
+   * of create/update inputs.
+   */
+  wordCount: z.number().int(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
