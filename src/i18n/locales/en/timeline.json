@@ -10,7 +10,7 @@
     "label": "Spacing",
     "compact": "Compact",
     "sparse": "Sparse",
-    "sparseTooltip": "Space entries by real time intervals"
+    "sparseTooltip": "Space entries proportionally to real time intervals"
   },
   "filter": {
     "location": "Location",

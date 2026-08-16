@@ -10,7 +10,7 @@
     "label": "排列密度",
     "compact": "紧凑",
     "sparse": "稀疏",
-    "sparseTooltip": "按真实时间间距排列条目"
+    "sparseTooltip": "按真实时间间隔的比例拉开条目间距"
   },
   "filter": {
     "location": "地点",
