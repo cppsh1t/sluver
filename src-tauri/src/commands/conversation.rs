@@ -276,3 +276,36 @@ pub fn update_conversation_plan(
         Ok(())
     })
 }
+
+/// Rename a conversation — writes the user-facing list label (`title`,
+/// nullable: NULL = the frontend falls back to a default label).
+///
+/// `updated_at` is bumped so `list_conversations` reorders (the list is
+/// sorted by `updated_at` DESC).
+// `title` is skipped: it is user creative content (titles routinely
+// reference entity names, plot points) and the redaction policy classifies
+// such content as TRACE-only or NEVER loggable. Mirrors `plan` skipping in
+// `update_conversation_plan` above.
+#[tracing::instrument(skip(state, title), fields(conversation_id))]
+#[tauri::command]
+pub fn update_conversation_title(
+    space_id: String,
+    world_id: String,
+    conversation_id: String,
+    title: String,
+    state: State<'_, DbManager>,
+) -> Result<(), DbError> {
+    tracing::Span::current().record("conversation_id", conversation_id.as_str());
+    let now = now_iso();
+
+    state.with_world(&space_id, &world_id, |conn| {
+        let affected = conn.execute(
+            "UPDATE conversations SET title = ?1, updated_at = ?2 WHERE id = ?3",
+            params![title, now, &conversation_id],
+        )?;
+        if affected == 0 {
+            return Err(DbError::NotFound("Conversation", conversation_id));
+        }
+        Ok(())
+    })
+}

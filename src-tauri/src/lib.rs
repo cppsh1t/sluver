@@ -278,6 +278,7 @@ pub fn run() {
             commands::conversation::load_messages,
             commands::conversation::append_messages,
             commands::conversation::update_conversation_plan,
+            commands::conversation::update_conversation_title,
             // World config (TimeMapper — ADR-0026)
             commands::world_config::get_time_mapper,
             commands::world_config::set_time_mapper,
