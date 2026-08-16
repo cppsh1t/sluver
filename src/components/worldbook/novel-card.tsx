@@ -27,7 +27,7 @@ import {
   BookDownloadIcon,
   MoreHorizontalIcon,
 } from "@hugeicons/core-free-icons";
-import { formatRelativeTime } from "@/lib/format";
+import { formatCompactCount, formatRelativeTime } from "@/lib/format";
 import { EntityAvatar } from "@/components/ui/entity-avatar";
 import { ExportNovelDialog } from "@/components/worldbook/export-novel-dialog";
 import type { Novel, SpaceId, WorldId } from "@/types";
@@ -40,7 +40,7 @@ interface NovelCardProps {
 }
 
 function NovelCard({ novel, spaceId, worldId, onDelete }: NovelCardProps) {
-  const { t } = useTranslation(["novel", "common"]);
+  const { t, i18n } = useTranslation(["novel", "common"]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const entityName = t("novel:entityName.singular");
@@ -55,6 +55,10 @@ function NovelCard({ novel, spaceId, worldId, onDelete }: NovelCardProps) {
       : chapterCount === 1
         ? t("novel:card.oneChapter")
         : t("novel:card.chaptersCount", { count: chapterCount });
+
+  const wordCountText = t("novel:card.wordCount", {
+    count: formatCompactCount(novel.wordCount, i18n.language),
+  });
 
   return (
     <>
@@ -122,7 +126,9 @@ function NovelCard({ novel, spaceId, worldId, onDelete }: NovelCardProps) {
             </CardAction>
           </CardHeader>
           <CardContent className="flex flex-1 flex-col gap-2">
-            <p className="text-xs text-muted-foreground">{chaptersText}</p>
+            <p className="text-xs text-muted-foreground">
+              {chaptersText} · {wordCountText}
+            </p>
             <p className="line-clamp-2 min-h-8 flex-1 text-sm text-muted-foreground">
               {novel.description}
             </p>

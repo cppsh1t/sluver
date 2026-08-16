@@ -62,3 +62,16 @@ export function formatTokenCount(tokens: number): string {
   const m = tokens / 1_000_000;
   return `${Number.isInteger(m) ? m : m.toFixed(1)}M`;
 }
+
+/**
+ * Compact locale-aware count formatter for card metadata (e.g. novel 字数).
+ *
+ * Exists because raw 7-digit totals are unreadable on cards — compact
+ * notation abbreviates them via `Intl.NumberFormat` (`1230000` → `"123万"`
+ * under zh locales, following the 万 convention, `"1.2M"` under en). `0`
+ * renders as `"0"`. Unknown locale tags are passed through; `Intl` itself
+ * falls back to a default locale.
+ */
+export function formatCompactCount(n: number, locale: string): string {
+  return new Intl.NumberFormat(locale, { notation: "compact" }).format(n);
+}
