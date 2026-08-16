@@ -183,7 +183,7 @@ function EventDetailPage() {
   if (isLoading) {
     return (
       <div className="flex flex-1 flex-col overflow-y-auto">
-        <div className="mx-auto w-full max-w-3xl px-4 py-8">
+        <div className="mx-auto w-full max-w-4xl px-4 py-8">
           <div className="flex flex-col gap-4">
             <div className="h-4 w-24 animate-pulse rounded bg-muted" />
             <div className="h-7 w-48 animate-pulse rounded bg-muted" />
@@ -198,7 +198,7 @@ function EventDetailPage() {
   if (isError || !event) {
     return (
       <div className="flex flex-1 flex-col overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-3xl flex-col items-center gap-4 px-4 py-16 text-center">
+        <div className="mx-auto flex w-full max-w-4xl flex-col items-center gap-4 px-4 py-16 text-center">
           <p className="text-sm text-muted-foreground">
             {t("event:list.noResults")}
           </p>
@@ -244,7 +244,7 @@ function EventDetailPage() {
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
-      <div className="mx-auto w-full max-w-3xl px-4 py-8">
+      <div className="mx-auto w-full max-w-4xl px-4 py-8">
         {/* Back link */}
         <Button
           variant="ghost"
