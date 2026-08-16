@@ -244,13 +244,20 @@ export function ConversationList({
                           autoFocus
                           value={renaming?.draft ?? ""}
                           maxLength={100}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            // Read `currentTarget` synchronously BEFORE the
+                            // state update: React nulls it after dispatch, and
+                            // StrictMode double-invokes updater functions
+                            // during render — accessing `e.currentTarget.value`
+                            // inside the updater throws on the second call
+                            // (note-tree.tsx extracts it the same way).
+                            const value = e.currentTarget.value;
                             setRenaming((r) =>
                               r && r.id === conv.id
-                                ? { ...r, draft: e.currentTarget.value }
+                                ? { ...r, draft: value }
                                 : r,
-                            )
-                          }
+                            );
+                          }}
                           onClick={(e) => e.stopPropagation()}
                           onDoubleClick={(e) => e.stopPropagation()}
                           onBlur={() => commitRename(conv)}
