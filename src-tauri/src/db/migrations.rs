@@ -483,6 +483,42 @@ const WORLD_MIGRATION_010: &str = r#"
     ALTER TABLE messages ADD COLUMN usage_output_tokens INTEGER;
 "#;
 
+/// Migration 11 for each world DB: the `notes` tree table (ADR-0038).
+///
+/// One table holds both structural folders and content notes behind a
+/// `kind` discriminator — sibling title uniqueness must span folders and
+/// notes alike (a folder "大纲" and a note "大纲" under the same parent
+/// must collide), which SQLite cannot enforce across two tables. The
+/// unique index is NULL-safe via `IFNULL(parent_id,'')` so the ROOT scope
+/// is covered too (`UNIQUE(parent_id, title)` would not dedupe root-level
+/// siblings — NULL ≠ NULL).
+///
+/// There is intentionally NO `UNIQUE(parent_id, position)` — the
+/// `scene_images` precedent (WORLD_MIGRATION_008): the note tree drags on
+/// two axes (same-parent reorder + cross-parent reparent), and under a
+/// UNIQUE constraint each axis becomes a sequenced temporary-shift dance;
+/// position truth is maintained at the application layer (the
+/// `reorder_notes` full-list contract, ADR-0038 §3). Cycle prevention is
+/// likewise application-layer (an ancestor walk inside `move_note`'s
+/// transaction — SQLite cannot express it; ADR-0038 §4). Added as a
+/// separate migration so existing world DB files get the table via
+/// `rusqlite_migration`'s incremental migration tracking — modifying the
+/// original `WORLD_SQL` would NOT re-run for already-migrated databases.
+const WORLD_MIGRATION_011: &str = r#"
+    CREATE TABLE IF NOT EXISTS notes (
+        id         TEXT PRIMARY KEY,
+        parent_id  TEXT REFERENCES notes(id) ON DELETE CASCADE,
+        kind       TEXT NOT NULL CHECK (kind IN ('folder','note')),
+        title      TEXT NOT NULL,
+        content    TEXT NOT NULL DEFAULT '',
+        position   INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_sibling_title ON notes(IFNULL(parent_id,''), title);
+    CREATE INDEX IF NOT EXISTS idx_notes_parent_pos ON notes(parent_id, position);
+"#;
+
 const WORLD_SLICE: &[M] = &[
     M::up(WORLD_SQL),
     M::up(WORLD_MIGRATION_002),
@@ -494,5 +530,6 @@ const WORLD_SLICE: &[M] = &[
     M::up(WORLD_MIGRATION_008),
     M::up(WORLD_MIGRATION_009),
     M::up(WORLD_MIGRATION_010),
+    M::up(WORLD_MIGRATION_011),
 ];
 pub const WORLD_MIGRATIONS: Migrations = Migrations::from_slice(WORLD_SLICE);
