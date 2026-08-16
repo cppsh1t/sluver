@@ -6,8 +6,8 @@
  * (`parseToolName` sees entity segment `chapter_overview`, which is not a
  * recognized entity), so without this dedicated renderer the call would fall
  * back to raw JSON. This card instead surfaces the chapter's title + summary
- * and a per-scene reference matrix (character / item / event counts + whether
- * a location is set), which is exactly what the agent asked the tool for: a
+ * and a per-scene reference matrix (character / item / event / lore counts +
+ * whether a location is set), which is exactly what the agent asked the tool for: a
  * quick survey of what happens in the chapter and which worldbook entities it
  * touches — without the prose.
  *
@@ -51,6 +51,7 @@ interface SceneOverviewView {
   readonly characterCount: number;
   readonly itemCount: number;
   readonly eventCount: number;
+  readonly loreCount: number;
   readonly hasLocation: boolean;
 }
 
@@ -82,6 +83,7 @@ function resolveOverview(tool: ToolBlockData): ChapterOverviewView | null {
       characterCount: Array.isArray(s.characterRefs) ? s.characterRefs.length : 0,
       itemCount: Array.isArray(s.itemIds) ? s.itemIds.length : 0,
       eventCount: Array.isArray(s.eventIds) ? s.eventIds.length : 0,
+      loreCount: Array.isArray(s.loreIds) ? s.loreIds.length : 0,
       hasLocation: asString(s.locationId) != null,
     });
   }
@@ -114,6 +116,9 @@ function sceneRefParts(
   }
   if (scene.eventCount > 0) {
     parts.push(`${scene.eventCount} ${t("chat:tool.entity.event")}`);
+  }
+  if (scene.loreCount > 0) {
+    parts.push(`${scene.loreCount} ${t("chat:tool.entity.lore")}`);
   }
   if (scene.hasLocation) {
     parts.push(t("chat:tool.chapterOverview.hasLocation"));
