@@ -124,6 +124,10 @@
       "prev": "Previous image",
       "next": "Next image",
       "counter": "{{current}} / {{total}}"
+    },
+    "outline": {
+      "title": "Outline",
+      "empty": "No scenes in this chapter"
     }
   },
   "export": {

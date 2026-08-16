@@ -32,6 +32,7 @@ import { SceneCard } from "@/components/worldbook/scene-card";
 import type { SaveStatus, ScenePatch } from "@/components/worldbook/scene-card";
 import { SceneImageGallery } from "@/components/worldbook/scene-image-gallery";
 import { SceneRefSidebar } from "@/components/worldbook/scene-ref-sidebar";
+import { SceneOutlineSidebar } from "@/components/worldbook/scene-outline-sidebar";
 import { toErrorPayload } from "@/api/client";
 import { translateError } from "@/i18n/errors";
 import { cn } from "@/lib/utils";
@@ -348,6 +349,56 @@ function ChapterWorkspacePage() {
   // ─── Right sidebar collapse ──────────────────────────────────────────────
   const [rightCollapsed, setRightCollapsed] = useState(false);
 
+  // ─── Scene outline (read mode) ───────────────────────────────────────────
+  const [outlineCollapsed, setOutlineCollapsed] = useState(false);
+  const [outlineActiveSceneId, setOutlineActiveSceneId] = useState<SceneId | null>(null);
+  const readScrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Track the topmost visible scene for the outline's active row. The bottom
+  // rootMargin shrink restricts "visible" to the top quarter of the scroll
+  // viewport, so the scene entering that band (the one being read) wins.
+  // Gated on `chapter`: the scroll container (and thus the ref) only exists
+  // once the chapter query resolves — without this dep, an early scenes
+  // resolution would bail on a null ref and never retry.
+  useEffect(() => {
+    if (!chapter || mode !== "read" || displayScenes.length === 0) return;
+    const root = readScrollRef.current;
+    if (!root) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        let topEntry: IntersectionObserverEntry | null = null;
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          if (
+            !topEntry ||
+            entry.boundingClientRect.top < topEntry.boundingClientRect.top
+          ) {
+            topEntry = entry;
+          }
+        }
+        if (topEntry) {
+          const sceneId = topEntry.target.id.slice("scene-".length) as SceneId;
+          setOutlineActiveSceneId(sceneId);
+        }
+      },
+      { root, rootMargin: "0px 0px -75% 0px", threshold: 0 },
+    );
+
+    for (const scene of displayScenes) {
+      const el = document.getElementById(`scene-${scene.id}`);
+      if (el) observer.observe(el);
+    }
+    return () => observer.disconnect();
+  }, [chapter, mode, displayScenes]);
+
+  function handleOutlineSelect(sceneId: SceneId) {
+    document.getElementById(`scene-${sceneId}`)?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }
+
   // ─── Loading ─────────────────────────────────────────────────────────────
   if (!chapter) {
     return (
@@ -359,6 +410,17 @@ function ChapterWorkspacePage() {
 
   return (
     <div className="flex flex-1 overflow-hidden">
+      {/* ─── Scene outline (read mode only) ──────────────────────────────── */}
+      {mode === "read" && (
+        <SceneOutlineSidebar
+          scenes={displayScenes}
+          activeSceneId={outlineActiveSceneId}
+          onSelect={handleOutlineSelect}
+          collapsed={outlineCollapsed}
+          onToggleCollapsed={() => setOutlineCollapsed((v) => !v)}
+        />
+      )}
+
       {/* ─── Center area ─────────────────────────────────────────────────── */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top toolbar: mode toggle */}
@@ -383,7 +445,7 @@ function ChapterWorkspacePage() {
           </div>
         </div>
         {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto">
+        <div ref={readScrollRef} className="flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-3xl px-4 py-6">
             {/* Chapter header */}
             {chTitleEditing ? (
@@ -502,7 +564,7 @@ function ChapterWorkspacePage() {
                   </p>
                 ) : (
                   displayScenes.map((scene, i) => (
-                    <div key={scene.id}>
+                    <div key={scene.id} id={`scene-${scene.id}`}>
                       {i > 0 && <div className="h-6" />}
                       <p className="whitespace-pre-wrap text-base font-article leading-loose">
                         {scene.content}
