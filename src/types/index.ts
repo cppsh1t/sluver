@@ -115,6 +115,32 @@ export {
   type SceneImageMeta,
 } from './novel';
 
+// ─── Notes (single-table tree — ADR-0038) ─────────────────────────────────
+export {
+  noteIdSchema,
+  type NoteId,
+  noteKindSchema,
+  type NoteKind,
+  noteSchema,
+  type Note,
+  noteSummarySchema,
+  type NoteSummary,
+  createNoteInputSchema,
+  type CreateNoteInput,
+  updateNoteInputSchema,
+  type UpdateNoteInput,
+  grepNotesInputSchema,
+  type GrepNotesInput,
+  noteSnippetSchema,
+  type NoteSnippet,
+  noteMatchGroupSchema,
+  type NoteMatchGroup,
+  grepNotesResponseSchema,
+  type GrepNotesResponse,
+  noteTreeNodeSchema,
+  type NoteTreeNode,
+} from './note';
+
 // ─── Conversation (AI chat) ────────────────────────────────────────────────
 export {
   conversationSchema,
