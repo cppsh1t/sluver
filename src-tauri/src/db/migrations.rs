@@ -138,6 +138,37 @@ const SPACE_MIGRATION_006: &str = r#"
     ALTER TABLE agent_configs ADD COLUMN system_prompt TEXT NOT NULL DEFAULT '';
 "#;
 
+/// Migration 7 for `space.db`: seed the `namer` agent config (the
+/// conversation auto-naming role). Spaces created before this role existed
+/// already carry `explorer` + `writer` — this INSERT OR IGNORE adds `namer`
+/// with the exact seed defaults `do_create_space` uses (model_id NULL,
+/// auto-execute off, compaction disabled with turn_age 3, empty system
+/// prompt). OR IGNORE is required because `name` is UNIQUE: brand-new Spaces
+/// get the row from SPACE_MIGRATION_007 itself (migrations run at connection
+/// open, BEFORE `do_create_space`'s seed loop — see commands/space.rs step 4),
+/// and any Space where the row already exists must not fail. Fixed literal
+/// id/timestamps keep the migration deterministic across every Space's
+/// `space.db`; the id is a valid UUID v7 literal (time-sortable, matching
+/// `new_id()`'s format) and the timestamps match `now_iso()`'s ISO 8601 ms
+/// format. `created_at` is a deliberate FAR-FUTURE literal: `do_list_agent_configs`
+/// sorts `ORDER BY created_at`, and the seed loop stamps explorer/writer with
+/// the Space's real creation time — a realistic past literal would float `namer`
+/// ABOVE the two primary roles for every Space created after this migration
+/// ships. 9999 keeps the auxiliary role last regardless of when the Space is
+/// created. Added as a separate migration so existing `space.db` files get
+/// the row via `rusqlite_migration`'s incremental migration tracking —
+/// modifying `SPACE_MIGRATION_002` would NOT re-run for already-migrated
+/// databases.
+const SPACE_MIGRATION_007: &str = r#"
+    INSERT OR IGNORE INTO agent_configs
+        (id, name, model_id, auto_execute_dangerous_tools,
+         context_compaction_enabled, context_compaction_turn_age,
+         system_prompt, created_at, updated_at)
+    VALUES
+        ('01a00a6e-36b8-7302-8810-856d81dacb0c', 'namer', NULL, 0, 0, 3, '',
+         '9999-12-31T23:59:59.999Z', '9999-12-31T23:59:59.999Z');
+"#;
+
 // ─── world DB schema ────────────────────────────────────────────────────────
 // Tier 3 of the three-database design (ADR-0007). One file per World at
 // `spaces/{spaceId}/worlds/{worldId}.db`. Schema is byte-for-byte identical
@@ -299,6 +330,7 @@ const SPACE_SLICE: &[M] = &[
     M::up(SPACE_MIGRATION_004),
     M::up(SPACE_MIGRATION_005),
     M::up(SPACE_MIGRATION_006),
+    M::up(SPACE_MIGRATION_007),
 ];
 pub const SPACE_MIGRATIONS: Migrations = Migrations::from_slice(SPACE_SLICE);
 
