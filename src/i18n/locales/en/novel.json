@@ -126,8 +126,7 @@
       "counter": "{{current}} / {{total}}"
     },
     "outline": {
-      "title": "Outline",
-      "empty": "No scenes in this chapter"
+      "title": "Outline"
     }
   },
   "export": {

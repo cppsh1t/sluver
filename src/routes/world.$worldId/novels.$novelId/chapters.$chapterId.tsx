@@ -32,7 +32,7 @@ import { SceneCard } from "@/components/worldbook/scene-card";
 import type { SaveStatus, ScenePatch } from "@/components/worldbook/scene-card";
 import { SceneImageGallery } from "@/components/worldbook/scene-image-gallery";
 import { SceneRefSidebar } from "@/components/worldbook/scene-ref-sidebar";
-import { SceneOutlineSidebar } from "@/components/worldbook/scene-outline-sidebar";
+import { SceneTimelineRail } from "@/components/worldbook/scene-timeline-rail";
 import { toErrorPayload } from "@/api/client";
 import { translateError } from "@/i18n/errors";
 import { cn } from "@/lib/utils";
@@ -350,7 +350,6 @@ function ChapterWorkspacePage() {
   const [rightCollapsed, setRightCollapsed] = useState(false);
 
   // ─── Scene outline (read mode) ───────────────────────────────────────────
-  const [outlineCollapsed, setOutlineCollapsed] = useState(false);
   const [outlineActiveSceneId, setOutlineActiveSceneId] = useState<SceneId | null>(null);
   const readScrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -392,11 +391,18 @@ function ChapterWorkspacePage() {
     return () => observer.disconnect();
   }, [chapter, mode, displayScenes]);
 
+  // Scroll ONLY the read container — scrollIntoView would also scroll every
+  // scrollable ancestor (including non-user-scrollable outer ones), shifting
+  // the whole page irrecoverably.
   function handleOutlineSelect(sceneId: SceneId) {
-    document.getElementById(`scene-${sceneId}`)?.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
+    const container = readScrollRef.current;
+    const el = document.getElementById(`scene-${sceneId}`);
+    if (!container || !el) return;
+    const top =
+      el.getBoundingClientRect().top -
+      container.getBoundingClientRect().top +
+      container.scrollTop;
+    container.scrollTo({ top, behavior: "smooth" });
   }
 
   // ─── Loading ─────────────────────────────────────────────────────────────
@@ -410,19 +416,8 @@ function ChapterWorkspacePage() {
 
   return (
     <div className="flex flex-1 overflow-hidden">
-      {/* ─── Scene outline (read mode only) ──────────────────────────────── */}
-      {mode === "read" && (
-        <SceneOutlineSidebar
-          scenes={displayScenes}
-          activeSceneId={outlineActiveSceneId}
-          onSelect={handleOutlineSelect}
-          collapsed={outlineCollapsed}
-          onToggleCollapsed={() => setOutlineCollapsed((v) => !v)}
-        />
-      )}
-
       {/* ─── Center area ─────────────────────────────────────────────────── */}
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="relative flex flex-1 flex-col overflow-hidden">
         {/* Top toolbar: mode toggle */}
         <div className="flex justify-end border-b px-4 py-2">
           <div className="flex rounded-md bg-muted p-0.5" role="group">
@@ -582,6 +577,15 @@ function ChapterWorkspacePage() {
             )}
           </div>
         </div>
+
+        {/* ─── Floating scene timeline rail (read mode only) ─────────────── */}
+        {mode === "read" && displayScenes.length > 0 && (
+          <SceneTimelineRail
+            scenes={displayScenes}
+            activeSceneId={outlineActiveSceneId}
+            onSelect={handleOutlineSelect}
+          />
+        )}
       </div>
 
       {/* ─── Right sidebar (read mode only) ──────────────────────────────── */}

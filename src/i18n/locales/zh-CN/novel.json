@@ -126,8 +126,7 @@
       "counter": "{{current}} / {{total}}"
     },
     "outline": {
-      "title": "本章大纲",
-      "empty": "本章暂无场景"
+      "title": "本章大纲"
     }
   },
   "export": {
