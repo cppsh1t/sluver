@@ -28,4 +28,6 @@ TASK.md
 PLAN.md
 .sisyphus
 .env
-notes
+# Code-notes skill output (root-level only — anchored so it can never match
+# source dirs like src/components/notes/).
+/notes
