@@ -81,6 +81,12 @@ export function AgentConfigModelPicker({
   const systemPromptMut = useUpdateAgentConfigSystemPrompt(spaceId);
   const [localPrompt, setLocalPrompt] = useState(agentConfig.systemPrompt);
 
+  // ADR-0040 — the "namer" agent drives a single one-shot naming call.
+  // Tool execution / context compaction / system prompt override are
+  // meaningless for it, so its dialog shows the model binding only.
+  // Explorer/writer cards are unaffected (byte-identical rendering).
+  const isNamer = agentConfig.name === "namer";
+
   const [serverProvider, serverModel] = parseModelId(agentConfig.modelId);
   const [localProvider, setLocalProvider] = useState<string | null>(
     serverProvider,
@@ -305,7 +311,9 @@ export function AgentConfigModelPicker({
             {t(`ai:agentConfigs.name.${agentConfig.name}`, { defaultValue: agentConfig.name })}
           </DialogTitle>
           <DialogDescription>
-            {t("ai:agentConfigs.dialog.description")}
+            {isNamer
+              ? t("ai:agentConfigs.roleDescription.namer")
+              : t("ai:agentConfigs.dialog.description")}
           </DialogDescription>
         </DialogHeader>
 
@@ -326,7 +334,8 @@ export function AgentConfigModelPicker({
             />
           </div>
 
-          {/* Auto-execute */}
+          {/* Auto-execute — namer runs no tools (ADR-0040), so hidden for it */}
+          {!isNamer && (
           <div className="flex items-center justify-between gap-6">
             <div className="flex flex-col gap-0.5">
               <span className="text-xs font-medium text-muted-foreground">
@@ -342,8 +351,10 @@ export function AgentConfigModelPicker({
               disabled={disabled || autoExecMut.isPending}
             />
           </div>
+          )}
 
-          {/* Context compaction */}
+          {/* Context compaction — meaningless for a one-shot naming call */}
+          {!isNamer && (
           <div className="flex items-center justify-between gap-6">
             <div className="flex flex-col gap-0.5">
               <span className="text-xs font-medium text-muted-foreground">
@@ -359,7 +370,8 @@ export function AgentConfigModelPicker({
               disabled={disabled || compactionMut.isPending}
             />
           </div>
-          {agentConfig.contextCompaction.enabled && (
+          )}
+          {!isNamer && agentConfig.contextCompaction.enabled && (
             <div className="flex items-center justify-between gap-6">
               <div className="flex flex-col gap-0.5">
                 <span className="text-xs font-medium text-muted-foreground">
@@ -397,7 +409,9 @@ export function AgentConfigModelPicker({
             </div>
           )}
 
-          {/* System prompt override */}
+          {/* System prompt override — the namer's prompt is fixed in code
+              (src/lib/ai/auto-title.ts), so the editor is hidden for it */}
+          {!isNamer && (
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-4">
               <div className="flex flex-col gap-0.5">
@@ -440,6 +454,7 @@ export function AgentConfigModelPicker({
               disabled={disabled || systemPromptMut.isPending}
             />
           </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>
