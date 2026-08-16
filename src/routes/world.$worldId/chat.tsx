@@ -89,7 +89,11 @@ function ChatPage() {
               pendingUserText={pendingUserText}
               onPendingUserConsumed={() => setPendingUserText(null)}
             />
-            <ConsentBanner worldId={wid} conversationId={selected.id} />
+            <ConsentBanner
+              key={selected.id}
+              worldId={wid}
+              conversationId={selected.id}
+            />
             <Composer
               worldId={wid}
               conversationId={selected.id}
