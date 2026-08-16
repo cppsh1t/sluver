@@ -154,6 +154,12 @@ fn load_scene(conn: &rusqlite::Connection, id: &str) -> Result<Scene, DbError> {
         rows.collect::<Result<Vec<_>, _>>()?
     };
 
+    let lore_ids: Vec<String> = {
+        let mut stmt = conn.prepare("SELECT lore_id FROM scene_lore_refs WHERE scene_id = ?1")?;
+        let rows = stmt.query_map(params![id], |row| row.get(0))?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+
     Ok(Scene {
         id: id.to_string(),
         chapter_id,
@@ -166,6 +172,7 @@ fn load_scene(conn: &rusqlite::Connection, id: &str) -> Result<Scene, DbError> {
         location_id,
         item_ids,
         event_ids,
+        lore_ids,
         created_at,
         updated_at,
     })
@@ -493,7 +500,21 @@ pub fn list_scenes(
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
-    // (e) Group refs by scene_id.
+    // (e) Batch-load ALL lore refs.
+    let lore_sql = format!(
+        "SELECT scene_id, lore_id FROM scene_lore_refs WHERE scene_id IN ({placeholders})"
+    );
+    let mut lore_stmt = conn.prepare(&lore_sql)?;
+    let all_lore_refs: Vec<(String, String)> = lore_stmt
+        .query_map(rusqlite::params_from_iter(ids.iter()), |row| {
+            Ok((
+                row.get::<_, String>("scene_id")?,
+                row.get::<_, String>("lore_id")?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // (f) Group refs by scene_id.
     let mut char_map: HashMap<String, Vec<CharacterRef>> = HashMap::new();
     for (sc_id, r) in all_char_refs {
         char_map.entry(sc_id).or_default().push(r);
@@ -506,14 +527,19 @@ pub fn list_scenes(
     for (sc_id, event_id) in all_event_refs {
         event_map.entry(sc_id).or_default().push(event_id);
     }
+    let mut lore_map: HashMap<String, Vec<String>> = HashMap::new();
+    for (sc_id, lore_id) in all_lore_refs {
+        lore_map.entry(sc_id).or_default().push(lore_id);
+    }
 
-    // (f) Assemble results.
+    // (g) Assemble results.
     let result: Vec<Scene> = raws
         .into_iter()
         .map(|raw| {
             let character_refs = char_map.remove(&raw.id).unwrap_or_default();
             let item_ids = item_map.remove(&raw.id).unwrap_or_default();
             let event_ids = event_map.remove(&raw.id).unwrap_or_default();
+            let lore_ids = lore_map.remove(&raw.id).unwrap_or_default();
             Scene {
                 id: raw.id,
                 chapter_id: chapter_id.clone(),
@@ -526,6 +552,7 @@ pub fn list_scenes(
                 location_id: raw.location_id,
                 item_ids,
                 event_ids,
+                lore_ids,
                 created_at: raw.created_at,
                 updated_at: raw.updated_at,
             }
@@ -752,7 +779,21 @@ fn load_chapter_overview(conn: &rusqlite::Connection, id: &str) -> Result<Chapte
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
-    // (e) Group refs by scene_id.
+    // (e) Batch-load ALL lore refs.
+    let lore_sql = format!(
+        "SELECT scene_id, lore_id FROM scene_lore_refs WHERE scene_id IN ({placeholders})"
+    );
+    let mut lore_stmt = conn.prepare(&lore_sql)?;
+    let all_lore_refs: Vec<(String, String)> = lore_stmt
+        .query_map(rusqlite::params_from_iter(ids.iter()), |row| {
+            Ok((
+                row.get::<_, String>("scene_id")?,
+                row.get::<_, String>("lore_id")?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // (f) Group refs by scene_id.
     let mut char_map: HashMap<String, Vec<CharacterRef>> = HashMap::new();
     for (sc_id, r) in all_char_refs {
         char_map.entry(sc_id).or_default().push(r);
@@ -765,14 +806,19 @@ fn load_chapter_overview(conn: &rusqlite::Connection, id: &str) -> Result<Chapte
     for (sc_id, event_id) in all_event_refs {
         event_map.entry(sc_id).or_default().push(event_id);
     }
+    let mut lore_map: HashMap<String, Vec<String>> = HashMap::new();
+    for (sc_id, lore_id) in all_lore_refs {
+        lore_map.entry(sc_id).or_default().push(lore_id);
+    }
 
-    // (f) Assemble results.
+    // (g) Assemble results.
     let scenes: Vec<SceneOverview> = raws
         .into_iter()
         .map(|raw| {
             let character_refs = char_map.remove(&raw.id).unwrap_or_default();
             let item_ids = item_map.remove(&raw.id).unwrap_or_default();
             let event_ids = event_map.remove(&raw.id).unwrap_or_default();
+            let lore_ids = lore_map.remove(&raw.id).unwrap_or_default();
             SceneOverview {
                 id: raw.id,
                 chapter_id: id.to_string(),
@@ -784,6 +830,7 @@ fn load_chapter_overview(conn: &rusqlite::Connection, id: &str) -> Result<Chapte
                 location_id: raw.location_id,
                 item_ids,
                 event_ids,
+                lore_ids,
                 created_at: raw.created_at,
                 updated_at: raw.updated_at,
             }
@@ -979,6 +1026,13 @@ pub fn create_scene(
         )?;
     }
 
+    for lore_id in &input.lore_ids {
+        tx.execute(
+            "INSERT INTO scene_lore_refs (scene_id, lore_id) VALUES (?1, ?2)",
+            params![id, lore_id],
+        )?;
+    }
+
     tx.commit()?;
     load_scene(conn, &id)
 });
@@ -1053,6 +1107,10 @@ pub fn update_scene(
         "DELETE FROM scene_event_refs WHERE scene_id = ?1",
         params![id],
     )?;
+    tx.execute(
+        "DELETE FROM scene_lore_refs WHERE scene_id = ?1",
+        params![id],
+    )?;
 
     for r in &input.character_refs {
         tx.execute(
@@ -1072,6 +1130,13 @@ pub fn update_scene(
         tx.execute(
             "INSERT INTO scene_event_refs (scene_id, event_id) VALUES (?1, ?2)",
             params![id, event_id],
+        )?;
+    }
+
+    for lore_id in &input.lore_ids {
+        tx.execute(
+            "INSERT INTO scene_lore_refs (scene_id, lore_id) VALUES (?1, ?2)",
+            params![id, lore_id],
         )?;
     }
 

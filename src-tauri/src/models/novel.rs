@@ -82,6 +82,7 @@ pub struct Scene {
     pub location_id: Option<String>,
     pub item_ids: Vec<String>,
     pub event_ids: Vec<String>,
+    pub lore_ids: Vec<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -106,6 +107,8 @@ pub struct CreateSceneInput {
     pub item_ids: Vec<String>,
     #[serde(default)]
     pub event_ids: Vec<String>,
+    #[serde(default)]
+    pub lore_ids: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -120,6 +123,7 @@ pub struct UpdateSceneInput {
     pub location_id: Option<String>,
     pub item_ids: Vec<String>,
     pub event_ids: Vec<String>,
+    pub lore_ids: Vec<String>,
 }
 
 /// SceneImageMeta — metadata for one image in a scene's gallery (1:N
@@ -192,6 +196,7 @@ pub struct SceneOverview {
     pub location_id: Option<String>,
     pub item_ids: Vec<String>,
     pub event_ids: Vec<String>,
+    pub lore_ids: Vec<String>,
     pub created_at: String,
     pub updated_at: String,
 }
