@@ -326,6 +326,16 @@ pub fn run() {
             commands::world_search::search_scenes,
             // grep (match-centric full-corpus retrieval — ADR-0035)
             commands::grep::grep,
+            // Notes (single-table Folder/Note tree — ADR-0038; agent access
+            // prompt-gated per ADR-0037)
+            commands::note::create_note,
+            commands::note::get_note,
+            commands::note::list_notes,
+            commands::note::update_note,
+            commands::note::delete_note,
+            commands::note::reorder_notes,
+            commands::note::move_note,
+            commands::note::grep_notes,
             // Timeline (derived view — ADR-0033)
             commands::timeline::query_timeline,
             commands::timeline::list_timeline_lanes,

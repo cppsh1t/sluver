@@ -69,7 +69,11 @@ const ALL_ENTITY_TYPES: [&str; 9] = [
 /// Wrap a user query in SQL LIKE wildcards. Mirrors `world_search.rs` — no
 /// escaping; the prefilter is a superset and literal semantics come from the
 /// Rust scan. The query itself is never logged.
-fn like_pattern(query: &str) -> String {
+///
+/// `pub(crate)`: shared with `commands/note.rs::grep_notes` (ADR-0037
+/// amendment applies ADR-0035 semantics to the notes corpus) — semantics
+/// must stay identical.
+pub(crate) fn like_pattern(query: &str) -> String {
     format!("%{query}%")
 }
 
@@ -101,7 +105,10 @@ fn json_array_prefilter(col: &str) -> String {
 /// `str::find` byte offsets — coincide between the folded and original
 /// strings: offsets found in the folded haystack are safe slicing offsets
 /// into the original.
-fn fold_ascii(s: &str) -> String {
+///
+/// `pub(crate)`: shared with `commands/note.rs::grep_notes` — the SQL
+/// prefilter / Rust scan folding agreement is load-bearing there too.
+pub(crate) fn fold_ascii(s: &str) -> String {
     s.chars()
         .map(|c| if c.is_ascii_uppercase() { c.to_ascii_lowercase() } else { c })
         .collect()
@@ -130,7 +137,11 @@ fn context_before(s: &str, end: usize, max_chars: usize) -> String {
 /// signal survives the snippet sample) and turns the first
 /// `SNIPPETS_PER_GROUP` occurrences into context snippets. Returns `None`
 /// when the field has zero matches (no group is emitted).
-fn scan_text_field(haystack: &str, folded_needle: &str) -> Option<(i64, Vec<GrepSnippet>)> {
+///
+/// `pub(crate)`: shared with `commands/note.rs::grep_notes`, which maps
+/// the returned `GrepSnippet`s onto its `NoteSnippet` (identical shape) —
+/// one tested implementation of the tricky UTF-8-boundary scan, no drift.
+pub(crate) fn scan_text_field(haystack: &str, folded_needle: &str) -> Option<(i64, Vec<GrepSnippet>)> {
     let folded_haystack = fold_ascii(haystack);
     let mut count: i64 = 0;
     let mut snippets = Vec::new();
