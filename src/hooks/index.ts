@@ -105,6 +105,7 @@ export {
   useConversations,
   useCreateConversation,
   useDeleteConversation,
+  useRenameConversation,
 } from "./use-conversations";
 
 export {

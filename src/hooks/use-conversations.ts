@@ -4,6 +4,7 @@ import {
   createConversation,
   deleteConversation,
   listConversations,
+  updateConversationTitle,
 } from "@/api";
 import type { CreateConversationInput } from "@/api";
 import type { Conversation, ConversationId, WorldId } from "@/types";
@@ -44,6 +45,21 @@ export const useDeleteConversation = (spaceId: string, worldId: WorldId) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: ConversationId) => deleteConversation(spaceId, worldId, id),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: conversationKeys.all(spaceId, worldId) }),
+  });
+};
+
+export const useRenameConversation = (spaceId: string, worldId: WorldId) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      conversationId,
+      title,
+    }: {
+      conversationId: ConversationId;
+      title: string;
+    }) => updateConversationTitle(spaceId, worldId, conversationId, title),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: conversationKeys.all(spaceId, worldId) }),
   });

@@ -47,6 +47,23 @@ export function updateConversationPlan(
   });
 }
 
+/**
+ * Rename a conversation (user-initiated inline rename in the chat sidebar).
+ */
+export function updateConversationTitle(
+  spaceId: string,
+  worldId: WorldId,
+  conversationId: string,
+  title: string,
+): Promise<void> {
+  return call<void>('update_conversation_title', {
+    spaceId,
+    worldId,
+    conversationId,
+    title,
+  });
+}
+
 // ─── Message ─────────────────────────────────────────────────────────────────
 
 export function loadMessages(
