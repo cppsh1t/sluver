@@ -131,12 +131,17 @@
   },
   "consent": {
     "approve": "同意",
+    "approveAll": "全部同意",
     "deny": "拒绝",
-    "pendingCount": "{{count}} 个工具等待同意"
+    "moreParams": "还有 {{count}} 项参数",
+    "next": "下一个",
+    "pendingCount": "{{count}} 个工具等待同意",
+    "prev": "上一个"
   },
   "notification": {
     "toolConsentTitle": "工具调用需要批准",
-    "toolConsentBody": "工具「{{tool}}」正在等待你的批准"
+    "toolConsentBody": "工具「{{tool}}」正在等待你的批准",
+    "toolConsentBodyMulti": "{{count}} 个工具正在等待你的批准"
   },
   "step": "第 {{n}} 步",
   "error": {

@@ -131,12 +131,17 @@
   },
   "consent": {
     "approve": "Approve",
+    "approveAll": "Approve all",
     "deny": "Deny",
-    "pendingCount": "{{count}} tool(s) awaiting approval"
+    "moreParams": "+{{count}} more",
+    "next": "Next",
+    "pendingCount": "{{count}} tool(s) awaiting approval",
+    "prev": "Previous"
   },
   "notification": {
     "toolConsentTitle": "Tool approval required",
-    "toolConsentBody": "“{{tool}}” is waiting for your approval"
+    "toolConsentBody": "“{{tool}}” is waiting for your approval",
+    "toolConsentBodyMulti": "{{count}} tool(s) are waiting for your approval"
   },
   "step": "Step {{n}}",
   "error": {
