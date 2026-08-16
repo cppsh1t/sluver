@@ -2,9 +2,11 @@
  * Conversation list — the left-pane picker for one world's conversations.
  *
  * Server state via React Query (`useConversations` / `useCreateConversation` /
- * `useDeleteConversation`); selection is lifted to the parent route. Creating
- * a conversation first picks a role (explorer / writer) via a dropdown, since
- * the role fixes the conversation's bound agent config.
+ * `useDeleteConversation` / `useRenameConversation`); selection is lifted to
+ * the parent route. Creating a conversation first picks a role (explorer /
+ * writer) via a dropdown, since the role fixes the conversation's bound agent
+ * config. Rows support inline rename (hover pencil or double-click the title;
+ * Enter/blur commits, Escape cancels — same pattern as the Notes tree).
  */
 
 import { useMemo, useState } from "react";
@@ -17,6 +19,7 @@ import {
   Compass01Icon,
   Delete02Icon,
   Edit02Icon,
+  PencilEdit01Icon,
 } from "@hugeicons/core-free-icons";
 
 import {
@@ -38,14 +41,17 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import {
   useConversations,
   useCreateConversation,
   useDeleteConversation,
+  useRenameConversation,
 } from "@/hooks";
 import { useRemoveConversation } from "@/lib/conversation-runtime";
 import { formatRelativeTime } from "@/lib/format";
 import { toErrorPayload } from "@/api/client";
+import i18n from "@/i18n";
 import { translateError } from "@/i18n/errors";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationId, SpaceId, WorldId } from "@/types";
@@ -82,8 +88,12 @@ export function ConversationList({
   const { data: conversations = [], isLoading } = useConversations(spaceId, worldId);
   const createMut = useCreateConversation(spaceId, worldId);
   const deleteMut = useDeleteConversation(spaceId, worldId);
+  const renameMut = useRenameConversation(spaceId, worldId);
   const removeConversation = useRemoveConversation(worldId);
   const [pendingDelete, setPendingDelete] = useState<Conversation | null>(null);
+  const [renaming, setRenaming] = useState<{ id: string; draft: string } | null>(
+    null,
+  );
 
   // Most-recently-updated first.
   const sorted = useMemo(
@@ -121,6 +131,27 @@ export function ConversationList({
       await deleteMut.mutateAsync(target.id);
     } catch (e) {
       toast.error(t("common:actions.delete"), {
+        description: translateError(toErrorPayload(e)),
+      });
+    }
+  }
+
+  /**
+   * Commit the inline rename for `conv`. No-op when the draft is empty or
+   * unchanged after trimming (same guard as the Notes tree rename). Async
+   * callbacks use the global `i18n.t`, not the hook `t` (project rule).
+   */
+  async function commitRename(conv: Conversation) {
+    const target = renaming;
+    if (!target || target.id !== conv.id) return;
+    setRenaming(null);
+    const title = target.draft.trim();
+    if (!title || title === (conv.title ?? "")) return;
+    try {
+      await renameMut.mutateAsync({ conversationId: conv.id, title });
+      toast.success(i18n.t("chat:toast.renameSuccess"));
+    } catch (e) {
+      toast.error(i18n.t("chat:toast.renameFailed"), {
         description: translateError(toErrorPayload(e)),
       });
     }
@@ -179,6 +210,7 @@ export function ConversationList({
             {sorted.map((conv) => {
               const active = conv.id === selectedId;
               const role = conv.agentConfigName === "writer" ? "writer" : "explorer";
+              const isRenaming = renaming?.id === conv.id;
               return (
                 <li key={conv.id}>
                   <div
@@ -207,29 +239,89 @@ export function ConversationList({
                       />
                     )}
                     <div className="flex items-center gap-2">
-                      <span
-                        className={cn(
-                          "flex-1 truncate text-sm",
-                          active ? "font-medium" : "font-normal",
-                        )}
-                      >
-                        {conv.title ?? t("chat:list.untitled")}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setPendingDelete(conv);
-                        }}
-                        aria-label={t("common:actions.delete")}
-                        className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 outline-none transition-opacity hover:text-destructive focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/30 group-hover:opacity-100"
-                      >
-                        <HugeiconsIcon
-                          icon={Delete02Icon}
-                          strokeWidth={2}
-                          className="size-3.5"
+                      {isRenaming ? (
+                        <Input
+                          autoFocus
+                          value={renaming?.draft ?? ""}
+                          maxLength={100}
+                          onChange={(e) =>
+                            setRenaming((r) =>
+                              r && r.id === conv.id
+                                ? { ...r, draft: e.currentTarget.value }
+                                : r,
+                            )
+                          }
+                          onClick={(e) => e.stopPropagation()}
+                          onDoubleClick={(e) => e.stopPropagation()}
+                          onBlur={() => commitRename(conv)}
+                          onKeyDown={(e) => {
+                            // Stop the row's Enter/Space selection handler.
+                            e.stopPropagation();
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              commitRename(conv);
+                            }
+                            if (e.key === "Escape") {
+                              e.preventDefault();
+                              setRenaming(null);
+                            }
+                          }}
+                          className="h-6 min-w-0 flex-1 px-1 text-sm"
                         />
-                      </button>
+                      ) : (
+                        <span
+                          className={cn(
+                            "flex-1 truncate text-sm",
+                            active ? "font-medium" : "font-normal",
+                          )}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            setRenaming({
+                              id: conv.id,
+                              draft: conv.title ?? "",
+                            });
+                          }}
+                        >
+                          {conv.title ?? t("chat:list.untitled")}
+                        </span>
+                      )}
+                      {!isRenaming && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setRenaming({
+                                id: conv.id,
+                                draft: conv.title ?? "",
+                              });
+                            }}
+                            aria-label={t("chat:list.rename")}
+                            className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 outline-none transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/30 group-hover:opacity-100"
+                          >
+                            <HugeiconsIcon
+                              icon={PencilEdit01Icon}
+                              strokeWidth={2}
+                              className="size-3.5"
+                            />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPendingDelete(conv);
+                            }}
+                            aria-label={t("common:actions.delete")}
+                            className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 outline-none transition-opacity hover:text-destructive focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/30 group-hover:opacity-100"
+                          >
+                            <HugeiconsIcon
+                              icon={Delete02Icon}
+                              strokeWidth={2}
+                              className="size-3.5"
+                            />
+                          </button>
+                        </>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <RoleBadge role={role} />
