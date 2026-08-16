@@ -123,4 +123,14 @@ export {
 
 export { useEntityImageBytes } from "./use-entity-image";
 
+export {
+  useNotes,
+  useNote,
+  useCreateNote,
+  useUpdateNote,
+  useDeleteNote,
+  useReorderNotes,
+  useMoveNote,
+} from "./use-notes";
+
 export { timelineKeys, useTimeline, useTimelineLanes } from "./use-timeline";

@@ -18,6 +18,7 @@ export * from './element';
 export * from './event';
 export * from './timeline';
 export * from './novel';
+export * from './note';
 export * from './conversation';
 export * from './space';
 export * from './session';
