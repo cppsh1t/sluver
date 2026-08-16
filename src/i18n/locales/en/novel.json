@@ -177,6 +177,16 @@
       "title": "Select events",
       "searchPlaceholder": "Search events...",
       "done": "Done"
+    },
+    "lores": {
+      "title": "Lore",
+      "add": "Add lore",
+      "empty": "No lore in this scene"
+    },
+    "lorePicker": {
+      "title": "Select lore",
+      "searchPlaceholder": "Search lore...",
+      "done": "Done"
     }
   },
   "toast": {

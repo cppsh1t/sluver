@@ -177,6 +177,16 @@
       "title": "选择事件",
       "searchPlaceholder": "搜索事件...",
       "done": "完成"
+    },
+    "lores": {
+      "title": "设定",
+      "add": "添加设定",
+      "empty": "本场景暂无设定"
+    },
+    "lorePicker": {
+      "title": "选择设定",
+      "searchPlaceholder": "搜索设定...",
+      "done": "完成"
     }
   },
   "toast": {
