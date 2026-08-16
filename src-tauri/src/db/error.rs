@@ -169,6 +169,19 @@ pub enum DbError {
         id: String,
         existing_name: String,
     },
+
+    /// `create_note` / `move_note` targeted a `parent_id` that exists but
+    /// is not a folder (notes cannot nest under notes — ADR-0038 §1).
+    /// Surfaces as `NOTE_PARENT_NOT_FOLDER` with `{ id }` (the parent id).
+    #[error("Note parent is not a folder: {0}")]
+    NoteParentNotFolder(String),
+
+    /// `move_note` tried to move a note/folder under itself or one of its
+    /// descendants — the ancestor-walk rejection (ADR-0038 §4; SQLite
+    /// cannot express this constraint). Surfaces as `NOTE_MOVE_CYCLE`
+    /// with `{ id }` (the moved id).
+    #[error("Note move would create a cycle: {0}")]
+    NoteMoveCycle(String),
 }
 
 impl DbError {
@@ -269,6 +282,18 @@ impl DbError {
                     ("existing_name".to_string(), existing_name.clone()),
                 ]),
             ),
+            // Notes tree invariants (ADR-0038): the offending id is surfaced
+            // for diagnostics; the translated messages don't interpolate it
+            // (a UUID is not user-meaningful) — same shape as
+            // SPACE_WRONG_PASSWORD carrying args the message doesn't use.
+            DbError::NoteParentNotFolder(id) => (
+                "NOTE_PARENT_NOT_FOLDER",
+                HashMap::from([("id".to_string(), id.clone())]),
+            ),
+            DbError::NoteMoveCycle(id) => (
+                "NOTE_MOVE_CYCLE",
+                HashMap::from([("id".to_string(), id.clone())]),
+            ),
         };
         ErrorPayload {
             code: code.to_string(),
@@ -324,6 +349,20 @@ mod space_error_tests {
         let p = DbError::InvalidInput("bad id".into()).to_payload();
         assert_eq!(p.code, "INVALID_INPUT");
         assert_eq!(p.args.get("message"), Some(&"bad id".to_string()));
+    }
+
+    #[test]
+    fn note_parent_not_folder_payload() {
+        let p = DbError::NoteParentNotFolder("abc".into()).to_payload();
+        assert_eq!(p.code, "NOTE_PARENT_NOT_FOLDER");
+        assert_eq!(p.args.get("id"), Some(&"abc".to_string()));
+    }
+
+    #[test]
+    fn note_move_cycle_payload() {
+        let p = DbError::NoteMoveCycle("abc".into()).to_payload();
+        assert_eq!(p.code, "NOTE_MOVE_CYCLE");
+        assert_eq!(p.args.get("id"), Some(&"abc".to_string()));
     }
 
     /// Regression guard: existing variants must keep their stable codes.

@@ -10,7 +10,8 @@
     "Scene": "Scene",
     "Phase": "Phase",
     "World": "World",
-    "Space": "Space"
+    "Space": "Space",
+    "Note": "Note"
   },
   "WORLD_NOT_FOUND": "World not found ({{id}})",
   "NOT_FOUND": "{{entity}} not found ({{id}})",
@@ -28,5 +29,7 @@
   "WORLD_IMPORT_FAILED": "Failed to import the world file",
   "WORLD_IMPORT_CORRUPT_FILE": "The world file is corrupt or in an unsupported format",
   "WORLD_IMPORT_ALREADY_EXISTS": "A world with this ID already exists",
+  "NOTE_PARENT_NOT_FOLDER": "Parent is not a folder",
+  "NOTE_MOVE_CYCLE": "Cannot move a note under itself or one of its descendants",
   "INTERNAL_ERROR": "An internal error occurred"
 }

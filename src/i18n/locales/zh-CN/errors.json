@@ -10,7 +10,8 @@
     "Scene": "场景",
     "Phase": "阶段",
     "World": "世界",
-    "Space": "空间"
+    "Space": "空间",
+    "Note": "笔记"
   },
   "WORLD_NOT_FOUND": "未找到世界 ({{id}})",
   "NOT_FOUND": "未找到{{entity}} ({{id}})",
@@ -28,5 +29,7 @@
   "WORLD_IMPORT_FAILED": "导入世界文件失败",
   "WORLD_IMPORT_CORRUPT_FILE": "世界文件已损坏或格式不受支持",
   "WORLD_IMPORT_ALREADY_EXISTS": "具有此 ID 的世界已存在",
+  "NOTE_PARENT_NOT_FOLDER": "父级不是文件夹",
+  "NOTE_MOVE_CYCLE": "不能移动到自身或其子孙节点",
   "INTERNAL_ERROR": "发生内部错误"
 }
