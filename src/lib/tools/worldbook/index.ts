@@ -3,8 +3,9 @@
  *
  * Explorer gets full worldbook CRUD + novel/chapter/scene query-only tools.
  * Writer gets full novel/chapter/scene CRUD + worldbook query-only tools.
- * Both get system tools (time), all 8 search_* tools, and grep
- * (match-centric full-corpus retrieval — ADR-0035), all read-only.
+ * Both get system tools (time), all 8 search_* tools, grep (match-centric
+ * full-corpus retrieval — ADR-0035), and the six prompt-gated note tools
+ * (ADR-0037 — shared section, never behind `queryOnly`).
  *
  * The `queryOnly` helper filters a domain's tools down to read operations
  * (list / get / count / search) by tool-name prefix, so domain files export
@@ -14,6 +15,7 @@
 import type { ToolSet } from "@/lib/ai";
 
 import { grepTools } from "../grep";
+import { noteTools } from "../note";
 import { systemTools } from "../system";
 import type { ToolDef, ToolContext } from "../types";
 import { buildToolSet } from "../types";
@@ -49,7 +51,7 @@ function queryOnly(tools: Record<string, ToolDef>): Record<string, ToolDef> {
 
 /**
  * Explorer toolset: full worldbook CRUD + novel/chapter/scene query + system.
- * 53 tools (45 + 8 search). The Explorer surveys and builds the world
+ * 59 tools (51 + 8 search). The Explorer surveys and builds the world
  * (characters, locations, items, lore, events) and can read (but not modify)
  * the novel structure.
  */
@@ -69,6 +71,8 @@ export function buildExplorerTools(ctx: ToolContext): ToolSet {
       ...timelineTools(),
       // Grep (cross-entity match-centric retrieval — ADR-0035)
       ...grepTools(),
+      // Notes (prompt-gated per ADR-0037 — shared by both roles)
+      ...noteTools(),
       // Novel/chapter/scene: query only (includes search_*)
       ...queryOnly(novelTools()),
       ...queryOnly(chapterTools()),
@@ -87,7 +91,7 @@ export function buildExplorerTools(ctx: ToolContext): ToolSet {
 
 /**
  * Writer toolset: full novel/chapter/scene CRUD + worldbook query + system.
- * 45 tools (37 + 8 search). The Writer drafts and refines prose (novels,
+ * 51 tools (43 + 8 search). The Writer drafts and refines prose (novels,
  * chapters, scenes) and can read (but not modify) the worldbook for reference.
  */
 export function buildWriterTools(ctx: ToolContext): ToolSet {
@@ -110,6 +114,8 @@ export function buildWriterTools(ctx: ToolContext): ToolSet {
       ...timelineTools(),
       // Grep (cross-entity match-centric retrieval — ADR-0035)
       ...grepTools(),
+      // Notes (prompt-gated per ADR-0037 — shared by both roles)
+      ...noteTools(),
       // System
       ...systemTools(),
       ...webSearchTools(),
