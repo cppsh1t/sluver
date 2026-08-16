@@ -45,6 +45,7 @@ Tauri v2 desktop app for **worldbuilding & novel writing**. React 19 + TypeScrip
   - [ADR-0037](./docs/adr/0037-notes-agent-access-prompt-gated-static-registration.md) — Notes agent access: prompt-gated static registration on both roles; notes excluded from `grep` corpus; dedicated `grep_notes` tool
   - [ADR-0038](./docs/adr/0038-notes-single-table-tree-storage.md) — Notes storage: single `notes` table (kind discriminator, first adjacency list), NULL-safe sibling title uniqueness, no position UNIQUE (scene_images precedent), app-layer cycle guard
   - [ADR-0039](./docs/adr/0039-scene-lore-refs.md) — Scenes reference Lore via `scene_lore_refs` (background context; silent FK cascade like items/events); Events still don't — Lore never acts
+  - [ADR-0040](./docs/adr/0040-conversation-rename-and-auto-titling.md) — Conversation rename + auto-titling via non-conversational `namer` agent (first one-shot `generateText` usage; configured = enabled; silent)
 
 ## Git commit style
 
