@@ -163,8 +163,10 @@ export const useCreateScene = (spaceId: string, worldId: WorldId) => {
   return useMutation({
     mutationFn: ({ chapterId, input }: { chapterId: ChapterId; input: CreateSceneInput }) =>
       createScene(spaceId, worldId, chapterId, input),
-    onSuccess: (_data, { chapterId }) =>
-      qc.invalidateQueries({ queryKey: ["scenes", spaceId, worldId, chapterId] }),
+    onSuccess: (_data, { chapterId }) => {
+      qc.invalidateQueries({ queryKey: ["scenes", spaceId, worldId, chapterId] });
+      qc.invalidateQueries({ queryKey: ["novels", spaceId, worldId] });
+    },
   });
 };
 
@@ -177,8 +179,10 @@ export const useUpdateScene = (
   return useMutation({
     mutationFn: ({ id, input }: { id: SceneId; input: UpdateSceneInput }) =>
       updateScene(spaceId, worldId, id, input),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["scenes", spaceId, worldId, chapterId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["scenes", spaceId, worldId, chapterId] });
+      qc.invalidateQueries({ queryKey: ["novels", spaceId, worldId] });
+    },
   });
 };
 
@@ -190,8 +194,10 @@ export const useDeleteScene = (
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: SceneId) => deleteScene(spaceId, worldId, id),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["scenes", spaceId, worldId, chapterId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["scenes", spaceId, worldId, chapterId] });
+      qc.invalidateQueries({ queryKey: ["novels", spaceId, worldId] });
+    },
   });
 };
 

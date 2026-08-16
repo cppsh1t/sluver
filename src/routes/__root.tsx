@@ -69,8 +69,12 @@ const ENTITY_LIST_KEYS: Record<string, string[]> = {
   event: ["events"],
   novel: ["novels"],
   // Chapter reordering shifts scene membership; scenes live under chapters.
-  chapter: ["chapters", "scenes"],
-  scene: ["scenes", "scene-images", "scene-image-bytes"],
+  // Chapter create/delete also changes novel.chapterIds and — via the scene
+  // FK cascade on delete — the novel's backend-computed word count.
+  chapter: ["chapters", "scenes", "novels"],
+  // Scene writes change the novel's word_count (summed over scene contents),
+  // so the novels list must refresh alongside the scene caches.
+  scene: ["scenes", "scene-images", "scene-image-bytes", "novels"],
   // One id space for folders + notes (ADR-0038) — one "notes" list key.
   note: ["notes"],
 };
