@@ -49,6 +49,7 @@ import {
   useLocations,
   useItems,
   useEvents,
+  useLores,
 } from "@/hooks";
 import type {
   ChapterId,
@@ -56,6 +57,7 @@ import type {
   Event as EventType,
   Item,
   Location,
+  Lore,
   NovelId,
   Scene as SceneType,
   SceneId,
@@ -76,6 +78,7 @@ interface SortableSceneProps {
   locations: Location[];
   items: Item[];
   events: EventType[];
+  lores: Lore[];
   onFieldChange: (patch: ScenePatch) => void;
   onActiveFocus: () => void;
   onDelete: () => void;
@@ -91,6 +94,7 @@ function SortableScene({
   locations,
   items,
   events,
+  lores,
   onFieldChange,
   onActiveFocus,
   onDelete,
@@ -119,6 +123,7 @@ function SortableScene({
         locations={locations}
         items={items}
         events={events}
+        lores={lores}
         onFieldChange={onFieldChange}
         onActiveFocus={onActiveFocus}
         onDelete={onDelete}
@@ -150,6 +155,7 @@ function ChapterWorkspacePage() {
   const { data: locations = [] } = useLocations(spaceId, wid);
   const { data: items = [] } = useItems(spaceId, wid);
   const { data: events = [] } = useEvents(spaceId, wid);
+  const { data: lores = [] } = useLores(spaceId, wid);
 
   // ─── Mutations ───────────────────────────────────────────────────────────
   const updateSceneMut = useUpdateScene(spaceId, wid, cid);
@@ -213,6 +219,7 @@ function ChapterWorkspacePage() {
             locationId: scene.locationId,
             itemIds: scene.itemIds,
             eventIds: scene.eventIds,
+            loreIds: scene.loreIds,
           },
         });
         setSaveStatuses((prev) => ({ ...prev, [sceneId]: "saved" }));
@@ -531,6 +538,7 @@ function ChapterWorkspacePage() {
                             locations={locations}
                             items={items}
                             events={events}
+                            lores={lores}
                             onFieldChange={(patch) => handleSceneFieldChange(scene.id, patch)}
                             onActiveFocus={() => setActiveSceneId(scene.id)}
                             onDelete={() => handleDeleteScene(scene.id)}
@@ -598,6 +606,7 @@ function ChapterWorkspacePage() {
           locations={locations}
           items={items}
           events={events}
+          lores={lores}
           collapsed={rightCollapsed}
           onToggleCollapsed={() => setRightCollapsed((v) => !v)}
         />

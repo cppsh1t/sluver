@@ -3,6 +3,7 @@ import { worldIdSchema } from "./world";
 import { characterRefSchema } from "./character";
 import { locationIdSchema } from "./location";
 import { itemIdSchema } from "./item";
+import { loreIdSchema } from "./lore";
 import { eventIdSchema } from "./event";
 
 // ─── Branded IDs ──────────────────────────────────────────────────────────
@@ -34,7 +35,7 @@ export type SceneId = z.infer<typeof sceneIdSchema>;
  * │                   └── sceneIds ──→ Scene[]  (章节大纲 = 场景序列)
  * │                                     ├── summary (场景梗概，来自大纲)
  * │                                     ├── content (AI 生成的正文)
- * │                                     └── entityRefs (角色/地点/物品/事件)
+ * │                                     └── entityRefs (角色/地点/物品/设定/事件)
  * └── tags
  * ```
  */
@@ -127,7 +128,7 @@ export type ChapterSummary = z.infer<typeof chapterSummarySchema>;
  * - 场景梗概 (`summary`, from the chapter outline — human or AI-assisted)
  * - 具体内容 (`content` — the AI-generated narrative prose)
  * - 关联实体引用 (entity references: characters at phases, single location,
- *   items, events)
+ *   items, lore, events)
  *
  * Entity references are stored as **pure ID references**. The frontend resolves
  * them to full entities by querying the Rust backend. This keeps Scene data
@@ -163,6 +164,8 @@ export const sceneSchema = z.object({
   itemIds: z.array(itemIdSchema),
   /** IDs of events referenced in this scene. */
   eventIds: z.array(eventIdSchema),
+  /** IDs of lore entries referenced in this scene. */
+  loreIds: z.array(loreIdSchema),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -203,6 +206,8 @@ export const sceneOverviewSchema = z.object({
   locationId: locationIdSchema.nullable(),
   itemIds: z.array(itemIdSchema),
   eventIds: z.array(eventIdSchema),
+  /** IDs of lore entries referenced in this scene. */
+  loreIds: z.array(loreIdSchema),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });

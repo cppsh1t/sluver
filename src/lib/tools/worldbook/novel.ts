@@ -3,7 +3,7 @@
  *
  * Novel → Chapter → Scene tree. Chapters and Scenes are ordered within their
  * parent (reorderable). Scenes carry prose content and reference worldbook
- * entities (characters at phases, items, events, location).
+ * entities (characters at phases, items, lore, events, location).
  *
  * Consent levels: list/get → `auto`, create → `configurable`, update/delete/reorder → `always`.
  */
@@ -208,7 +208,7 @@ export function chapterTools(): Record<string, ToolDef> {
     },
     get_chapter_overview: {
       description:
-        "Get a chapter with ALL its scenes' overviews in one call — the chapter's own fields (title, summary, sceneIds) plus every scene's summary, timeline, and entity references (characterRefs, locationId, itemIds, eventIds). Scene prose (`content`) is deliberately excluded to keep the payload small. Use this to quickly understand what happens in a chapter and which worldbook entities it touches, before drafting or reordering.",
+        "Get a chapter with ALL its scenes' overviews in one call — the chapter's own fields (title, summary, sceneIds) plus every scene's summary, timeline, and entity references (characterRefs, locationId, itemIds, eventIds, loreIds). Scene prose (`content`) is deliberately excluded to keep the payload small. Use this to quickly understand what happens in a chapter and which worldbook entities it touches, before drafting or reordering.",
       inputSchema: z.object({ id: z.string().describe("The chapter's UUID.") }),
       consentLevel: "auto",
       execute: async (input, ctx) => {
@@ -279,6 +279,7 @@ const createSceneSchema = z.object({
   locationId: z.string().optional().describe("UUID of the location."),
   itemIds: z.array(z.string()).optional().describe("UUIDs of items appearing."),
   eventIds: z.array(z.string()).optional().describe("UUIDs of events referenced."),
+  loreIds: z.array(z.string()).optional().describe("UUIDs of lore entries referenced."),
 });
 
 const updateSceneSchema = createSceneSchema.extend({
@@ -320,7 +321,7 @@ export function sceneTools(): Record<string, ToolDef> {
     },
     create_scene: {
       description:
-        "Create a new scene in a chapter. Position auto-appends. Pass characterRefs, itemIds, eventIds to link worldbook entities.",
+        "Create a new scene in a chapter. Position auto-appends. Pass characterRefs, itemIds, eventIds, loreIds to link worldbook entities.",
       inputSchema: createSceneSchema,
       consentLevel: "configurable",
       execute: async (input, ctx) => {
@@ -330,7 +331,7 @@ export function sceneTools(): Record<string, ToolDef> {
     },
     update_scene: {
       description:
-        "Update an existing scene. Only provided fields are changed. NOTE: characterRefs/itemIds/eventIds are full-replacement — provide the COMPLETE desired array.",
+        "Update an existing scene. Only provided fields are changed. NOTE: characterRefs/itemIds/eventIds/loreIds are full-replacement — provide the COMPLETE desired array.",
       inputSchema: updateSceneSchema,
       consentLevel: "always",
       execute: async (input, ctx) => {
@@ -345,6 +346,7 @@ export function sceneTools(): Record<string, ToolDef> {
           locationId?: string;
           itemIds?: string[];
           eventIds?: string[];
+          loreIds?: string[];
         };
         const current = await getScene(ctx.spaceId, ctx.worldId, id as never);
         return updateScene(ctx.spaceId, ctx.worldId, id as never, {
@@ -357,6 +359,7 @@ export function sceneTools(): Record<string, ToolDef> {
           locationId: (changes.locationId ?? current.locationId) as never,
           itemIds: (changes.itemIds ?? current.itemIds) as never,
           eventIds: (changes.eventIds ?? current.eventIds) as never,
+          loreIds: (changes.loreIds ?? current.loreIds) as never,
         });
       },
     },

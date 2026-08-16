@@ -32,6 +32,7 @@ import { CharacterRefPicker } from "@/components/worldbook/character-ref-picker"
 import { LocationRefPicker } from "@/components/worldbook/location-ref-picker";
 import { ItemMultiPicker } from "@/components/worldbook/item-multi-picker";
 import { EventMultiPicker } from "@/components/worldbook/event-multi-picker";
+import { LoreMultiPicker } from "@/components/worldbook/lore-multi-picker";
 import { SceneImageGallery } from "@/components/worldbook/scene-image-gallery";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -53,6 +54,8 @@ import type {
   ItemId,
   Location,
   LocationId,
+  Lore,
+  LoreId,
   Scene,
   WorldId,
 } from "@/types";
@@ -71,6 +74,7 @@ type ScenePatch = Partial<
     | "locationId"
     | "itemIds"
     | "eventIds"
+    | "loreIds"
   >
 >;
 
@@ -86,6 +90,7 @@ interface SceneCardProps {
   locations: Location[];
   items: Item[];
   events: EventType[];
+  lores: Lore[];
   onFieldChange: (patch: ScenePatch) => void;
   onActiveFocus: () => void;
   onDelete: () => void;
@@ -118,6 +123,7 @@ function SceneCard({
   locations,
   items,
   events,
+  lores,
   onFieldChange,
   onActiveFocus,
   onDelete,
@@ -130,6 +136,7 @@ function SceneCard({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [itemPickerOpen, setItemPickerOpen] = useState(false);
   const [eventPickerOpen, setEventPickerOpen] = useState(false);
+  const [lorePickerOpen, setLorePickerOpen] = useState(false);
 
   const charMap = useMemo(() => {
     const m = new Map<string, Character>();
@@ -154,6 +161,12 @@ function SceneCard({
     for (const e of events) m.set(e.id, e);
     return m;
   }, [events]);
+
+  const loreMap = useMemo(() => {
+    const m = new Map<string, Lore>();
+    for (const l of lores) m.set(l.id, l);
+    return m;
+  }, [lores]);
 
   const contentRef = useRef<HTMLTextAreaElement>(null);
 
@@ -582,6 +595,59 @@ function SceneCard({
                 </div>
               )}
             </div>
+
+            {/* Lores */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-medium">
+                  {t("novel:refs.lores.title")}
+                </h4>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setLorePickerOpen(true)}
+                >
+                  <HugeiconsIcon
+                    icon={Add01Icon}
+                    strokeWidth={2}
+                    className="size-3.5"
+                  />
+                  {t("novel:refs.lores.add")}
+                </Button>
+              </div>
+              {scene.loreIds.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  {t("novel:refs.lores.empty")}
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {scene.loreIds.map((id) => {
+                    const lore = loreMap.get(id);
+                    if (!lore) return null;
+                    return (
+                      <EntityCard
+                        key={id}
+                        spaceId={spaceId}
+                        worldId={worldId}
+                        id={lore.id}
+                        name={lore.name}
+                        description={lore.description}
+                        tags={lore.tags}
+                        updatedAt={lore.updatedAt}
+                        entityType="lore"
+                        selectable
+                        selected
+                        onRemove={() =>
+                          onFieldChange({
+                            loreIds: scene.loreIds.filter((i) => i !== id),
+                          })
+                        }
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -603,6 +669,15 @@ function SceneCard({
         events={events}
         selectedIds={scene.eventIds}
         onCommit={(ids) => onFieldChange({ eventIds: ids as EventId[] })}
+      />
+      <LoreMultiPicker
+        spaceId={spaceId}
+        worldId={worldId}
+        open={lorePickerOpen}
+        onOpenChange={setLorePickerOpen}
+        lores={lores}
+        selectedIds={scene.loreIds}
+        onCommit={(ids) => onFieldChange({ loreIds: ids as LoreId[] })}
       />
 
       {/* Scene image gallery (edit mode — add / reorder / delete) */}

@@ -11,6 +11,7 @@ import type {
   Event as EventType,
   Item,
   Location,
+  Lore,
   Scene,
   WorldId,
 } from "@/types";
@@ -25,6 +26,7 @@ interface SceneRefSidebarProps {
   locations: Location[];
   items: Item[];
   events: EventType[];
+  lores: Lore[];
   collapsed: boolean;
   onToggleCollapsed: () => void;
 }
@@ -37,6 +39,7 @@ function SceneRefSidebar({
   locations,
   items,
   events,
+  lores,
   collapsed,
   onToggleCollapsed,
 }: SceneRefSidebarProps) {
@@ -66,6 +69,12 @@ function SceneRefSidebar({
     return m;
   }, [events]);
 
+  const loreMap = useMemo(() => {
+    const m = new Map<string, Lore>();
+    for (const l of lores) m.set(l.id, l);
+    return m;
+  }, [lores]);
+
   // ─── Aggregate all scenes' refs (deduplicated) ────────────────────────
 
   const aggregate = useMemo(() => {
@@ -75,6 +84,8 @@ function SceneRefSidebar({
     const itemIds: string[] = [];
     const eventSet = new Set<string>();
     const eventIds: string[] = [];
+    const loreSet = new Set<string>();
+    const loreIds: string[] = [];
     const locSet = new Set<string>();
     const locIds: string[] = [];
 
@@ -98,13 +109,19 @@ function SceneRefSidebar({
           eventIds.push(id);
         }
       }
+      for (const id of sc.loreIds) {
+        if (!loreSet.has(id)) {
+          loreSet.add(id);
+          loreIds.push(id);
+        }
+      }
       if (sc.locationId && !locSet.has(sc.locationId)) {
         locSet.add(sc.locationId);
         locIds.push(sc.locationId);
       }
     }
 
-    return { charRefs, itemIds, eventIds, locIds };
+    return { charRefs, itemIds, eventIds, loreIds, locIds };
   }, [allScenes]);
 
   if (collapsed) {
@@ -235,7 +252,7 @@ function SceneRefSidebar({
       </div>
 
       {/* Events */}
-      <div className="flex flex-col gap-2 px-3 py-3">
+      <div className="flex flex-col gap-2 border-b px-3 py-3">
         <h3 className="text-sm font-medium">
           {t("novel:refs.events.title")}
         </h3>
@@ -258,6 +275,38 @@ function SceneRefSidebar({
                     )}
                   </div>
                 </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Lores */}
+      <div className="flex flex-col gap-2 px-3 py-3">
+        <h3 className="text-sm font-medium">
+          {t("novel:refs.lores.title")}
+        </h3>
+        {aggregate.loreIds.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            {t("novel:refs.lores.empty")}
+          </p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {aggregate.loreIds.map((id) => {
+              const lore = loreMap.get(id);
+              if (!lore) return null;
+              return (
+                <EntityCard
+                  key={id}
+                  spaceId={spaceId}
+                  worldId={worldId}
+                  id={lore.id}
+                  name={lore.name}
+                  description={lore.description}
+                  tags={lore.tags}
+                  updatedAt={lore.updatedAt}
+                  entityType="lore"
+                />
               );
             })}
           </div>
