@@ -62,6 +62,20 @@ _Avoid_: Section, Part
 The leaf unit of prose in a Novel — the only entity that carries narrative text (`content`, plain text). Optionally anchored to a time range and a Location. References the Characters (at specific Phases), Items, and Events that appear in it.
 _Avoid_: Sequence, Beat, Moment, Setup, Fragment
 
+### Notes
+
+**Notes**:
+The author's portable note system within a World — a tree-organized workspace of free-form markdown documents for outlines, foreshadowing, inspiration, and other working material that is neither worldbook truth nor novel prose. Distinct from the Worldbook (a note may record a rejected or superseded idea — notes are subjective, disposable working material, not "what is true in the world") and from Novels (notes are never narrative). Belongs wholly to its World and travels with it on export/import. The Agent must not touch Notes unprompted — note tools are used only on the user's explicit request.
+_Avoid_: Memo, Wiki, Journal, Knowledge Base, Scratchpad
+
+**Note**:
+A single markdown document within Notes — the atomic unit of the note system. Carries a display label and markdown content. Lives in exactly one Folder or at the tree root. Identity is by `id` (UUID v7); the display label is unique among siblings.
+_Avoid_: Document, Page, File, Entry
+
+**Folder**:
+A pure container node in the Notes tree — structure only, no content of its own. May contain Folders and Notes, nesting arbitrarily deep. Identity is by `id` (UUID v7); the display label is unique among siblings.
+_Avoid_: Directory, Category, Group, Notebook
+
 ### Views
 
 **Timeline**:
