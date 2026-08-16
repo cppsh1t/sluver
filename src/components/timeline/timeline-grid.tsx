@@ -18,7 +18,8 @@ interface TimelineGridProps {
    * Sparse (real-time-scale) column layout. `false` (default) = uniform
    * columns — chronological ORDER only, no time density. `true` = each
    * column keeps a readable base width plus spacing proportional to the
-   * time elapsed since the previous column, on a linear px/day scale.
+   * time elapsed since the previous column, on a RELATIVE scale anchored
+   * to the largest gap in the data (no absolute px/day meaning).
    */
   sparse: boolean;
   canOpenDetail: (entry: TimelineEntry) => boolean;
@@ -29,20 +30,22 @@ interface TimelineGridProps {
 const LANE_LABEL_COL = "14rem";
 /** Fixed min width of each entry column. */
 const ENTRY_COL_MIN = "13rem";
-/**
- * Nominal px-per-rem, used ONLY to convert the human-friendly px/day scale
- * below into rem units. Matches the default root font size (16px).
- */
-const PX_PER_REM = 16;
 /** Sparse-mode base column width, in rem — single source of truth; the
  *  compact min width above (`13rem`) matches this by convention. */
 const SPARSE_BASE_REM = 13;
-/** Sparse mode: CSS pixels per in-world day (the linear time scale). */
-const SPARSE_PX_PER_DAY = 1;
+/**
+ * Sparse mode: width granted to the LARGEST inter-column time gap (in rem;
+ * ≈4800px). The scale is RELATIVE — anchored to the largest gap in the
+ * current data, not to any absolute px-per-day rate. Rationale: story-scale
+ * pacing (days-to-weeks gaps) was invisible at every plausible absolute
+ * scale, and the budget cap collapsed all gaps on long spans; anchoring to
+ * the max gap keeps density contrast perceptible for any data shape.
+ */
+const SPARSE_MAX_GAP_REM = 300;
 /**
  * Sparse mode: total budget for gap-induced extra width (in rem; ≈8000px).
- * Caps pathological spans (e.g. one lore event millennia before the story
- * cluster) so the grid can never balloon to browser-breaking widths.
+ * Caps pathological cases (many near-max gaps, or lore millennia before the
+ * story cluster) so the grid can never balloon to browser-breaking widths.
  */
 const SPARSE_GAP_BUDGET_REM = 500;
 /** Fixed header (time-axis) row height. */
@@ -168,9 +171,12 @@ function TimelineGrid({
   }, [groups]);
 
   // ─── Sparse (real-time-scale) column widths ───────────────────────────────
-  // Per-column widths (rem) on a LINEAR time scale: every column keeps a
+  // Per-column widths (rem) on a RELATIVE time scale: every column keeps a
   // readable base width; the space BEFORE each column grows with the time
-  // elapsed since the previous group, so time density is perceptible.
+  // elapsed since the previous group. The scale is anchored so the LARGEST
+  // gap always gets a generous fixed width (`SPARSE_MAX_GAP_REM`), clamped
+  // by the total-width budget — unlike an absolute px/day scale, the density
+  // contrast stays perceptible for story-scale (days/weeks) pacing.
   // Returns `null` (→ dense uniform template) when sparse is off, when there
   // are fewer than two dated groups, or when any timestamp fails to parse.
   const sparseWidths = useMemo<string[] | null>(() => {
@@ -183,13 +189,25 @@ function TimelineGrid({
     if (dated.length < 2) return null;
     const span = Math.max(...dated) - Math.min(...dated);
     if (span <= 0) return null;
-    // Shrink the scale when the span would blow the gap budget (e.g. lore
-    // millennia before the story cluster). Relative proportions are preserved.
+    // Consecutive inter-group gaps (ms). Groups carry distinct ascending
+    // startAt values, so every gap is strictly positive.
+    const gaps: number[] = [];
+    let prev: number | null = null;
+    for (const t of times) {
+      if (t !== null) {
+        if (prev !== null) gaps.push(t - prev);
+        prev = t;
+      }
+    }
+    const maxGap = Math.max(...gaps);
+    // Relative scale: the largest gap gets SPARSE_MAX_GAP_REM, unless that
+    // would blow the total-width budget (many near-max gaps) — then shrink
+    // proportionally. Relative proportions are always preserved.
     const remPerMs = Math.min(
-      SPARSE_PX_PER_DAY / PX_PER_REM / 86_400_000,
+      SPARSE_MAX_GAP_REM / maxGap,
       SPARSE_GAP_BUDGET_REM / span,
     );
-    let prev: number | null = null;
+    prev = null;
     return groups.map((_, i) => {
       const t = times[i];
       if (t === null) return `${SPARSE_BASE_REM}rem`; // undated keeps fixed width
