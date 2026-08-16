@@ -64,7 +64,8 @@
       "novel": "小说",
       "chapter": "章节",
       "scene": "场景",
-      "phase": "阶段"
+      "phase": "阶段",
+      "note": "笔记"
     },
     "param": {
       "id": "ID",
@@ -73,7 +74,8 @@
       "description": "描述",
       "summary": "摘要",
       "count": "数量",
-      "timezone": "时区"
+      "timezone": "时区",
+      "content": "内容"
     },
     "plan": {
       "title": "计划",

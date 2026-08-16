@@ -64,7 +64,8 @@
       "novel": "novel",
       "chapter": "chapter",
       "scene": "scene",
-      "phase": "phase"
+      "phase": "phase",
+      "note": "note"
     },
     "param": {
       "id": "ID",
@@ -73,7 +74,8 @@
       "description": "Description",
       "summary": "Summary",
       "count": "Count",
-      "timezone": "Timezone"
+      "timezone": "Timezone",
+      "content": "Content"
     },
     "plan": {
       "title": "Plan",

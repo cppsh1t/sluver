@@ -7,7 +7,8 @@
  * JSON. All field access narrows on `unknown` defensively — this module never
  * throws; it degrades to fewer rows when shapes don't match expectations.
  *
- * Covers all 49 tools exposed by the worldbuilding roles, keyed off the
+ * Covers all tools exposed by the worldbuilding roles (worldbook CRUD,
+ * novel structure, notes — ADR-0037 — web, system), keyed off the
  * tool-name prefix (e.g. `create_character` → action `create`, entity
  * `character`).
  */
@@ -37,7 +38,8 @@ export type EntityType =
   | "novel"
   | "chapter"
   | "scene"
-  | "phase";
+  | "phase"
+  | "note";
 
 export interface ToolSummary {
   /** Semantic action — drives the action-label i18n key. */
@@ -69,6 +71,9 @@ export const ENTITY_META: Record<
   novel: { iconField: "novel", headlineKey: "title" },
   chapter: { iconField: "chapter", headlineKey: "title" },
   scene: { iconField: "scene", headlineKey: "title" },
+  // Notes tree (folders + notes share one entity — ADR-0038): title is the
+  // display label (the writing family, not the worldbook `name` family).
+  note: { iconField: "note", headlineKey: "title" },
 };
 
 // ─── Defensive narrowing primitives (reused by the React layer) ────────────
@@ -123,6 +128,7 @@ const ENTITY_VALUES = new Set<string>([
   "chapter",
   "scene",
   "phase",
+  "note",
 ]);
 
 function asEntityType(v: string): EntityType | null {
@@ -154,8 +160,9 @@ export function domainFromUrl(url: string | undefined): string | undefined {
  *
  * Special cases: `get_current_time`, `web_search`, `web_fetch`,
  * `web_fetch_via_browser`, `add_phase`, `count_character_refs`,
- * `count_phase_refs`. Generic tools follow `{action}_{entity}`; reorder tools
- * use the plural entity (`reorder_phases`) which is singularized.
+ * `count_phase_refs`, `grep_notes` (search over the note entity). Generic
+ * tools follow `{action}_{entity}`; reorder tools use the plural entity
+ * (`reorder_phases`) which is singularized.
  */
 function parseToolName(toolName: string): {
   readonly action: ToolAction;
@@ -178,6 +185,11 @@ function parseToolName(toolName: string): {
   }
   if (toolName === "count_phase_refs") {
     return { action: "count", entityType: "phase" };
+  }
+  if (toolName === "grep_notes") {
+    // `grep` prefix isn't a parseable action — map the notes-scoped search
+    // (ADR-0037) onto the search action so it renders like search_* tools.
+    return { action: "search", entityType: "note" };
   }
 
   const sep = toolName.indexOf("_");
@@ -222,8 +234,8 @@ const PROSE_FIELDS: ReadonlyArray<{ readonly field: string; readonly label: stri
   { field: "changes", label: "description" },
 ];
 
-/** id-style input fields (delete uses `id` or `phaseId`). */
-const ID_FIELDS = ["id", "phaseId"] as const;
+/** id-style input fields (delete uses `id`, `phaseId`, or `noteId`). */
+const ID_FIELDS = ["id", "phaseId", "noteId"] as const;
 
 /** array-style input fields (reorder). */
 const ARRAY_FIELDS = ["phaseIds", "chapterIds", "sceneIds"] as const;
@@ -234,6 +246,7 @@ const SCOPE_ID_FIELDS = ["novelId", "chapterId", "characterId", "phaseId"] as co
 /** Build the param rows for a given action from the input record. */
 function buildParamRows(
   action: ToolAction,
+  entityType: EntityType | null,
   input: Record<string, unknown>,
 ): ToolSummary["paramRows"] {
   const rows: Array<{ readonly label: string; readonly value: string }> = [];
@@ -242,6 +255,14 @@ function buildParamRows(
     case "create":
     case "update":
     case "addPhase": {
+      // Notes carry no aliases/tags/worldbook prose — their payload of
+      // record is the markdown `content` (the title is already the headline).
+      if (entityType === "note") {
+        const content = asString(input.content);
+        return content
+          ? [{ label: "content", value: truncateProse(content) }]
+          : [];
+      }
       const aliases = asStringArray(input.aliases);
       if (aliases.length > 0) rows.push({ label: "aliases", value: aliases.join(", ") });
       const tags = asStringArray(input.tags);
@@ -350,7 +371,7 @@ export function summarizeToolCall(
     headline = domainFromUrl(url);
   }
 
-  const paramRows = buildParamRows(action, inRec);
+  const paramRows = buildParamRows(action, entityType, inRec);
 
   return { action, entityType, headline, paramRows };
 }

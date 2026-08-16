@@ -15,6 +15,7 @@ import {
   Calendar03Icon,
   Layers02Icon,
   MapPinIcon,
+  NotebookIcon,
   Package02Icon,
   Time04Icon,
   UserMultiple02Icon,
@@ -35,4 +36,6 @@ export const ENTITY_ICONS: Record<EntityType, IconDef> = {
   chapter: Layers02Icon,
   scene: AlignLeftIcon,
   phase: Time04Icon,
+  // Notes tree (ADR-0038): no CRUD card yet, so a representative glyph.
+  note: NotebookIcon,
 };
