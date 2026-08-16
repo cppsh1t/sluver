@@ -1,0 +1,59 @@
+{
+  "workspace": {
+    "title": "笔记",
+    "back": "世界"
+  },
+  "tree": {
+    "newNote": "新建笔记",
+    "newFolder": "新建文件夹",
+    "newNoteInside": "新建笔记",
+    "newFolderInside": "新建文件夹",
+    "rename": "重命名",
+    "deleteAction": "删除",
+    "deleteNoteTitle": "删除笔记",
+    "deleteNoteDescription": "确定要删除「{{name}}」吗？此操作无法撤销。",
+    "deleteFolderTitle": "删除文件夹",
+    "deleteFolderDescription": "「{{name}}」包含 {{noteCount}} 篇笔记、{{folderCount}} 个子文件夹，将一并删除。此操作无法撤销。",
+    "deleteFolderEmptyDescription": "文件夹「{{name}}」为空。确定要删除吗？此操作无法撤销。",
+    "defaultNoteTitle": "未命名笔记 {{n}}",
+    "defaultFolderTitle": "文件夹 {{n}}",
+    "dragHandle": "拖动移动",
+    "toggleFolder": "展开或折叠文件夹",
+    "empty": {
+      "title": "还没有笔记",
+      "description": "创建你的第一篇笔记，记录大纲、灵感与设定草稿。"
+    }
+  },
+  "content": {
+    "noSelectionTitle": "未选择笔记",
+    "noSelectionDescription": "在左侧选择一篇笔记，或新建一篇开始写作。",
+    "folderCounts": "包含 {{noteCount}} 篇笔记、{{folderCount}} 个子文件夹",
+    "folderEmpty": "此文件夹为空",
+    "placeholder": "在这里用 Markdown 记录你的想法…"
+  },
+  "mode": {
+    "edit": "编辑",
+    "read": "阅读"
+  },
+  "saveStatus": {
+    "saving": "保存中...",
+    "saved": "已保存",
+    "error": "保存失败"
+  },
+  "toast": {
+    "createNoteSuccess": "笔记已创建",
+    "createNoteFailed": "创建笔记失败",
+    "createFolderSuccess": "文件夹已创建",
+    "createFolderFailed": "创建文件夹失败",
+    "renameSuccess": "已重命名",
+    "renameFailed": "重命名失败",
+    "deleteNoteSuccess": "笔记已删除",
+    "deleteFolderSuccess": "文件夹已删除",
+    "deleteFailed": "删除失败",
+    "reorderSuccess": "顺序已更新",
+    "reorderFailed": "更新顺序失败",
+    "moveSuccess": "已移动",
+    "moveFailed": "移动失败",
+    "moveIntoDescendant": "无法将文件夹移动到它自己或其子文件夹内"
+  }
+}

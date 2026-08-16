@@ -1,0 +1,59 @@
+{
+  "workspace": {
+    "title": "Notes",
+    "back": "World"
+  },
+  "tree": {
+    "newNote": "New note",
+    "newFolder": "New folder",
+    "newNoteInside": "New note",
+    "newFolderInside": "New folder",
+    "rename": "Rename",
+    "deleteAction": "Delete",
+    "deleteNoteTitle": "Delete note",
+    "deleteNoteDescription": "Delete \"{{name}}\"? This action cannot be undone.",
+    "deleteFolderTitle": "Delete folder",
+    "deleteFolderDescription": "\"{{name}}\" contains {{noteCount}} notes and {{folderCount}} subfolders — all will be deleted with it. This action cannot be undone.",
+    "deleteFolderEmptyDescription": "Folder \"{{name}}\" is empty. Delete it? This action cannot be undone.",
+    "defaultNoteTitle": "Untitled note {{n}}",
+    "defaultFolderTitle": "Folder {{n}}",
+    "dragHandle": "Drag to move",
+    "toggleFolder": "Expand or collapse folder",
+    "empty": {
+      "title": "No notes yet",
+      "description": "Create your first note to capture outlines, ideas, and draft material."
+    }
+  },
+  "content": {
+    "noSelectionTitle": "No note selected",
+    "noSelectionDescription": "Pick a note on the left, or create a new one to start writing.",
+    "folderCounts": "Contains {{noteCount}} notes and {{folderCount}} subfolders",
+    "folderEmpty": "This folder is empty",
+    "placeholder": "Capture your thoughts in Markdown here…"
+  },
+  "mode": {
+    "edit": "Edit",
+    "read": "Read"
+  },
+  "saveStatus": {
+    "saving": "Saving…",
+    "saved": "Saved",
+    "error": "Save failed"
+  },
+  "toast": {
+    "createNoteSuccess": "Note created",
+    "createNoteFailed": "Failed to create note",
+    "createFolderSuccess": "Folder created",
+    "createFolderFailed": "Failed to create folder",
+    "renameSuccess": "Renamed",
+    "renameFailed": "Failed to rename",
+    "deleteNoteSuccess": "Note deleted",
+    "deleteFolderSuccess": "Folder deleted",
+    "deleteFailed": "Failed to delete",
+    "reorderSuccess": "Order updated",
+    "reorderFailed": "Failed to update order",
+    "moveSuccess": "Moved",
+    "moveFailed": "Failed to move",
+    "moveIntoDescendant": "A folder cannot be moved into itself or one of its descendants"
+  }
+}
