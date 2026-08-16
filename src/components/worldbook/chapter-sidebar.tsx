@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 
@@ -28,6 +28,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Add01Icon,
@@ -36,6 +37,7 @@ import {
   GripVerticalIcon,
   MoreHorizontalIcon,
   PencilEdit01Icon,
+  Search01Icon,
 } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
 import type { Chapter, ChapterId, Novel, NovelId, WorldId } from "@/types";
@@ -64,7 +66,13 @@ interface SortableChapterRowProps {
   worldId: WorldId;
   novelId: NovelId;
   chapter: Chapter;
+  /** 1-based position in the unfiltered chapter list (display-derived only). */
+  number: number;
   isActive: boolean;
+  /** False while the filter is active — dnd-kit's positional animation
+   * assumes a contiguous list, and reordering from a filtered partial view
+   * is confusing UX, so handles are hidden and rows stay put. */
+  draggable: boolean;
   onDeleteRequest: (chapter: Chapter) => void;
 }
 
@@ -73,7 +81,9 @@ function SortableChapterRow({
   worldId,
   novelId,
   chapter,
+  number,
   isActive,
+  draggable,
   onDeleteRequest,
 }: SortableChapterRowProps) {
   const { t } = useTranslation(["novel", "common"]);
@@ -105,16 +115,27 @@ function SortableChapterRow({
           : "hover:bg-accent/50",
       )}
     >
-      <button
-        type="button"
-        className="cursor-grab text-muted-foreground/50 hover:text-foreground active:cursor-grabbing group-hover:text-muted-foreground"
-        {...attributes}
-        {...listeners}
+      {draggable && (
+        <button
+          type="button"
+          className="cursor-grab text-muted-foreground/50 hover:text-foreground active:cursor-grabbing group-hover:text-muted-foreground"
+          {...attributes}
+          {...listeners}
+        >
+          <HugeiconsIcon icon={GripVerticalIcon} strokeWidth={2} />
+          {/* sr-only label mirrors the literal used in phase-card.tsx */}
+          <span className="sr-only">Drag to reorder</span>
+        </button>
+      )}
+
+      <span
+        className={cn(
+          "w-6 shrink-0 text-right text-xs tabular-nums",
+          isActive ? "text-accent-foreground/80" : "text-muted-foreground",
+        )}
       >
-        <HugeiconsIcon icon={GripVerticalIcon} strokeWidth={2} />
-        {/* sr-only label mirrors the literal used in phase-card.tsx */}
-        <span className="sr-only">Drag to reorder</span>
-      </button>
+        {number}
+      </span>
 
       <Link
         to="/space/$spaceId/world/$worldId/novels/$novelId/chapters/$chapterId"
@@ -182,6 +203,7 @@ function ChapterSidebar({
     null,
   );
   const [pendingDelete, setPendingDelete] = useState<Chapter | null>(null);
+  const [search, setSearch] = useState("");
 
   // Clear the override once server data refreshes (success brings matching
   // order; error brings the original order via onSettled refetch).
@@ -191,8 +213,34 @@ function ChapterSidebar({
 
   const displayChapters = overrideChapters ?? chapters;
 
+  const isFiltering = search.trim() !== "";
+
+  // Presentational filter only — sequence numbers are anchored to the
+  // UNFILTERED displayChapters so they stay stable while typing. Chapters
+  // match by title (case-insensitive substring) or by exact sequence number
+  // (digits extracted from the query, full-width normalized).
+  const filteredChapters = useMemo(() => {
+    const numbered = displayChapters.map((chapter, index) => ({
+      chapter,
+      number: index + 1,
+    }));
+    const query = search.trim();
+    if (!query) return numbered;
+
+    const q = query.toLowerCase();
+    const digits = query
+      .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+      .replace(/\D/g, "");
+    return numbered.filter(
+      ({ chapter, number }) =>
+        chapter.title.toLowerCase().includes(q) ||
+        (digits !== "" && String(number) === digits),
+    );
+  }, [displayChapters, search]);
+
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
+    if (isFiltering) return;
     if (!over || active.id === over.id) return;
 
     const oldIndex = displayChapters.findIndex((c) => c.id === active.id);
@@ -240,27 +288,49 @@ function ChapterSidebar({
             <HugeiconsIcon icon={PencilEdit01Icon} strokeWidth={2} />
           </Button>
         </div>
+
+        <div className="relative">
+          <HugeiconsIcon
+            icon={Search01Icon}
+            strokeWidth={2}
+            className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+          />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t("novel:chapter.searchPlaceholder")}
+            className="pl-8"
+          />
+        </div>
       </div>
 
       {/* Middle: scrollable chapter list */}
       <div className="flex-1 overflow-y-auto p-2">
         <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
           <SortableContext
-            items={displayChapters.map((c) => c.id)}
+            items={filteredChapters.map(({ chapter }) => chapter.id)}
             strategy={verticalListSortingStrategy}
           >
             <nav className="flex flex-col gap-1" aria-label={t("novel:chapter.title")}>
-              {displayChapters.map((chapter) => (
-                <SortableChapterRow
-                  key={chapter.id}
-                  spaceId={spaceId}
-                  worldId={worldId}
-                  novelId={novelId}
-                  chapter={chapter}
-                  isActive={chapter.id === activeChapterId}
-                  onDeleteRequest={setPendingDelete}
-                />
-              ))}
+              {isFiltering && filteredChapters.length === 0 ? (
+                <p className="px-2 py-8 text-center text-xs text-muted-foreground">
+                  {t("novel:chapter.noResults")}
+                </p>
+              ) : (
+                filteredChapters.map(({ chapter, number }) => (
+                  <SortableChapterRow
+                    key={chapter.id}
+                    spaceId={spaceId}
+                    worldId={worldId}
+                    novelId={novelId}
+                    chapter={chapter}
+                    number={number}
+                    isActive={chapter.id === activeChapterId}
+                    draggable={!isFiltering}
+                    onDeleteRequest={setPendingDelete}
+                  />
+                ))
+              )}
             </nav>
           </SortableContext>
         </DndContext>
