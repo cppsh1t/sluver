@@ -11,7 +11,8 @@
     "Phase": "阶段",
     "World": "世界",
     "Space": "空间",
-    "Note": "笔记"
+    "Note": "笔记",
+    "Conversation": "对话"
   },
   "WORLD_NOT_FOUND": "未找到世界 ({{id}})",
   "NOT_FOUND": "未找到{{entity}} ({{id}})",

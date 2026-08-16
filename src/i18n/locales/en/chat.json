@@ -9,7 +9,12 @@
     "empty": "No conversations yet",
     "new": "New conversation",
     "deleteConfirm": "Delete this conversation?",
-    "untitled": "Untitled"
+    "untitled": "Untitled",
+    "rename": "Rename"
+  },
+  "toast": {
+    "renameSuccess": "Conversation renamed",
+    "renameFailed": "Failed to rename conversation"
   },
   "composer": {
     "placeholder": "Type a message…",

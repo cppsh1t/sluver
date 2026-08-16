@@ -11,7 +11,8 @@
     "Phase": "Phase",
     "World": "World",
     "Space": "Space",
-    "Note": "Note"
+    "Note": "Note",
+    "Conversation": "Conversation"
   },
   "WORLD_NOT_FOUND": "World not found ({{id}})",
   "NOT_FOUND": "{{entity}} not found ({{id}})",

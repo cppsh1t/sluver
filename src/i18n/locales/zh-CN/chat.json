@@ -9,7 +9,12 @@
     "empty": "还没有对话",
     "new": "新对话",
     "deleteConfirm": "确定删除这条对话吗？",
-    "untitled": "未命名"
+    "untitled": "未命名",
+    "rename": "重命名"
+  },
+  "toast": {
+    "renameSuccess": "已重命名对话",
+    "renameFailed": "重命名对话失败"
   },
   "composer": {
     "placeholder": "输入消息…",
