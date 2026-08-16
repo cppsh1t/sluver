@@ -42,6 +42,8 @@ Tauri v2 desktop app for **worldbuilding & novel writing**. React 19 + TypeScrip
 - [ADR-0034](./docs/adr/0034-timeline-ui-uniform-character-swimlane-grid.md) — Timeline UI as uniform character-swimlane grid (non-proportional, order-based; supersedes ADR-0033 UI surface)
   - [ADR-0035](./docs/adr/0035-grep-match-centric-retrieval-tool.md) — `grep` match-centric full-corpus retrieval tool (occurrence evidence across all entity text fields; distinct from entity-discovery `search_*`)
   - [ADR-0036](./docs/adr/0036-native-notifications-notify-rust-explicit-aumid.md) — Native notifications via notify-rust with explicit AUMID + startup self-registration (replaces tauri-plugin-notification, whose dev-mode PowerShell AUMID is silently dropped on Win11 24H2+)
+  - [ADR-0037](./docs/adr/0037-notes-agent-access-prompt-gated-static-registration.md) — Notes agent access: prompt-gated static registration on both roles; notes excluded from `grep` corpus; dedicated `grep_notes` tool
+  - [ADR-0038](./docs/adr/0038-notes-single-table-tree-storage.md) — Notes storage: single `notes` table (kind discriminator, first adjacency list), NULL-safe sibling title uniqueness, no position UNIQUE (scene_images precedent), app-layer cycle guard
 
 ## Git commit style
 
@@ -133,8 +135,8 @@ lib/utils.ts        # cn() = clsx + tailwind-merge
 
 - `types/element.ts` defines `elementBaseSchema` shared by Location/Item/Lore; each extends it with a branded ID.
 - App.tsx is boilerplate calling `invoke("greet")` — a command no longer registered in `lib.rs`. The real API surface lives in `src/api/` + `src/types/`. When building UI, import from `@/api` and `@/types`, do not extend App.tsx's demo code.
-- No router, no state management library, no `hooks/` dir, no tests yet.
-- `markdown-it` and `@hugeicons/react` are declared deps but not yet imported anywhere in `src/`. Scene `content` is **plain text by design** (see CONTEXT.md) — `markdown-it` is no longer earmarked for it. `@hugeicons/react` is reserved for UI icons.
+- Routing is **code-based TanStack Router** (`src/router.ts` composes the tree via `addChildren` — the `src/routes/` layout mirrors file-based naming but there is NO codegen plugin; a new route must be created AND registered in `router.ts` or it silently doesn't exist). State: zustand + @tanstack/react-query. No tests yet.
+- Markdown rendering: `react-markdown` + `remark-gfm` + `rehype-highlight` (see `src/components/chat/markdown.tsx`). CodeMirror 6 is used for TimeMapper JS editing (`src/components/timemapper/code-editor.tsx`). `markdown-it` has been REMOVED. Scene `content` is **plain text by design** (see CONTEXT.md) — markdown rendering belongs to chat (and Notes). Icons: `@hugeicons/react` + `@hugeicons/core-free-icons`, used throughout.
 
 ### Key patterns
 
