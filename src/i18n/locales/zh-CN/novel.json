@@ -46,6 +46,8 @@
   "chapter": {
     "title": "章节",
     "add": "添加章节",
+    "searchPlaceholder": "搜索章节...",
+    "noResults": "没有匹配的章节",
     "defaultTitle": "第 {{n}} 章",
     "titlePlaceholder": "章节标题",
     "summaryLabel": "梗概",

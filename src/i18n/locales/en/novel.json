@@ -46,6 +46,8 @@
   "chapter": {
     "title": "Chapters",
     "add": "Add Chapter",
+    "searchPlaceholder": "Search chapters...",
+    "noResults": "No matching chapters",
     "defaultTitle": "Chapter {{n}}",
     "titlePlaceholder": "Chapter title",
     "summaryLabel": "Summary",
