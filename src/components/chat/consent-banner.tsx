@@ -46,9 +46,16 @@ export function ConsentBanner({ worldId, conversationId }: ConsentBannerProps) {
     ? Object.values(view.stream.pendingApprovals)
     : [];
 
-  // A new batch must open at slide 1 even if a previous batch left the index
-  // mid-queue (e.g. 4 approvals resolved, a later batch arrives). Conversation
-  // switches are covered separately by the `key` remount in chat.tsx.
+  // The banner is NOT remounted per conversation via a `key` — that would
+  // duplicate the keyed <ConversationView>'s key value among siblings, which
+  // is undefined behavior in React and leaves orphan conversation DOM
+  // stacking up on every switch (facebook/react#24871). Both carousel resets
+  // therefore live here instead: switching conversations, and a drained
+  // queue followed by a later batch, each open at slide 1.
+  useEffect(() => {
+    setIndex(0);
+  }, [conversationId]);
+
   useEffect(() => {
     if (pending.length === 0) setIndex(0);
   }, [pending.length]);

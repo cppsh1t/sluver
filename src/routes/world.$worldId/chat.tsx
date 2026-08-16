@@ -89,11 +89,14 @@ function ChatPage() {
               pendingUserText={pendingUserText}
               onPendingUserConsumed={() => setPendingUserText(null)}
             />
-            <ConsentBanner
-              key={selected.id}
-              worldId={wid}
-              conversationId={selected.id}
-            />
+            {/* Do NOT add a `key={selected.id}` here: it would duplicate the
+                keyed ConversationView's key value among siblings. Duplicate
+                keys are undefined behavior in React — the reconciler drops
+                DOM tracking on key change and orphan conversation DOM stacks
+                up on every switch (facebook/react#24871; not fixed by React
+                upgrades). The banner resets its carousel index internally on
+                conversation change instead. */}
+            <ConsentBanner worldId={wid} conversationId={selected.id} />
             <Composer
               worldId={wid}
               conversationId={selected.id}
