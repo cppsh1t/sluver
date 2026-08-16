@@ -47,7 +47,11 @@
     },
     "name": {
       "explorer": "Explorer",
-      "writer": "Writer"
+      "writer": "Writer",
+      "namer": "Auto-namer"
+    },
+    "roleDescription": {
+      "namer": "Automatically generates a short title for a conversation after its first reply. Leave the model unconfigured to disable it."
     },
     "autoExecute": {
       "title": "Auto-execute tools",

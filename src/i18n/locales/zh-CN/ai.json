@@ -47,7 +47,11 @@
     },
     "name": {
       "explorer": "探索者",
-      "writer": "作者"
+      "writer": "作者",
+      "namer": "自动命名"
+    },
+    "roleDescription": {
+      "namer": "在对话首条回复完成后自动生成简短标题。不配置模型即为停用。"
     },
     "autoExecute": {
       "title": "自动执行工具",
