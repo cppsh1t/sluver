@@ -8,6 +8,7 @@ pub mod grep;
 pub mod item;
 pub mod location;
 pub mod lore;
+pub mod note;
 pub mod novel;
 pub mod provider_credential;
 pub mod ref_counts;
