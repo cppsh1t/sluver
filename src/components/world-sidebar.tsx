@@ -11,6 +11,7 @@ import {
   Time03Icon,
   UserMultiple02Icon,
   AiChat02Icon,
+  NotebookIcon,
   Settings02Icon,
 } from "@hugeicons/core-free-icons";
 
@@ -71,6 +72,12 @@ function WorldSidebar() {
           to: "/space/$spaceId/world/$worldId/novels" as const,
           icon: Book02Icon,
           match: "/space/$spaceId/world/$worldId/novels",
+        },
+        {
+          label: t("nav.writing.notes"),
+          to: "/space/$spaceId/world/$worldId/notes" as const,
+          icon: NotebookIcon,
+          match: "/space/$spaceId/world/$worldId/notes",
         },
         {
           label: t("nav.writing.timeline"),

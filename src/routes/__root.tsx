@@ -71,6 +71,8 @@ const ENTITY_LIST_KEYS: Record<string, string[]> = {
   // Chapter reordering shifts scene membership; scenes live under chapters.
   chapter: ["chapters", "scenes"],
   scene: ["scenes", "scene-images", "scene-image-bytes"],
+  // One id space for folders + notes (ADR-0038) — one "notes" list key.
+  note: ["notes"],
 };
 
 /**

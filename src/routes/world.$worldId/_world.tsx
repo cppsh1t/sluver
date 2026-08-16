@@ -26,14 +26,16 @@ function WorldLayout() {
     initTimeMapperClient(spaceId as SpaceId, worldId as WorldId);
   }
 
-  // Hide the global WorldSidebar inside the Novel workspace to give the
-  // three-column writing surface maximum width (ADR-0021). The workspace
-  // has its own chapter sidebar with a back button for world navigation.
-  const isNovelWorkspace = /\/space\/[^/]+\/world\/[^/]+\/novels\/[^/]+/.test(
-    location.pathname,
-  );
+  // Hide the global WorldSidebar inside full-bleed writing workspaces to give
+  // the surface maximum width (ADR-0021): the Novel workspace (three-column
+  // chapter surface with its own back button) and the Notes workspace (file
+  // tree + content panes, also with its own back affordance).
+  const isFullBleedWorkspace =
+    /\/space\/[^/]+\/world\/[^/]+\/(novels\/[^/]+|notes)/.test(
+      location.pathname,
+    );
 
-  if (isNovelWorkspace) {
+  if (isFullBleedWorkspace) {
     return <Outlet />;
   }
 
