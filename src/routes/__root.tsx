@@ -6,6 +6,7 @@ import { listen } from "@tauri-apps/api/event";
 import { WindowTitleBar } from "@/components/window-title-bar";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { getAppSetting } from "@/api";
 import { logger, type LogLevel, setLevel } from "@/lib/logger";
 import {
@@ -258,19 +259,25 @@ function RootLayout() {
   }, [queryClient]);
 
   return (
-    <div className="flex h-svh flex-col overflow-hidden bg-background text-foreground">
-      <WindowTitleBar />
-      <div className="flex flex-1 overflow-hidden">
-        {/* ErrorBoundary catches render-time crashes anywhere in the route
-            tree so the user never sees a white screen. Inside providers
-            (i18n / theme / toaster are all set up above by the time this
-            renders) but outside the page content. */}
-        <ErrorBoundary>
-          <Outlet />
-        </ErrorBoundary>
+    // TooltipProvider defaults delay to 0: base-ui's Root falls back to a
+    // 600ms open delay without it (see @base-ui/react tooltip OPEN_DELAY),
+    // which reads as "tooltips never show". The provider also groups delays
+    // so consecutive tooltip hovers open instantly. DOM-less (context only).
+    <TooltipProvider>
+      <div className="flex h-svh flex-col overflow-hidden bg-background text-foreground">
+        <WindowTitleBar />
+        <div className="flex flex-1 overflow-hidden">
+          {/* ErrorBoundary catches render-time crashes anywhere in the route
+              tree so the user never sees a white screen. Inside providers
+              (i18n / theme / toaster are all set up above by the time this
+              renders) but outside the page content. */}
+          <ErrorBoundary>
+            <Outlet />
+          </ErrorBoundary>
+        </div>
+        <Toaster />
       </div>
-      <Toaster />
-    </div>
+    </TooltipProvider>
   );
 }
 

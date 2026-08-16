@@ -29,6 +29,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Add01Icon,
@@ -130,24 +135,31 @@ function SortableChapterRow({
 
       <span
         className={cn(
-          "w-6 shrink-0 text-right text-xs tabular-nums",
+          "shrink-0 text-xs tabular-nums",
           isActive ? "text-accent-foreground/80" : "text-muted-foreground",
         )}
       >
         {number}
       </span>
 
-      <Link
-        to="/space/$spaceId/world/$worldId/novels/$novelId/chapters/$chapterId"
-        params={{ spaceId, worldId, novelId, chapterId: chapter.id as ChapterId }}
-        aria-current={isActive ? "page" : undefined}
-        className={cn(
-          "min-w-0 flex-1 truncate outline-none",
-          isActive ? "text-accent-foreground" : "text-foreground",
-        )}
-      >
-        {chapter.title}
-      </Link>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Link
+              to="/space/$spaceId/world/$worldId/novels/$novelId/chapters/$chapterId"
+              params={{ spaceId, worldId, novelId, chapterId: chapter.id as ChapterId }}
+              aria-current={isActive ? "page" : undefined}
+              className={cn(
+                "min-w-0 flex-1 truncate outline-none",
+                isActive ? "text-accent-foreground" : "text-foreground",
+              )}
+            />
+          }
+        >
+          {chapter.title}
+        </TooltipTrigger>
+        <TooltipContent>{chapter.title}</TooltipContent>
+      </Tooltip>
 
       <DropdownMenu>
         <DropdownMenuTrigger
