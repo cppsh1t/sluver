@@ -31,6 +31,7 @@
     "chaptersCount": "{{count}} 章",
     "oneChapter": "1 章",
     "noChapters": "尚无章节",
+    "wordCount": "{{count}} 字",
     "deleteAction": "删除",
     "deleteTitle": "删除{{entity}}",
     "deleteDescription": "确定要删除「{{name}}」吗？{{count}} 个章节将被永久删除。此操作无法撤销。"

@@ -31,6 +31,7 @@
     "chaptersCount": "{{count}} chapters",
     "oneChapter": "1 chapter",
     "noChapters": "No chapters yet",
+    "wordCount": "{{count}} characters",
     "deleteAction": "Delete",
     "deleteTitle": "Delete {{entity}}",
     "deleteDescription": "Are you sure you want to delete \"{{name}}\"? {{count}} chapters will be permanently deleted. This cannot be undone."
