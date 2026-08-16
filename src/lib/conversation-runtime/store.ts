@@ -36,6 +36,7 @@ import {
   type CompactionPolicy,
   type LanguageModel,
   type LanguageModelUsage,
+  type ModelMessage,
   type SessionMessage,
 } from "@/lib/ai";
 import { loadMessages as loadMessagesIpc } from "@/api/conversation";
@@ -44,8 +45,15 @@ import { getRoleBehavior } from "@/lib/ai-roles";
 import { TauriSessionStore } from "@/lib/ai-store";
 import { logger } from "@/lib/logger";
 import { notifyToolConsentRequested } from "@/lib/notify";
-import type { ApprovalGate, ConsentLevel, ToolContext } from "@/lib/tools/types";
-import type { Conversation, ContextCompaction, Message, SpaceId, WorldId } from "@/types";
+import type { ToolContext, ApprovalGate, ConsentLevel } from "@/lib/tools/types";
+import type {
+  Conversation,
+  ContextCompaction,
+  ConversationId,
+  Message,
+  SpaceId,
+  WorldId,
+} from "@/types";
 
 // ─── Public types ─────────────────────────────────────────────────────────
 
@@ -84,6 +92,33 @@ export type ModelResolver = (role: string) => ResolvedModel;
 
 /** Routes a background persistence failure to the logger (ADR-0014). */
 export type PersistErrorHandler = (error: unknown) => void;
+
+/** Input for the silent auto-title callback (ADR-0040). */
+export interface AutoTitleInput {
+  readonly worldId: WorldId;
+  readonly conversationId: ConversationId;
+  /** The conversation's FIRST user message, in full. */
+  readonly userText: string;
+  /** The just-completed run's LAST assistant text (truncated downstream). */
+  readonly assistantText: string;
+}
+
+/**
+ * Fire-and-forget conversation titling (ADR-0040). Implemented by the
+ * Provider (which owns the `"namer"` agent's resolved model config); invoked
+ * by run finalization when an untitled conversation completes its first
+ * assistant run. Return contract:
+ *
+ * - non-null = the conversation's CURRENT title — either generated and
+ *   persisted by us, or observed already-set in the DB (typically a sidebar
+ *   rename the caller's slot cache never saw). Callers patch their cached
+ *   `conversation.title` with it, permanently stopping re-triggers.
+ * - `null` = nothing done (unconfigured namer, conversation gone, skip, or
+ *   failure) — stay silent.
+ *
+ * NEVER rejects.
+ */
+export type AutoTitleCallback = (input: AutoTitleInput) => Promise<string | null>;
 
 /** Reactive view of a single in-flight tool call. */
 export interface ToolCallView {
@@ -255,6 +290,13 @@ export interface ConversationRuntimeData {
   agentLoading: boolean;
   /** The current in-flight run handle (for abort). */
   runHandle: AgentRunHandle | null;
+  /**
+   * `true` while a background auto-title call is in flight (ADR-0040).
+   * Guards against double-firing across consecutive run finalizations;
+   * the cached `conversation.title` update is what permanently stops
+   * re-triggering (title !== null check).
+   */
+  autoTitlePending: boolean;
   /** Reactive VIEW — what the UI renders. */
   view: ConversationView;
 }
@@ -280,6 +322,7 @@ export interface ConversationRuntimeState {
     text: string,
     modelResolver: ModelResolver,
     onPersistError: PersistErrorHandler,
+    autoTitle: AutoTitleCallback,
   ) => Promise<void>;
 
   abort: (worldId: string, conversationId: string) => void;
@@ -348,6 +391,48 @@ function lastAssistantMessageId(
   return null;
 }
 
+// ─── Auto-title extraction (ADR-0040) ─────────────────────────────────────
+
+/**
+ * Extract the text content of one message, skipping non-text parts (tool
+ * calls, files, reasoning). Returns `""` when the message carries no text.
+ */
+function messageText(message: ModelMessage): string {
+  const content = message.content;
+  if (typeof content === "string") return content.trim();
+  return content
+    .map((part) => (part.type === "text" ? part.text : ""))
+    .filter((s) => s !== "")
+    .join(" ")
+    .trim();
+}
+
+/**
+ * Pick the (FIRST user text, LAST assistant text) pair from a finalized
+ * thread for auto-titling. Non-text parts and empty messages are skipped;
+ * `null` when either side has nothing extractable.
+ */
+function extractTitleTexts(
+  messages: readonly ModelMessage[],
+): { userText: string; assistantText: string } | null {
+  let userText: string | null = null;
+  let assistantText: string | null = null;
+  for (const message of messages) {
+    if (message.role === "user") {
+      if (userText === null) {
+        const text = messageText(message);
+        if (text !== "") userText = text;
+      }
+    } else if (message.role === "assistant") {
+      // Keep overwriting → the LAST non-empty assistant text wins.
+      const text = messageText(message);
+      if (text !== "") assistantText = text;
+    }
+  }
+  if (userText === null || assistantText === null) return null;
+  return { userText, assistantText };
+}
+
 function getData(
   state: ConversationRuntimeState,
   worldId: string,
@@ -375,6 +460,7 @@ function ensureSlot(
     agent: null,
     agentLoading: false,
     runHandle: null,
+    autoTitlePending: false,
     view: { ...EMPTY_VIEW },
   };
   const worldMap = new Map(state.worlds.get(worldId) ?? []);
@@ -810,7 +896,7 @@ export function createConversationRuntimeStore(
       },
 
       // ── send ──
-      send: async (worldId, conversationId, text, modelResolver, onPersistError) => {
+      send: async (worldId, conversationId, text, modelResolver, onPersistError, autoTitle) => {
         const data = getData(get(), worldId, conversationId);
         if (!data) {
           // ensureRuntime was never called for this conversation.
@@ -1274,6 +1360,62 @@ export function createConversationRuntimeStore(
                 },
               };
             });
+
+            // ── Auto-title (ADR-0040, fire-and-forget) ──────────────────
+            // After the FIRST completed assistant run on an untitled
+            // conversation, silently ask the "namer" agent for a short
+            // title. Never blocks the finalization path above; every
+            // rejection is swallowed (the callback never rejects by
+            // contract — the .catch is defensive).
+            // Gated per ADR-0040 "first completed run"; aborts/errors resolve too (ADR-0018) but must not trigger titling.
+            const slot = getData(get(), worldId, conversationId);
+            const conversation = slot?.conversation;
+            if (
+              slot &&
+              conversation &&
+              conversation.title === null &&
+              !slot.autoTitlePending &&
+              result.finishReason !== "aborted" &&
+              result.finishReason !== "error"
+            ) {
+              const texts = extractTitleTexts(agent.getMessages());
+              if (texts) {
+                patchData(worldId, conversationId, (d) => ({
+                  ...d,
+                  autoTitlePending: true,
+                }));
+                void autoTitle({
+                  worldId: worldId as WorldId,
+                  conversationId: conversation.id,
+                  userText: texts.userText,
+                  assistantText: texts.assistantText,
+                })
+                  .then((title) => {
+                    patchData(worldId, conversationId, (d) => ({
+                      ...d,
+                      autoTitlePending: false,
+                      // Cache the title so the NEXT finalization's
+                      // `title === null` check doesn't re-trigger.
+                      ...(title
+                        ? { conversation: { ...d.conversation, title } }
+                        : {}),
+                    }));
+                  })
+                  .catch((e: unknown) => {
+                    // Defensive — autoTitle resolves (never rejects) by
+                    // contract; this guards against contract violations.
+                    logger.warn("chat.auto_title.failed", {
+                      conversation_id: conversationId,
+                      world_id: worldId,
+                      error: String(e),
+                    });
+                    patchData(worldId, conversationId, (d) => ({
+                      ...d,
+                      autoTitlePending: false,
+                    }));
+                  });
+              }
+            }
           })
           .catch((e) => {
             flushBatch();
