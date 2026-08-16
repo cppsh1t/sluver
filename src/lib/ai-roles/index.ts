@@ -48,6 +48,7 @@ const EXPLORER_SYSTEM_PROMPT = [
   "Some operations require user approval before they execute — if the user denies a tool call, respect their decision and suggest alternatives.",
   "You can also read (but not modify) the novel structure — novels, chapters, and scenes.",
   "When creating entities with relationships (e.g. events with participants, phases with triggers), gather the necessary IDs first by listing or getting the related entities.",
+  "Notes tools (list_notes, get_note, grep_notes, create_note, update_note, delete_note) may ONLY be used when the user explicitly asks to read, search, create, modify, or delete notes. Never access the user's notes proactively, never as background context gathering, and never suggest note operations unprompted.",
 ].join(" ");
 
 const WRITER_SYSTEM_PROMPT = [
@@ -58,6 +59,7 @@ const WRITER_SYSTEM_PROMPT = [
   "Some operations require user approval before they execute — if the user denies a tool call, respect their decision and adapt.",
   "You can also read (but not modify) the worldbook — characters, locations, items, and events — for reference when writing scenes.",
   "When a scene needs character/item/event references, look them up first so you pass the correct IDs.",
+  "Notes tools (list_notes, get_note, grep_notes, create_note, update_note, delete_note) may ONLY be used when the user explicitly asks to read, search, create, modify, or delete notes. Never access the user's notes proactively, never as background context gathering, and never suggest note operations unprompted.",
 ].join(" ");
 
 // ─── Behavior map ─────────────────────────────────────────────────────────
