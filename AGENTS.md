@@ -44,6 +44,7 @@ Tauri v2 desktop app for **worldbuilding & novel writing**. React 19 + TypeScrip
   - [ADR-0036](./docs/adr/0036-native-notifications-notify-rust-explicit-aumid.md) — Native notifications via notify-rust with explicit AUMID + startup self-registration (replaces tauri-plugin-notification, whose dev-mode PowerShell AUMID is silently dropped on Win11 24H2+)
   - [ADR-0037](./docs/adr/0037-notes-agent-access-prompt-gated-static-registration.md) — Notes agent access: prompt-gated static registration on both roles; notes excluded from `grep` corpus; dedicated `grep_notes` tool
   - [ADR-0038](./docs/adr/0038-notes-single-table-tree-storage.md) — Notes storage: single `notes` table (kind discriminator, first adjacency list), NULL-safe sibling title uniqueness, no position UNIQUE (scene_images precedent), app-layer cycle guard
+  - [ADR-0039](./docs/adr/0039-scene-lore-refs.md) — Scenes reference Lore via `scene_lore_refs` (background context; silent FK cascade like items/events); Events still don't — Lore never acts
 
 ## Git commit style
 
