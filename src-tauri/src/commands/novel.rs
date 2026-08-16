@@ -11,12 +11,34 @@ use crate::models::novel::{
 };
 use crate::util::{decode_and_validate_image, new_id, normalize_iso, now_iso};
 
+/// Correlated scalar subquery computing a novel's `word_count`: the
+/// non-whitespace character count summed over all scene contents, computed
+/// per query (read-only, no stored counter). Shared by `load_novel` and
+/// `list_novels` — if the definition ever changes, it must change in both,
+/// so both SELECTs splice this single const.
+///
+/// Near-parity with the frontend's `src/lib/word-count.ts`
+/// (`content.replace(/\s/g, "").length`): strips the 6 practically-relevant
+/// whitespace codepoints (space, tab, LF, CR, U+3000 ideographic space,
+/// U+00A0 nbsp); exotic Unicode whitespace (U+2000–U+200A etc.) is
+/// deliberately not stripped.
+///
+/// Known divergence: JS `.length` counts UTF-16 code units while SQLite
+/// `LENGTH()` counts code points (`LENGTH(TEXT)` counts characters, not
+/// bytes), so astral-plane characters (CJK Extension B U+20000–U+2FFFF,
+/// plausible in historical Chinese names; also emoji) count as 2 in
+/// per-scene frontend counts but 1 here.
+const WORD_COUNT_SQL: &str = "(SELECT COALESCE(SUM(LENGTH(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(s.content, ' ', ''), CHAR(9), ''), CHAR(10), ''), CHAR(13), ''), CHAR(0x3000), ''), CHAR(0xA0), ''))), 0) FROM scenes s JOIN chapters c ON s.chapter_id = c.id WHERE c.novel_id = novels.id) AS word_count";
+
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 fn load_novel(conn: &rusqlite::Connection, id: &str, world_id: &str) -> Result<Novel, DbError> {
-    let (title, description, author, tags_json, created_at, updated_at, has_image) = conn
-        .query_row(
-            "SELECT title, description, author, tags, created_at, updated_at, image_blob IS NOT NULL AS has_image FROM novels WHERE id = ?1",
+    let (title, description, author, tags_json, created_at, updated_at, has_image, word_count) =
+        conn.query_row(
+            // word_count: see WORD_COUNT_SQL
+            &format!(
+                "SELECT title, description, author, tags, created_at, updated_at, image_blob IS NOT NULL AS has_image, {WORD_COUNT_SQL} FROM novels WHERE id = ?1"
+            ),
             params![id],
             |row| {
                 Ok((
@@ -27,6 +49,7 @@ fn load_novel(conn: &rusqlite::Connection, id: &str, world_id: &str) -> Result<N
                     row.get::<_, String>("created_at")?,
                     row.get::<_, String>("updated_at")?,
                     row.get::<_, bool>("has_image")?,
+                    row.get::<_, i64>("word_count")?,
                 ))
             },
         )
@@ -53,6 +76,7 @@ fn load_novel(conn: &rusqlite::Connection, id: &str, world_id: &str) -> Result<N
         created_at,
         updated_at,
         has_image,
+        word_count,
     })
 }
 
@@ -236,6 +260,8 @@ pub fn list_novels(
 ) -> Result<Vec<Novel>, DbError> {
     state.with_world(&space_id, &world_id, |conn| {
         // (a) Batch-load ALL novel rows (raw fields, no chapter IDs yet).
+        // `word_count` on NovelRaw mirrors `has_image`: a computed column
+        // from a correlated scalar subquery — see WORD_COUNT_SQL.
         struct NovelRaw {
             id: String,
             title: String,
@@ -245,11 +271,11 @@ pub fn list_novels(
             created_at: String,
             updated_at: String,
             has_image: bool,
+            word_count: i64,
         }
-        let mut stmt = conn.prepare(
-            "SELECT id, title, description, author, tags, created_at, updated_at, image_blob IS NOT NULL AS has_image
-         FROM novels ORDER BY created_at",
-        )?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT id, title, description, author, tags, created_at, updated_at, image_blob IS NOT NULL AS has_image, {WORD_COUNT_SQL} FROM novels ORDER BY created_at"
+        ))?;
         let raws: Vec<NovelRaw> = stmt
             .query_map([], |row| {
                 Ok(NovelRaw {
@@ -261,6 +287,7 @@ pub fn list_novels(
                     created_at: row.get("created_at")?,
                     updated_at: row.get("updated_at")?,
                     has_image: row.get("has_image")?,
+                    word_count: row.get("word_count")?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -311,6 +338,7 @@ pub fn list_novels(
                     created_at: raw.created_at,
                     updated_at: raw.updated_at,
                     has_image: raw.has_image,
+                    word_count: raw.word_count,
                 }
             })
             .collect();

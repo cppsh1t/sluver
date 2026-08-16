@@ -16,6 +16,9 @@ pub struct Novel {
     pub created_at: String,
     pub updated_at: String,
     pub has_image: bool,
+    /// Read-only, computed at query time: non-whitespace character count
+    /// summed over all scene contents. Never accepted as input.
+    pub word_count: i64,
 }
 
 #[derive(Debug, Deserialize)]
