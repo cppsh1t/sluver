@@ -58,7 +58,8 @@
       "addPhase": "Add phase",
       "getTime": "Get current time",
       "webSearch": "Search",
-      "webFetch": "Fetch"
+      "webFetch": "Fetch",
+      "shellRun": "Run command"
     },
     "entity": {
       "character": "character",
@@ -80,7 +81,9 @@
       "summary": "Summary",
       "count": "Count",
       "timezone": "Timezone",
-      "content": "Content"
+      "content": "Content",
+      "command": "Command",
+      "cwd": "Working directory"
     },
     "plan": {
       "title": "Plan",

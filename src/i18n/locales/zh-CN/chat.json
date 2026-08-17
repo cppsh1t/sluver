@@ -58,7 +58,8 @@
       "addPhase": "添加阶段",
       "getTime": "获取当前时间",
       "webSearch": "搜索",
-      "webFetch": "读取"
+      "webFetch": "读取",
+      "shellRun": "运行命令"
     },
     "entity": {
       "character": "角色",
@@ -80,7 +81,9 @@
       "summary": "摘要",
       "count": "数量",
       "timezone": "时区",
-      "content": "内容"
+      "content": "内容",
+      "command": "命令",
+      "cwd": "工作目录"
     },
     "plan": {
       "title": "计划",
