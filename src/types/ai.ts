@@ -106,6 +106,13 @@ export const agentConfigSchema = z.object({
    */
   autoExecuteDangerousTools: z.boolean(),
   /**
+   * When `true`, the shell execution tool (`run_shell_command`) is
+   * registered on the explorer role and auto-executes (ADR-0042,
+   * supersedes ADR-0041 §2). Defaults to `false` (the DB DDL owns the
+   * default; Rust always serializes this field).
+   */
+  shellToolEnabled: z.boolean(),
+  /**
    * Per-role Context-mode compaction config (ADR-0031 Phase 1). Controls
    * whether aged tool-call + tool-result pairs are stubbed in the Derived
    * Model Input. Read by the conversation-runtime at Agent construction time
