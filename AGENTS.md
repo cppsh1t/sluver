@@ -69,15 +69,18 @@ Scope is optional but encouraged for clarity (e.g. `feat(tauri):`, `fix(ui):`, `
 
 ## Commands
 
-| Command            | Purpose                                                                                     |
-| ------------------ | ------------------------------------------------------------------------------------------- |
-| `pnpm tauri dev`   | Full app dev (Vite + Rust backend). Dev server on **port 1420** (strict). HMR on port 1421. |
-| `pnpm tauri build` | Production build (frontend + native binary). Runs `pnpm build` internally.                  |
-| `pnpm build`       | Frontend-only build (`tsc && vite build`). Output to `dist/`.                               |
-| `pnpm dev`         | Vite dev server only (no Rust backend). For frontend-only work.                             |
-| `pnpm type-check`  | `tsc --noEmit`. Fast type validation.                                                       |
-| `pnpm lint`        | oxlint (not eslint). Runs from repo root; ignores `dist/`, `src-tauri/`, `node_modules/`.   |
-| `pnpm lint:fix`    | oxlint with auto-fix.                                                                       |
+| Command                | Purpose                                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------------- |
+| `pnpm tauri dev`       | Full app dev (Vite + Rust backend). Dev server on **port 1420** (strict). HMR on port 1421. |
+| `pnpm tauri build`     | Production build (frontend + native binary). Runs `pnpm build` internally.                  |
+| `pnpm build`           | Frontend-only build (`tsc && vite build`). Output to `dist/`.                                 |
+| `pnpm dev`             | Vite dev server only (no Rust backend). For frontend-only work.                             |
+| `pnpm type-check`      | `tsc --noEmit`. Fast type validation.                                                       |
+| `pnpm lint`            | oxlint (not eslint). Runs from repo root; ignores `dist/`, `src-tauri/`, `node_modules/`.   |
+| `pnpm lint:fix`        | oxlint with auto-fix.                                                                       |
+| `pnpm test`            | Frontend tests (vitest run, jsdom env). Colocated `*.test.ts` next to sources.              |
+| `pnpm test:watch`      | vitest in watch mode.                                                                       |
+| `cargo test --lib`     | Rust tests (run from `src-tauri/`). Inline `#[cfg(test)]` modules + shared `testutil` fixture. |
 
 ## Architecture
 
@@ -139,7 +142,7 @@ lib/utils.ts        # cn() = clsx + tailwind-merge
 
 - `types/element.ts` defines `elementBaseSchema` shared by Location/Item/Lore; each extends it with a branded ID.
 - App.tsx is boilerplate calling `invoke("greet")` — a command no longer registered in `lib.rs`. The real API surface lives in `src/api/` + `src/types/`. When building UI, import from `@/api` and `@/types`, do not extend App.tsx's demo code.
-- Routing is **code-based TanStack Router** (`src/router.ts` composes the tree via `addChildren` — the `src/routes/` layout mirrors file-based naming but there is NO codegen plugin; a new route must be created AND registered in `router.ts` or it silently doesn't exist). State: zustand + @tanstack/react-query. No tests yet.
+- Routing is **code-based TanStack Router** (`src/router.ts` composes the tree via `addChildren` — the `src/routes/` layout mirrors file-based naming but there is NO codegen plugin; a new route must be created AND registered in `router.ts` or it silently doesn't exist). State: zustand + @tanstack/react-query. Tests exist for `src/lib/ai/**` and `src/lib/tools/**` (pure logic + vi.mock of `@/api/*`); routes/components are untested.
 - Markdown rendering: `react-markdown` + `remark-gfm` + `rehype-highlight` (see `src/components/chat/markdown.tsx`). CodeMirror 6 is used for TimeMapper JS editing (`src/components/timemapper/code-editor.tsx`). `markdown-it` has been REMOVED. Scene `content` is **plain text by design** (see CONTEXT.md) — markdown rendering belongs to chat (and Notes). Icons: `@hugeicons/react` + `@hugeicons/core-free-icons`, used throughout.
 
 ### Key patterns
@@ -371,14 +374,28 @@ Project skills live in `.opencode/skills/`. **Agents MUST assess the current tas
 - **Formatter is oxfmt** (from oxc), not prettier. `.vscode/settings.json` forces whole-file format on save (oxfmt only supports whole-file mode).
 - **Tailwind CSS v4** with `@tailwindcss/vite` plugin. Config is inline in CSS via `@theme` — **do not create a `tailwind.config.js`**.
 - **tsconfig is strict**: `noUnusedLocals` + `noUnusedParameters` are ON — `pnpm type-check` FAILS on unused vars/params. Clean them up before committing.
-- **No tests yet.**
+- **Tests**: vitest (frontend, colocated `*.test.ts`) + inline `#[cfg(test)]` Rust modules. See the Testing section below for the `do_*` helper and `testutil` conventions.
+
+## Testing
+
+**Rust (`src-tauri/`)** — inline `#[cfg(test)]` modules at the bottom of each source file; run `cargo test --lib`. Conventions:
+
+- **No mock runtime.** This crate never constructs `State<'_, DbManager>` or `AppHandle` in tests. Mutating commands are split into a thin `#[tauri::command]` wrapper + a `pub(crate) fn do_*` helper taking `(mgr: &DbManager, space_id: &str, world_id: &str, ..., app: Option<&AppHandle>)` — tests call the `do_*` with `app: None` (precedent: `commands/space.rs`, `commands/session.rs` `*_impl` fns). Event emission lives inside the helper behind `if let Some(app)`.
+- **Shared fixture**: `src-tauri/src/testutil.rs` (`#[cfg(test)] mod testutil` in `lib.rs`) — `make_space_with_world()` bootstraps a tempdir `DbManager` with one Space + one migrated World (registry row inserted, `with_world` works out of the box); `uuid_shape(n)` makes deterministic UUID-shaped ids (required — `validate_id` rejects non-UUID shapes).
+- **Schema/migration tests** live in `db/migrations.rs::schema_tests`: fresh-install (tables/indexes/user_version), per-version upgrade path via `MIGRATIONS.to_version(conn, v)` stepping, the world v7 `changes→description` rename data-preservation, and the space v7 `namer` seed row.
+- Name-uniqueness violations surface as raw `DbError::Sqlite(rusqlite::Error::SqliteFailure(e, _))` with `e.code == ErrorCode::ConstraintViolation` — there is NO `DuplicateName` business variant (notes are the exception: `NoteDuplicateTitle`).
+
+**Frontend (`src/`)** — vitest + jsdom, colocated `*.test.ts`; run `pnpm test`. Conventions:
+
+- `src/lib/ai/**` (pure runtime library, ADR-0019): pipeline tests need zero mocks; loop/session tests inject `MockLanguageModelV3` from `ai/test` (provider-level stream chunks use `delta`, NOT `text`, and finish parts take `finishReason: { unified, raw }` + nested usage) with `simulateReadableStream` from `ai`.
+- `src/lib/tools/**`: `vi.mock("@/api/<domain>")` per module + an inline stub `ToolContext` (branded ids via `spaceIdSchema.parse(...)`); test schemas via `inputSchema.safeParse` (cast `as unknown as z.ZodType` — execute bodies trust pre-parsed input), behaviors via direct `execute(input, ctx, { abortSignal })` calls which bypass the consent gate.
 
 ## Verification
 
 Do NOT rely on LSP diagnostics for verification — unreliable. Use commands instead:
 
-- Frontend: `pnpm type-check`
-- Backend: `cargo check` (run from `src-tauri/`); `cargo clippy` for linting.
+- Frontend: `pnpm type-check`, `pnpm test`, `pnpm lint`
+- Backend: `cargo check` (run from `src-tauri/`); `cargo clippy --lib --tests` for linting; `cargo test --lib` for tests.
 
 ## 禁令 (HARD PROHIBITIONS)
 
