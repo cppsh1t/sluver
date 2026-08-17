@@ -477,6 +477,14 @@ fn parse_log_date(filename: &str) -> Option<NaiveDate> {
     if parts.len() != 3 || parts[0] != "sluver" || parts[2] != "log" {
         return None;
     }
+    // chrono's `%m`/`%d` are lenient (they accept `2026-7-5` too), but
+    // tracing-appender only ever writes zero-padded `YYYY-MM-DD` — enforce
+    // the canonical 10-char shape so lookalikes are left alone.
+    // Mirrors `logging::parse_log_date` (kept in sync by contract).
+    let b = parts[1].as_bytes();
+    if b.len() != 10 || b[4] != b'-' || b[7] != b'-' {
+        return None;
+    }
     NaiveDate::parse_from_str(parts[1], "%Y-%m-%d").ok()
 }
 
