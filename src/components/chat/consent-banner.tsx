@@ -72,8 +72,13 @@ export function ConsentBanner({ worldId, conversationId }: ConsentBannerProps) {
 
   // No output yet (pending) — summarize from the input only.
   const summary = summarizeToolCall(active.toolName, active.input, undefined);
+  // `shellRun` has no entity, but its summary is still structured (action
+  // label + command/cwd rows) — and ADR-0041 §2 makes the banner the primary
+  // disclosure surface for the raw command, so it must take this branch.
   const hasStructuredSummary =
-    summary.entityType !== null || summary.action === "getTime";
+    summary.entityType !== null ||
+    summary.action === "getTime" ||
+    summary.action === "shellRun";
 
   function handleKeyDown(e: KeyboardEvent) {
     if (e.key === "ArrowLeft" && hasPrev) {
@@ -182,16 +187,44 @@ export function ConsentBanner({ worldId, conversationId }: ConsentBannerProps) {
             </div>
             {/* Height cap: 2 param rows + the "+N more" indicator (3 text-xs
                 lines + 2 gaps = 52px); verbose tool inputs stay accounted for
-                without ballooning the banner. */}
-            <div className="flex max-h-[3.25rem] flex-col gap-0.5 overflow-hidden">
-              {summary.paramRows.slice(0, 2).map((row, i) => (
-                <span
-                  key={`${row.label}-${i}`}
-                  className="truncate text-xs text-muted-foreground"
-                >
-                  {t(`chat:tool.param.${row.label}`)}: {row.value}
-                </span>
-              ))}
+                without ballooning the banner. Exception — shellRun: the
+                command block carries its own max-h-40 scroll cap (see below),
+                so the container must not clip it. */}
+            <div
+              className={
+                summary.action === "shellRun"
+                  ? "flex flex-col gap-0.5"
+                  : "flex max-h-[3.25rem] flex-col gap-0.5 overflow-hidden"
+              }
+            >
+              {summary.paramRows.slice(0, 2).map((row, i) =>
+                // shellRun command (ADR-0041 §2): full disclosure — the raw
+                // command string in a wrapping monospace block. `break-all`
+                // because a command can be one long token; `max-h-40` +
+                // `overflow-y-auto` keeps a pathological multi-KB command
+                // scrollable-inside instead of ballooning the banner. All
+                // other rows (incl. shellRun's cwd) stay one-line `truncate`.
+                summary.action === "shellRun" && row.label === "command" ? (
+                  <div
+                    key={`${row.label}-${i}`}
+                    className="flex min-w-0 flex-col gap-0.5"
+                  >
+                    <span className="text-xs text-muted-foreground">
+                      {t(`chat:tool.param.${row.label}`)}:
+                    </span>
+                    <code className="max-h-40 overflow-y-auto rounded bg-amber-500/10 px-1.5 py-1 font-mono text-xs whitespace-pre-wrap break-all text-amber-700 dark:text-amber-400">
+                      {row.value}
+                    </code>
+                  </div>
+                ) : (
+                  <span
+                    key={`${row.label}-${i}`}
+                    className="truncate text-xs text-muted-foreground"
+                  >
+                    {t(`chat:tool.param.${row.label}`)}: {row.value}
+                  </span>
+                ),
+              )}
               {summary.paramRows.length > 2 && (
                 <span className="truncate text-xs text-muted-foreground/70">
                   {t("chat:consent.moreParams", {

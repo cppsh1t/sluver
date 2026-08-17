@@ -8,9 +8,9 @@
  * throws; it degrades to fewer rows when shapes don't match expectations.
  *
  * Covers all tools exposed by the worldbuilding roles (worldbook CRUD,
- * novel structure, notes — ADR-0037 — web, system), keyed off the
- * tool-name prefix (e.g. `create_character` → action `create`, entity
- * `character`).
+ * novel structure, notes — ADR-0037 — web, system, shell — ADR-0041),
+ * keyed off the tool-name prefix (e.g. `create_character` → action
+ * `create`, entity `character`).
  */
 
 // ─── Public types ─────────────────────────────────────────────────────────
@@ -27,7 +27,8 @@ export type ToolAction =
   | "addPhase"
   | "getTime"
   | "webSearch"
-  | "webFetch";
+  | "webFetch"
+  | "shellRun";
 
 export type EntityType =
   | "character"
@@ -48,7 +49,8 @@ export interface ToolSummary {
   readonly entityType: EntityType | null;
   /** Best-effort headline (entity name/title) extracted from input OR output. */
   readonly headline?: string;
-  /** Key parameter rows to preview (label key → display value). Truncated. */
+  /** Key parameter rows to preview (label key → display value). Truncated
+   *  (exception: the shellRun `command` row is the full string — ADR-0041). */
   readonly paramRows: ReadonlyArray<{ readonly label: string; readonly value: string }>;
 }
 
@@ -160,9 +162,10 @@ export function domainFromUrl(url: string | undefined): string | undefined {
  *
  * Special cases: `get_current_time`, `web_search`, `web_fetch`,
  * `web_fetch_via_browser`, `add_phase`, `count_character_refs`,
- * `count_phase_refs`, `grep_notes` (search over the note entity). Generic
- * tools follow `{action}_{entity}`; reorder tools use the plural entity
- * (`reorder_phases`) which is singularized.
+ * `count_phase_refs`, `grep_notes` (search over the note entity),
+ * `run_shell_command` (ADR-0041 — no entity; the command string is the
+ * payload of record). Generic tools follow `{action}_{entity}`; reorder
+ * tools use the plural entity (`reorder_phases`) which is singularized.
  */
 function parseToolName(toolName: string): {
   readonly action: ToolAction;
@@ -176,6 +179,9 @@ function parseToolName(toolName: string): {
   }
   if (toolName === "web_fetch" || toolName === "web_fetch_via_browser") {
     return { action: "webFetch", entityType: null };
+  }
+  if (toolName === "run_shell_command") {
+    return { action: "shellRun", entityType: null };
   }
   if (toolName === "add_phase") {
     return { action: "addPhase", entityType: "phase" };
@@ -320,6 +326,19 @@ function buildParamRows(
     case "webFetch": {
       const url = asString(input.url);
       return url ? [{ label: "url", value: truncateProse(url) }] : [];
+    }
+    case "shellRun": {
+      // The command string is the disclosure of record (ADR-0041 §2: the
+      // consent banner shows the raw command). The command is passed through
+      // UNTRUNCATED — informed consent needs the full string; the banner
+      // wraps it in a scrollable pre-wrap block. Also show the cwd when the
+      // model narrowed the working directory.
+      const rows: Array<{ readonly label: string; readonly value: string }> = [];
+      const command = asString(input.command);
+      if (command) rows.push({ label: "command", value: command });
+      const cwd = asString(input.cwd);
+      if (cwd) rows.push({ label: "cwd", value: truncateProse(cwd) });
+      return rows;
     }
     default:
       return [];
