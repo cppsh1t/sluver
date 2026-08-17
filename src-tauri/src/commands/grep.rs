@@ -779,7 +779,7 @@ mod tests {
         let conn = test_conn();
         conn.execute(
             "INSERT INTO locations (id, name, description, notes, tags)
-             VALUES ('l1', '临冬城', '北境要塞', '', 'not json at all')",
+             VALUES ('l1', '北境临冬城', '北境要塞', '', 'not json at all')",
             [],
         )
         .unwrap();
