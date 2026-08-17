@@ -144,6 +144,7 @@ export function ConversationRuntimeProvider({
           status: "ready",
           model: createLanguageModel(cfg.config),
           autoExecuteDangerousTools: cfg.autoExecuteDangerousTools,
+          shellToolEnabled: cfg.shellToolEnabled,
           contextCompaction: cfg.contextCompaction,
           systemPrompt: cfg.systemPrompt,
         };

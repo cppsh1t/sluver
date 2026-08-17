@@ -72,6 +72,12 @@ export type ResolvedModel =
       readonly status: "ready";
       readonly model: LanguageModel;
       readonly autoExecuteDangerousTools: boolean;
+      /**
+       * Whether the shell execution tool (`run_shell_command`) is
+       * registered for this role (ADR-0042). Read at Agent-construction
+       * time; rides the ToolContext like `autoExecuteDangerousTools`.
+       */
+      readonly shellToolEnabled: boolean;
       /** Per-role Context-mode compaction config (ADR-0031 Phase 1). */
       readonly contextCompaction: ContextCompaction;
       /**
@@ -570,6 +576,7 @@ async function constructAgent(
   onPersistError: PersistErrorHandler,
   approvalGate: ApprovalGate,
   autoExecuteDangerousTools: boolean,
+  shellToolEnabled: boolean,
   contextCompaction: ContextCompaction,
   systemPromptOverride: string,
 ): Promise<Agent> {
@@ -598,6 +605,7 @@ async function constructAgent(
     worldId: worldId as WorldId,
     approvalGate,
     autoExecuteDangerousTools,
+    shellToolEnabled,
     planAccess: {
       // `get` reads the live `Agent.plan`. Used by the `plan` tool only to
       // compute output counts at execute time — the Plan reminder that
@@ -814,7 +822,7 @@ export function createConversationRuntimeStore(
         return null;
       }
 
-      const { model, autoExecuteDangerousTools, contextCompaction, systemPrompt } = resolved;
+      const { model, autoExecuteDangerousTools, shellToolEnabled, contextCompaction, systemPrompt } = resolved;
       const gate = createGate(worldId, conversationId);
       patchData(worldId, conversationId, (d) => ({ ...d, agentLoading: true }));
       try {
@@ -826,6 +834,7 @@ export function createConversationRuntimeStore(
           onPersistError,
           gate,
           autoExecuteDangerousTools,
+          shellToolEnabled,
           contextCompaction,
           systemPrompt,
         );

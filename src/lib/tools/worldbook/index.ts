@@ -10,12 +10,17 @@
  * The `queryOnly` helper filters a domain's tools down to read operations
  * (list / get / count / search) by tool-name prefix, so domain files export
  * ONE set of tools and the role builders select subsets declaratively.
+ *
+ * Shell execution (`run_shell_command`, ADR-0041/0042) is registered on
+ * both explorer and writer, each gated by that role's AgentConfig
+ * `shellToolEnabled` flag. The namer role never carries it.
  */
 
 import type { ToolSet } from "@/lib/ai";
 
 import { grepTools } from "../grep";
 import { noteTools } from "../note";
+import { shellTools } from "../shell";
 import { systemTools } from "../system";
 import type { ToolDef, ToolContext } from "../types";
 import { buildToolSet } from "../types";
@@ -51,9 +56,11 @@ function queryOnly(tools: Record<string, ToolDef>): Record<string, ToolDef> {
 
 /**
  * Explorer toolset: full worldbook CRUD + novel/chapter/scene query + system.
- * 59 tools (51 + 8 search). The Explorer surveys and builds the world
+ * 60 tools (51 + 8 search + shell). The Explorer surveys and builds the world
  * (characters, locations, items, lore, events) and can read (but not modify)
- * the novel structure.
+ * the novel structure. It also carries the shell execution tool
+ * (ADR-0041/0042) — registered only when `shellToolEnabled` is on (then
+ * auto-executing).
  */
 export function buildExplorerTools(ctx: ToolContext): ToolSet {
   return buildToolSet(
@@ -84,6 +91,10 @@ export function buildExplorerTools(ctx: ToolContext): ToolSet {
       ...webFetchTools(),
       // WebView fetch (browser-engine fallback for 403/anti-bot sites)
       ...webViewFetchTools(),
+      // Shell execution (ADR-0041/0042) — registered only when the
+      // AgentConfig's `shellToolEnabled` is on, then consentLevel "auto"
+      // (executes without per-call confirmation).
+      ...(ctx.shellToolEnabled ? shellTools() : {}),
     },
     ctx,
   );
@@ -91,8 +102,10 @@ export function buildExplorerTools(ctx: ToolContext): ToolSet {
 
 /**
  * Writer toolset: full novel/chapter/scene CRUD + worldbook query + system.
- * 51 tools (43 + 8 search). The Writer drafts and refines prose (novels,
- * chapters, scenes) and can read (but not modify) the worldbook for reference.
+ * 52 tools (43 + 8 search + shell). The Writer drafts and refines prose
+ * (novels, chapters, scenes) and can read (but not modify) the worldbook for
+ * reference. It also carries the shell execution tool (ADR-0041/0042) —
+ * registered only when `shellToolEnabled` is on (then auto-executing).
  */
 export function buildWriterTools(ctx: ToolContext): ToolSet {
   return buildToolSet(
@@ -123,6 +136,10 @@ export function buildWriterTools(ctx: ToolContext): ToolSet {
       ...webFetchTools(),
       // WebView fetch (browser-engine fallback for 403/anti-bot sites)
       ...webViewFetchTools(),
+      // Shell execution (ADR-0041/0042) — registered only when the
+      // AgentConfig's `shellToolEnabled` is on, then consentLevel "auto"
+      // (executes without per-call confirmation).
+      ...(ctx.shellToolEnabled ? shellTools() : {}),
     },
     ctx,
   );

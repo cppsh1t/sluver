@@ -207,6 +207,13 @@ export interface ToolContext {
   readonly approvalGate: ApprovalGate;
   readonly autoExecuteDangerousTools: boolean;
   /**
+   * Whether the shell execution tool (`run_shell_command`) is registered
+   * for this conversation's role (ADR-0042). Gating happens at
+   * REGISTRATION time (the toolset is built once per conversation);
+   * when registered, the tool auto-executes (`consentLevel: "auto"`).
+   */
+  readonly shellToolEnabled: boolean;
+  /**
    * Access to the Agent's Plan state. Used by the `plan` tool (Plan mode —
    * ADR-0029 Phase 1).
    */
@@ -219,6 +226,23 @@ export interface ToolContext {
   readonly threadLookup: ThreadLookup;
 }
 
+// ─── Per-call options ──────────────────────────────────────────────────────
+
+/**
+ * Per-call runtime data forwarded to {@link ToolDef.execute} as the third
+ * argument (ADR-0041 §3).
+ *
+ * Sourced from the SDK's tool `execute` options by `buildToolSet` — the same
+ * object that feeds the approval gate. Unlike {@link ToolContext} (built once
+ * per conversation), this carries data whose scope is a SINGLE run: each
+ * `Agent.run()` creates a fresh internal `AbortController`, so the signal must
+ * not live on the context.
+ */
+export interface ToolCallOptions {
+  /** Abort signal for the current run — fires on user Stop / termination. */
+  readonly abortSignal: AbortSignal;
+}
+
 // ─── Declarative tool definition ──────────────────────────────────────────
 
 /**
@@ -229,16 +253,18 @@ export interface ToolContext {
  * execution logic into one self-describing unit. `buildToolSet` compiles
  * these into SDK `Tool` objects, wiring the consent gate automatically.
  *
- * The `execute` function receives the parsed input AND the
- * {@link ToolContext} — unlike the SDK's execute which only receives
- * `(args, options)`. This lets tools access `ctx.spaceId`, `ctx.worldId`,
- * etc. without closure capture at the factory level.
+ * The `execute` function receives a superset of the SDK's execute
+ * `(args, options)`: the parsed input, the per-conversation
+ * {@link ToolContext} (so tools can access `ctx.spaceId`, `ctx.worldId`,
+ * etc. without closure capture at the factory level), and the per-call
+ * {@link ToolCallOptions} carrying run-scoped runtime data such as the
+ * abort signal (ADR-0041 §3).
  */
 export interface ToolDef<I = unknown, O = unknown> {
   readonly description: string;
   readonly inputSchema: FlexibleSchema<I>;
   readonly consentLevel: ConsentLevel;
-  readonly execute: (input: I, ctx: ToolContext) => Promise<O>;
+  readonly execute: (input: I, ctx: ToolContext, call: ToolCallOptions) => Promise<O>;
 }
 
 // ─── Tool denied error ────────────────────────────────────────────────────
@@ -281,7 +307,8 @@ type AnyToolDef = ToolDef<unknown, unknown>;
  *    The UI shows the pending approval; the user approves or denies.
  * 3. If denied, `ToolDeniedError` is thrown (non-fatal — the model adapts).
  * 4. If approved, the tool's real `execute` runs with the
- *    {@link ToolContext}.
+ * {@link ToolContext} and {@link ToolCallOptions} (the run's abort signal,
+ * forwarded from the SDK execute options — ADR-0041 §3).
  *
  * The `ctx` is captured in each tool's closure — built once per conversation
  * at Agent construction time.
@@ -312,7 +339,7 @@ export function buildToolSet(
           throw new ToolDeniedError(name);
         }
       }
-      return def.execute(input, ctx);
+      return def.execute(input, ctx, { abortSignal: options.abortSignal });
     };
 
     tools[name] = defineTool({
