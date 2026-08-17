@@ -111,7 +111,7 @@ The pure stateless single-run tool-calling executor — a manually-driven step l
 _Avoid_: Agent, Loop, Runner, StepDriver
 
 **AgentConfig**:
-A named AI configuration slot within a Space — the persistent definition of an AgentLoop's model and behavior. Carries the bound model (chosen from the Space's configured providers) and the `autoExecuteDangerousTools` flag (whether configurable-level tools auto-execute without user approval); the rest of the behavior bundle (system prompt, tools, parameters) is hardcoded in code via `AgentLoopOptions`. Two AgentConfigs are predefined per Space — **Explorer** and **Writer** — both seeded into `space.db` on Space creation; users pick a model for each but cannot create or delete AgentConfigs in v1.
+A named AI configuration slot within a Space — the persistent definition of an AgentLoop's model and behavior. Carries the bound model (chosen from the Space's configured providers), the `autoExecuteDangerousTools` flag (whether configurable-level tools auto-execute without user approval), and the `shellToolEnabled` flag (default-off opt-in that registers the role's shell tool — on both Explorer and Writer, each gated per-config — to auto-execute without per-call approval; see ADR-0042); the rest of the behavior bundle (system prompt, tools, parameters) is hardcoded in code via `AgentLoopOptions`. Two AgentConfigs are predefined per Space — **Explorer** and **Writer** — both seeded into `space.db` on Space creation; users pick a model for each but cannot create or delete AgentConfigs in v1.
 _Avoid_: Assistant, Persona, Bot, Role
 
 **ConsentLevel**:
