@@ -7,6 +7,12 @@ mod tray;
 mod util;
 mod window_manager;
 
+// Shared fixtures for command-level integration tests. Test-only —
+// never compiled into release builds. See `testutil.rs` for the
+// no-mock-runtime convention this crate follows.
+#[cfg(test)]
+mod testutil;
+
 use tauri::{Emitter, Manager};
 use tauri_plugin_decorum::WebviewWindowExt;
 
