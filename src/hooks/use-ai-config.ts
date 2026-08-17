@@ -11,6 +11,7 @@ import {
   updateAgentConfigAutoExecute,
   updateAgentConfigContextCompaction,
   updateAgentConfigModel,
+  updateAgentConfigShellTool,
   updateAgentConfigSystemPrompt,
 } from "@/api";
 import { parseModelId, type ResolvedModelConfig } from "@/lib/ai";
@@ -110,6 +111,20 @@ export const useUpdateAgentConfigAutoExecute = (spaceId: SpaceId) => {
   });
 };
 
+export const useUpdateAgentConfigShellTool = (spaceId: SpaceId) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      shellToolEnabled,
+    }: {
+      id: string;
+      shellToolEnabled: boolean;
+    }) => updateAgentConfigShellTool(spaceId, id, shellToolEnabled),
+    onSuccess: () => qc.invalidateQueries({ queryKey: aiConfigKeys.agentConfigs(spaceId) }),
+  });
+};
+
 export const useUpdateAgentConfigContextCompaction = (spaceId: SpaceId) => {
   const qc = useQueryClient();
   return useMutation({
@@ -192,6 +207,11 @@ export function useResolvedModelConfig(
 ): {
   config: ResolvedModelConfig | null;
   autoExecuteDangerousTools: boolean;
+  /**
+   * Whether the shell execution tool is registered for this role
+   * (ADR-0042). Defaults to `false` until config resolves.
+   */
+  shellToolEnabled: boolean;
   /** Per-role Context-mode compaction config (ADR-0031 Phase 1). */
   contextCompaction: ContextCompaction;
   /** Per-role system prompt override. Empty string = code-defined default. */
@@ -210,6 +230,7 @@ export function useResolvedModelConfig(
 
     const agentConfig = agentConfigs.data?.find((a) => a.name === agentConfigName);
     const autoExecuteDangerousTools = agentConfig?.autoExecuteDangerousTools ?? false;
+    const shellToolEnabled = agentConfig?.shellToolEnabled ?? false;
     // Per-role Context-mode compaction config (ADR-0031 Phase 1). Defaults to
     // disabled when the agent config hasn't resolved yet — the Agent will be
     // (re)built once config lands (same lifecycle as model rebinding).
@@ -224,6 +245,7 @@ export function useResolvedModelConfig(
       return {
         config: null,
         autoExecuteDangerousTools,
+        shellToolEnabled,
         contextCompaction,
         systemPrompt,
         isLoading,
@@ -251,6 +273,7 @@ export function useResolvedModelConfig(
       return {
         config: null,
         autoExecuteDangerousTools,
+        shellToolEnabled,
         contextCompaction,
         systemPrompt,
         isLoading,
@@ -268,6 +291,7 @@ export function useResolvedModelConfig(
           : {}),
       },
       autoExecuteDangerousTools,
+      shellToolEnabled,
       contextCompaction,
       systemPrompt,
       isLoading,
