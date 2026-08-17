@@ -11,6 +11,7 @@ import {
   useUpdateAgentConfigAutoExecute,
   useUpdateAgentConfigContextCompaction,
   useUpdateAgentConfigModel,
+  useUpdateAgentConfigShellTool,
   useUpdateAgentConfigSystemPrompt,
 } from "@/hooks";
 import { parseModelId } from "@/lib/ai";
@@ -26,6 +27,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -77,6 +88,7 @@ export function AgentConfigModelPicker({
   const { t } = useTranslation("ai");
   const updateMut = useUpdateAgentConfigModel(spaceId);
   const autoExecMut = useUpdateAgentConfigAutoExecute(spaceId);
+  const shellMut = useUpdateAgentConfigShellTool(spaceId);
   const compactionMut = useUpdateAgentConfigContextCompaction(spaceId);
   const systemPromptMut = useUpdateAgentConfigSystemPrompt(spaceId);
   const [localPrompt, setLocalPrompt] = useState(agentConfig.systemPrompt);
@@ -86,6 +98,17 @@ export function AgentConfigModelPicker({
   // meaningless for it, so its dialog shows the model binding only.
   // Explorer/writer cards are unaffected (byte-identical rendering).
   const isNamer = agentConfig.name === "namer";
+
+  // ADR-0042 — the shell tool is registered on the explorer and writer
+  // roles (each gated by that role's `shellToolEnabled` flag), so its
+  // toggle is hidden for the namer config only.
+  const canUseShellTool =
+    agentConfig.name === "explorer" || agentConfig.name === "writer";
+
+  // Confirm-on-enable gate for the shell tool (ADR-0042). Only the dialog's
+  // open state is local; the Switch itself stays controlled by
+  // agentConfig.shellToolEnabled, so cancelling leaves it off for free.
+  const [shellConfirmOpen, setShellConfirmOpen] = useState(false);
 
   const [serverProvider, serverModel] = parseModelId(agentConfig.modelId);
   const [localProvider, setLocalProvider] = useState<string | null>(
@@ -169,6 +192,32 @@ export function AgentConfigModelPicker({
       await autoExecMut.mutateAsync({
         id: agentConfig.id,
         autoExecute: checked,
+      });
+      toast.success(i18n.t("ai:agentConfigs.toast.updateSuccess"));
+    } catch (err) {
+      toast.error(i18n.t("ai:agentConfigs.toast.updateFailed"), {
+        description: translateError(toErrorPayload(err)),
+      });
+    }
+  }
+
+  // Enabling the shell tool is a risk-acknowledged decision (ADR-0042): the
+  // agent reads world text that could carry prompt injections, so turning it
+  // ON must pass through the confirmation AlertDialog before committing.
+  // Turning it OFF is always safe and commits immediately, no dialog.
+  function handleShellToolToggle(checked: boolean) {
+    if (checked) {
+      setShellConfirmOpen(true);
+      return;
+    }
+    void commitShellTool(false);
+  }
+
+  async function commitShellTool(shellToolEnabled: boolean) {
+    try {
+      await shellMut.mutateAsync({
+        id: agentConfig.id,
+        shellToolEnabled,
       });
       toast.success(i18n.t("ai:agentConfigs.toast.updateSuccess"));
     } catch (err) {
@@ -351,6 +400,59 @@ export function AgentConfigModelPicker({
               disabled={disabled || autoExecMut.isPending}
             />
           </div>
+          )}
+
+          {/* Shell tool — explorer/writer configs (ADR-0042). Enabling is
+              gated behind a risk-acknowledgement AlertDialog; disabling
+              commits immediately. */}
+          {canUseShellTool && (
+            <>
+              <div className="flex items-center justify-between gap-6">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    {t("ai:agentConfigs.shellTool.title")}
+                  </span>
+                  <span className="text-[0.6875rem] text-muted-foreground/70">
+                    {t("ai:agentConfigs.shellTool.description")}
+                  </span>
+                </div>
+                <Switch
+                  checked={agentConfig.shellToolEnabled}
+                  onCheckedChange={handleShellToolToggle}
+                  disabled={disabled || shellMut.isPending}
+                />
+              </div>
+              <AlertDialog
+                open={shellConfirmOpen}
+                onOpenChange={(open) => setShellConfirmOpen(open)}
+              >
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>
+                      {t("ai:agentConfigs.shellTool.warning.title")}
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {t("ai:agentConfigs.shellTool.warning.body")}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>
+                      {t("ai:agentConfigs.shellTool.warning.cancel")}
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      variant="destructive"
+                      disabled={shellMut.isPending}
+                      onClick={() => {
+                        setShellConfirmOpen(false);
+                        void commitShellTool(true);
+                      }}
+                    >
+                      {t("ai:agentConfigs.shellTool.warning.confirm")}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </>
           )}
 
           {/* Context compaction — meaningless for a one-shot naming call */}
