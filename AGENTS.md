@@ -46,6 +46,8 @@ Tauri v2 desktop app for **worldbuilding & novel writing**. React 19 + TypeScrip
   - [ADR-0038](./docs/adr/0038-notes-single-table-tree-storage.md) — Notes storage: single `notes` table (kind discriminator, first adjacency list), NULL-safe sibling title uniqueness, no position UNIQUE (scene_images precedent), app-layer cycle guard
   - [ADR-0039](./docs/adr/0039-scene-lore-refs.md) — Scenes reference Lore via `scene_lore_refs` (background context; silent FK cascade like items/events); Events still don't — Lore never acts
   - [ADR-0040](./docs/adr/0040-conversation-rename-and-auto-titling.md) — Conversation rename + auto-titling via non-conversational `namer` agent (first one-shot `generateText` usage; configured = enabled; silent)
+  - [ADR-0041](./docs/adr/0041-agent-shell-execution-tool.md) — Agent shell execution via Rust-side `deno_task_shell` (`shell_exec`/`shell_kill`); `consentLevel: "always"`; `ToolDef.execute` gains per-call `ToolCallOptions { abortSignal }`
+  - [ADR-0042](./docs/adr/0042-shell-tool-config-gated-auto-execution.md) — Shell tool consent: default-off `shellToolEnabled` opt-in per AgentConfig (risk-acknowledged enable, auto-executes when on; supersedes ADR-0041 §2 only)
 
 ## Git commit style
 
