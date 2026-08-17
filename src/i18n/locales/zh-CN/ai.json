@@ -57,6 +57,16 @@
       "title": "自动执行工具",
       "description": "开启后，创建类工具将直接执行，无需每次确认。"
     },
+    "shellTool": {
+      "title": "Shell 工具",
+      "description": "开启后，Agent 将获得 shell 工具，可在本机执行命令且无需确认。",
+      "warning": {
+        "title": "启用 Shell 工具？",
+        "body": "Agent 会读取可能藏有提示注入的世界观文本，可能被诱导执行你本无意运行的命令。这些命令将以你完整的系统用户权限运行，且不受世界隔离限制——可以读取或修改本机上的任何内容。",
+        "cancel": "取消",
+        "confirm": "启用"
+      }
+    },
     "contextCompaction": {
       "title": "上下文压缩",
       "description": "开启后，超过若干轮的旧工具调用将被压缩为摘要，可用 context_read 工具展开。",

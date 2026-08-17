@@ -57,6 +57,16 @@
       "title": "Auto-execute tools",
       "description": "When enabled, creation tools execute without asking for confirmation each time."
     },
+    "shellTool": {
+      "title": "Shell tool",
+      "description": "When enabled, the agent gains a shell tool that runs commands on this machine without confirmation.",
+      "warning": {
+        "title": "Enable shell tool?",
+        "body": "The agent reads worldbuilding text that could contain hidden prompt injections, which may trick it into running commands you never intended. Those commands run with your full OS user privileges, and they are not confined to this World — they can read or modify anything on your machine.",
+        "cancel": "Cancel",
+        "confirm": "Enable"
+      }
+    },
     "contextCompaction": {
       "title": "Context compaction",
       "description": "When enabled, tool calls older than a few turns are compacted to stubs. Use the context_read tool to expand them.",
