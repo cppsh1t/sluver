@@ -59,6 +59,7 @@ fn row_to_agent_config(row: &rusqlite::Row) -> rusqlite::Result<AgentConfig> {
         name: row.get("name")?,
         model_id: row.get("model_id")?,
         auto_execute_dangerous_tools: row.get("auto_execute_dangerous_tools")?,
+        shell_tool_enabled: row.get("shell_tool_enabled")?,
         context_compaction: ContextCompaction {
             enabled: row.get("context_compaction_enabled")?,
             turn_age: row.get("context_compaction_turn_age")?,
@@ -224,7 +225,7 @@ pub(crate) fn do_list_agent_configs(
 ) -> Result<Vec<AgentConfig>, DbError> {
     mgr.with_space(space_id, |conn| {
         let mut stmt = conn.prepare(
-            "SELECT id, name, model_id, auto_execute_dangerous_tools,
+            "SELECT id, name, model_id, auto_execute_dangerous_tools, shell_tool_enabled,
                     context_compaction_enabled, context_compaction_turn_age,
                     system_prompt, created_at, updated_at
              FROM agent_configs ORDER BY created_at",
@@ -264,7 +265,7 @@ pub(crate) fn do_update_agent_config_model(
         }
         // Read back the canonical row (AGENTS.md: read after mutation).
         conn.query_row(
-            "SELECT id, name, model_id, auto_execute_dangerous_tools,
+            "SELECT id, name, model_id, auto_execute_dangerous_tools, shell_tool_enabled,
                     context_compaction_enabled, context_compaction_turn_age,
                     system_prompt, created_at, updated_at
              FROM agent_configs WHERE id = ?1",
@@ -308,7 +309,7 @@ pub(crate) fn do_update_agent_config_auto_execute(
         }
         // Read back the canonical row (AGENTS.md: read after mutation).
         conn.query_row(
-            "SELECT id, name, model_id, auto_execute_dangerous_tools,
+            "SELECT id, name, model_id, auto_execute_dangerous_tools, shell_tool_enabled,
                     context_compaction_enabled, context_compaction_turn_age,
                     system_prompt, created_at, updated_at
              FROM agent_configs WHERE id = ?1",
@@ -367,7 +368,7 @@ pub(crate) fn do_update_agent_config_context_compaction(
         }
         // Read back the canonical row (AGENTS.md: read after mutation).
         conn.query_row(
-            "SELECT id, name, model_id, auto_execute_dangerous_tools,
+            "SELECT id, name, model_id, auto_execute_dangerous_tools, shell_tool_enabled,
                     context_compaction_enabled, context_compaction_turn_age,
                     system_prompt, created_at, updated_at
              FROM agent_configs WHERE id = ?1",
@@ -411,7 +412,51 @@ pub(crate) fn do_update_agent_config_system_prompt(
         }
         // Read back the canonical row (AGENTS.md: read after mutation).
         conn.query_row(
-            "SELECT id, name, model_id, auto_execute_dangerous_tools,
+            "SELECT id, name, model_id, auto_execute_dangerous_tools, shell_tool_enabled,
+                    context_compaction_enabled, context_compaction_turn_age,
+                    system_prompt, created_at, updated_at
+             FROM agent_configs WHERE id = ?1",
+            params![id],
+            row_to_agent_config,
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                DbError::AgentConfigNotFound(id.to_string())
+            }
+            other => DbError::Sqlite(other),
+        })
+    })
+}
+
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
+#[tauri::command]
+pub fn update_agent_config_shell_tool(
+    space_id: String,
+    id: String,
+    shell_tool_enabled: bool,
+    state: State<'_, DbManager>,
+) -> Result<AgentConfig, DbError> {
+    do_update_agent_config_shell_tool(&state, &space_id, &id, shell_tool_enabled)
+}
+
+pub(crate) fn do_update_agent_config_shell_tool(
+    mgr: &DbManager,
+    space_id: &str,
+    id: &str,
+    shell_tool_enabled: bool,
+) -> Result<AgentConfig, DbError> {
+    let now = now_iso();
+    mgr.with_space(space_id, |conn| {
+        let affected = conn.execute(
+            "UPDATE agent_configs SET shell_tool_enabled = ?1, updated_at = ?2 WHERE id = ?3",
+            params![shell_tool_enabled, now, id],
+        )?;
+        if affected == 0 {
+            return Err(DbError::AgentConfigNotFound(id.to_string()));
+        }
+        // Read back the canonical row (AGENTS.md: read after mutation).
+        conn.query_row(
+            "SELECT id, name, model_id, auto_execute_dangerous_tools, shell_tool_enabled,
                     context_compaction_enabled, context_compaction_turn_age,
                     system_prompt, created_at, updated_at
              FROM agent_configs WHERE id = ?1",
@@ -1149,6 +1194,7 @@ mod tests {
             name: "explorer".into(),
             model_id: Some("anthropic/claude-sonnet-5".into()),
             auto_execute_dangerous_tools: false,
+            shell_tool_enabled: false,
             context_compaction: ContextCompaction {
                 enabled: false,
                 turn_age: 3,
@@ -1160,6 +1206,7 @@ mod tests {
         let json = serde_json::to_string(&a).expect("serialize");
         assert!(json.contains("\"modelId\":\"anthropic/claude-sonnet-5\""), "camelCase: {json}");
         assert!(json.contains("\"autoExecuteDangerousTools\":false"), "camelCase: {json}");
+        assert!(json.contains("\"shellToolEnabled\":false"), "camelCase: {json}");
         assert!(
             json.contains("\"contextCompaction\":{\"enabled\":false,\"turnAge\":3}"),
             "camelCase contextCompaction: {json}"
@@ -1167,6 +1214,7 @@ mod tests {
         assert!(json.contains("\"systemPrompt\":\"\""), "camelCase systemPrompt: {json}");
         assert!(!json.contains("model_id"), "snake_case leak: {json}");
         assert!(!json.contains("auto_execute_dangerous_tools"), "snake_case leak: {json}");
+        assert!(!json.contains("shell_tool_enabled"), "snake_case leak: {json}");
         assert!(
             !json.contains("context_compaction") && !json.contains("turn_age"),
             "snake_case leak: {json}"

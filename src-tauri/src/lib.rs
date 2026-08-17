@@ -44,6 +44,12 @@ pub fn run() {
             let db_manager = db::DbManager::new(data_dir)?;
             app.manage(db_manager);
 
+            // Agent shell execution kill registry (ADR-0041): maps runId →
+            // kill handle for in-flight `shell_exec` runs. In-memory only —
+            // nothing is persisted. Entries are removed by a drop guard on
+            // the run's blocking thread, so they cannot leak.
+            app.manage(commands::shell::ShellRegistry::default());
+
             // Re-apply persisted verbosity tier (settings.app.logLevel).
             // Best-effort: any failure (missing row, corrupted/unrecognized
             // value, reload error) is logged and swallowed so app startup is
@@ -293,6 +299,7 @@ pub fn run() {
             commands::ai::update_agent_config_auto_execute,
             commands::ai::update_agent_config_context_compaction,
             commands::ai::update_agent_config_system_prompt,
+            commands::ai::update_agent_config_shell_tool,
             commands::ai::get_models_dev_catalog,
             commands::ai::refresh_models_dev_catalog,
             commands::search::search_web,
@@ -342,6 +349,9 @@ pub fn run() {
             commands::timeline::list_timeline_lanes,
             // Native notifications (notify-rust + explicit AUMID — ADR-0036)
             commands::notification::show_notification,
+            // Agent shell execution (deno_task_shell — ADR-0041)
+            commands::shell::shell_exec,
+            commands::shell::shell_kill,
         ])
         .on_window_event(|window, event| {
             let label = window.label();

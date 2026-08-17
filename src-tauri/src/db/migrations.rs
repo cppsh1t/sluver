@@ -169,6 +169,18 @@ const SPACE_MIGRATION_007: &str = r#"
          '9999-12-31T23:59:59.999Z', '9999-12-31T23:59:59.999Z');
 "#;
 
+/// Migration 8 for `space.db`: add `shell_tool_enabled` column to
+/// `agent_configs` (ADR-0042: config-gated shell tool, ADR-0041 tool).
+/// Stored as INTEGER (0/1) per SQLite's boolean convention. Existing rows
+/// pick up DEFAULT 0 (shell tool off — safest default; when off the tool
+/// is not registered at all). Added as a separate migration so existing
+/// `space.db` files get the new column via `rusqlite_migration`'s
+/// incremental tracking — modifying `SPACE_SQL` or `SPACE_MIGRATION_002`
+/// would NOT re-run for already-migrated databases.
+const SPACE_MIGRATION_008: &str = r#"
+    ALTER TABLE agent_configs ADD COLUMN shell_tool_enabled INTEGER NOT NULL DEFAULT 0;
+"#;
+
 // ─── world DB schema ────────────────────────────────────────────────────────
 // Tier 3 of the three-database design (ADR-0007). One file per World at
 // `spaces/{spaceId}/worlds/{worldId}.db`. Schema is byte-for-byte identical
@@ -331,6 +343,7 @@ const SPACE_SLICE: &[M] = &[
     M::up(SPACE_MIGRATION_005),
     M::up(SPACE_MIGRATION_006),
     M::up(SPACE_MIGRATION_007),
+    M::up(SPACE_MIGRATION_008),
 ];
 pub const SPACE_MIGRATIONS: Migrations = Migrations::from_slice(SPACE_SLICE);
 

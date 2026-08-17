@@ -21,6 +21,12 @@ pub struct AgentConfig {
     /// Stored as INTEGER (0/1) in SQLite; defaults to false (off) on seed and
     /// on migration of pre-existing rows.
     pub auto_execute_dangerous_tools: bool,
+    /// Whether the shell execution tool (`shell_exec` / `shell_kill`,
+    /// ADR-0041) is registered for this role (ADR-0042). When true the tool
+    /// auto-executes without consent prompts; when false the tool is not
+    /// registered at all. Stored as INTEGER (0/1) in SQLite; defaults to
+    /// false (off) on seed and on migration of pre-existing rows.
+    pub shell_tool_enabled: bool,
     /// Context-compaction policy for this role (ADR-0031 Phase 1). Stored as
     /// two scalar columns on `agent_configs` (`context_compaction_enabled` +
     /// `context_compaction_turn_age`); defaults to disabled (`enabled = false`,
