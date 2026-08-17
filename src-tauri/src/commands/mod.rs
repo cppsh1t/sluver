@@ -14,6 +14,7 @@ pub mod notification;
 pub mod search;
 pub mod session;
 pub mod setting;
+pub mod shell;
 pub mod space;
 pub mod timeline;
 pub mod tray;

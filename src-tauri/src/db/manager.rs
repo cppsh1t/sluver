@@ -114,6 +114,14 @@ impl DbManager {
         self.space_dir(space_id).join("space.db")
     }
 
+    /// `data_dir/spaces/{space_id}` — the Space's data directory. Used as
+    /// the default cwd for agent shell execution (ADR-0041). Same path
+    /// convention as [`Self::space_db_path`] (single source of truth for
+    /// Space paths): pure construction, no locks, no existence guarantee.
+    pub fn space_data_dir(&self, space_id: &str) -> PathBuf {
+        self.space_dir(space_id)
+    }
+
     /// `data_dir/spaces/{space_id}/{relative}` where `relative` is the
     /// `db_path` column from this Space's `worlds` table (e.g.
     /// `"worlds/{worldId}.db"` — relative to the Space dir per ADR-0007).

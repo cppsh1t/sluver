@@ -71,7 +71,18 @@ readabilityrs = "0.1.3"
 # (commands/search.rs::fetch_url_via_webview). Tauri uses tokio internally;
 # declaring it directly unlocks `Notify`, `time::timeout`, `spawn_blocking`
 # — all needed to coordinate the hidden-window lifecycle without blocking.
-tokio = { version = "1", features = ["sync", "time", "rt"] }
+# `macros` is additionally used by commands/shell.rs (`tokio::select!`).
+tokio = { version = "1", features = ["sync", "time", "rt", "macros"] }
+
+# Agent shell execution (commands/shell.rs — ADR-0041): cross-platform shell
+# semantics with no cmd.exe/PowerShell in the loop. Parse-to-AST first,
+# built-ins in-process, externals resolved via `which` and spawned directly.
+# Kill path verified against 0.33.x source: KillSignal::send(SIGTERM) →
+# child.start_kill() (TerminateProcess), plus every spawned child is assigned
+# to a per-ShellState Windows Job Object with KILL_ON_JOB_CLOSE (tree kill +
+# crash safety). Futures are !Send — commands/shell.rs drives them on
+# dedicated blocking threads.
+deno_task_shell = "0.33.3"
 
 # Logging stack (ADR-0014): `tracing` ecosystem + `tracing-log` bridge so that
 # `log::*` emits from deps (tauri, rusqlite, reqwest, tokio) are captured by
