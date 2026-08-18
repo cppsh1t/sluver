@@ -389,8 +389,8 @@ export function AgentConfigModelPicker({
         </DialogTrigger>
       </div>
 
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[85vh] flex-col overflow-hidden sm:max-w-lg">
+        <DialogHeader className="shrink-0">
           <DialogTitle>
             {t(`ai:agentConfigs.name.${agentConfig.name}`, { defaultValue: agentConfig.name })}
           </DialogTitle>
@@ -401,7 +401,7 @@ export function AgentConfigModelPicker({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-4">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto">
           {/* Model binding */}
           <div className="flex flex-col gap-1.5">
             <span className="text-xs font-medium text-muted-foreground">

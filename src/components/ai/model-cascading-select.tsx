@@ -78,7 +78,10 @@ export function ModelCascadingSelect({
           className="w-36"
           disabled={disabled || !hasProviders}
         >
-          <SelectValue placeholder={t("ai:agentConfigs.providerPlaceholder")} />
+          <SelectValue
+            className="truncate"
+            placeholder={t("ai:agentConfigs.providerPlaceholder")}
+          />
         </SelectTrigger>
         <SelectContent>
           <SelectList>
@@ -103,10 +106,13 @@ export function ModelCascadingSelect({
         }}
       >
         <SelectTrigger
-          className="w-44"
+          className="min-w-0 flex-1"
           disabled={disabled || !hasProviders || !activeProvider}
         >
-          <SelectValue placeholder={t("ai:agentConfigs.modelPlaceholder")} />
+          <SelectValue
+            className="truncate"
+            placeholder={t("ai:agentConfigs.modelPlaceholder")}
+          />
         </SelectTrigger>
         <SelectContent>
           {activeProvider && (
