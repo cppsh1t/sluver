@@ -33,5 +33,8 @@
   "NOTE_PARENT_NOT_FOLDER": "Parent is not a folder",
   "NOTE_MOVE_CYCLE": "Cannot move a note under itself or one of its descendants",
   "NOTE_DUPLICATE_TITLE": "A note or folder named \"{{title}}\" already exists at the destination",
+  "SKILL_NOT_FOUND": "Skill not found ({{id}})",
+  "SKILL_PACKAGE_INVALID": "The skill package is invalid or corrupt: {{reason}}",
+  "SKILL_NOT_INSTALLED": "Skill \"{{name}}\" is not installed",
   "INTERNAL_ERROR": "An internal error occurred"
 }
