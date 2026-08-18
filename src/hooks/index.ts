@@ -136,3 +136,12 @@ export {
 } from "./use-notes";
 
 export { timelineKeys, useTimeline, useTimelineLanes } from "./use-timeline";
+
+export {
+  useSkills,
+  useUploadSkill,
+  useDeleteSkill,
+  useSetSkillEnabled,
+} from "./use-skills";
+
+export { enabledSkillsKey, useEnabledSkills } from "./use-enabled-skills";
