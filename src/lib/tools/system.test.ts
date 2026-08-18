@@ -37,6 +37,8 @@ function makeToolContext(
     threadLookup: overrides.threadLookup ?? {
       findToolPair: vi.fn(() => undefined),
     },
+    skills: [],
+    activatedSkills: new Set(),
   };
 }
 

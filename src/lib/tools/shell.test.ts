@@ -30,6 +30,8 @@ function makeToolContext(): ToolContext {
     shellToolEnabled: true,
     planAccess: { get: vi.fn(() => null), set: vi.fn(async () => {}) },
     threadLookup: { findToolPair: vi.fn(() => undefined) },
+    skills: [],
+    activatedSkills: new Set(),
   };
 }
 

@@ -75,6 +75,8 @@ function makeStubCtx(overrides: Partial<ToolContext> = {}): ToolContext {
     shellToolEnabled: false,
     planAccess: { get: vi.fn(), set: vi.fn() },
     threadLookup: { findToolPair: vi.fn() },
+    skills: [],
+    activatedSkills: new Set(),
     ...overrides,
   };
 }

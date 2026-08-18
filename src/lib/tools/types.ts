@@ -24,7 +24,7 @@ import type { FlexibleSchema, ToolCallPart, ToolResultPart } from "ai";
 
 import type { Plan } from "@/lib/ai/session/plan";
 import { defineTool, type ToolSet } from "@/lib/ai";
-import type { SpaceId, WorldId } from "@/types";
+import type { EnabledSkill, SpaceId, WorldId } from "@/types";
 
 // ─── Consent levels ───────────────────────────────────────────────────────
 
@@ -194,9 +194,10 @@ export interface ThreadLookup {
  * Runtime context injected into every tool factory. Carries the identifiers
  * and infrastructure the tool needs to execute: the Space/World scope, the
  * approval gate, the agent's consent configuration, access to the Agent's
- * working Plan state (Plan mode — ADR-0029 Phase 1), and reverse-channel
+ * working Plan state (Plan mode — ADR-0029 Phase 1), reverse-channel
  * access to the Persisted Thread for stub expansion (Context mode — ADR-0031
- * Phase 1).
+ * Phase 1), and the enabled Agent Skills with their activation dedup state
+ * (ADR-0043).
  *
  * Constructed per-conversation in the conversation-runtime store and passed
  * to `RoleBehavior.buildTools(ctx)`.
@@ -224,6 +225,24 @@ export interface ToolContext {
    * stubs back to their original input + output on demand.
    */
   readonly threadLookup: ThreadLookup;
+  /**
+   * Agent Skills enabled for this conversation's role (ADR-0043 §3).
+   * Populated at Agent construction from the Space-scoped per-AgentConfig
+   * enablement (live resolution, same lifecycle as the model —
+   * ADR-0023/0024). Empty array = no skills enabled → the skill tools are
+   * not registered at all (mirrors the `shellToolEnabled` registration-time
+   * gate) and no `<available_skills>` catalog is injected.
+   */
+  readonly skills: EnabledSkill[];
+  /**
+   * Per-conversation activation dedup state (ADR-0043 §3): skill names
+   * already activated in this conversation. Starts empty; mutated by the
+   * `activate_skill` tool's execute — a name is added only AFTER its
+   * `readSkillEntry` succeeds, so a failed activation can be retried. The
+   * Set reference lives on the context (built once per conversation,
+   * alongside the Agent cache — ADR-0024).
+   */
+  readonly activatedSkills: Set<string>;
 }
 
 // ─── Per-call options ──────────────────────────────────────────────────────

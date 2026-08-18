@@ -40,6 +40,8 @@ function makeToolContext(
       set: vi.fn(async () => {}),
     },
     threadLookup: { findToolPair: vi.fn(() => undefined) },
+    skills: [],
+    activatedSkills: new Set(),
   };
 }
 
