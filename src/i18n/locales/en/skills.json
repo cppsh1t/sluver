@@ -1,0 +1,42 @@
+{
+  "page": {
+    "title": "Skills",
+    "subtitle": "Import reusable expertise packages for your agents, then enable them per agent in its configure dialog.",
+    "section": {
+      "title": "Imported skills",
+      "description": "Anthropic-format .zip packages containing a SKILL.md file. Community skill archives import as-is."
+    },
+    "upload": "Import skill",
+    "uploading": "Importing…",
+    "loading": "Loading skills…",
+    "loadFailed": "Failed to load skills",
+    "empty": {
+      "title": "No skills imported yet",
+      "description": "Skills are .zip packages containing a SKILL.md with a name and description. Community Anthropic skill archives can be imported as-is."
+    },
+    "enabledBy": "Enabled by: {{agents}}",
+    "delete": {
+      "title": "Delete skill",
+      "description": "This permanently deletes \"{{name}}\", its on-disk copy, and every agent enablement of it."
+    },
+    "toast": {
+      "uploadSuccess": "Skill \"{{name}}\" imported",
+      "uploadFailed": "Failed to import skill",
+      "tooLarge": "Skill packages must be 10 MB or smaller",
+      "deleteSuccess": "Skill deleted",
+      "deleteFailed": "Failed to delete skill"
+    }
+  },
+  "dialog": {
+    "title": "Skills",
+    "description": "Enabled skills are listed in this agent's context; the full instructions load only when the agent activates them.",
+    "note": "Changes take effect for new conversations.",
+    "empty": "No skills imported yet. Import .zip packages from the Skills page of this Space.",
+    "loading": "Loading skills…",
+    "loadFailed": "Failed to load skills",
+    "toast": {
+      "updateSuccess": "Skill settings updated",
+      "updateFailed": "Failed to update skill settings"
+    }
+  }
+}
