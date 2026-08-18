@@ -8,6 +8,9 @@ import i18n from "@/i18n";
 import { translateError } from "@/i18n/errors";
 import { toErrorPayload } from "@/api/client";
 import {
+  useEnabledSkills,
+  useSetSkillEnabled,
+  useSkills,
   useUpdateAgentConfigAutoExecute,
   useUpdateAgentConfigContextCompaction,
   useUpdateAgentConfigModel,
@@ -51,6 +54,7 @@ import type {
   AgentConfig,
   CatalogProvider,
   ProviderCredential,
+  SkillId,
 } from "@/types";
 import { ModelCascadingSelect } from "./model-cascading-select";
 
@@ -66,7 +70,8 @@ const COMPACT_TURN_AGE_PRESETS = [3, 5, 8, 10] as const;
  * One row per agent config: a label (Explorer / Writer) on the left, a brief
  * model summary in the middle, and a config (gear) icon button on the right
  * that opens a dialog hosting the full set of per-agent settings — model,
- * auto-execute, context compaction, and system prompt override.
+ * auto-execute, shell tool, context compaction, skills, and system prompt
+ * override.
  *
  * All settings still commit immediately on change (no explicit save button);
  * the mutations invalidate the agent config query, so the row + dialog reflect
@@ -85,12 +90,14 @@ export function AgentConfigModelPicker({
   credentials: ProviderCredential[];
   disabled?: boolean;
 }) {
-  const { t } = useTranslation("ai");
+  const { t } = useTranslation(["ai", "skills"]);
   const updateMut = useUpdateAgentConfigModel(spaceId);
   const autoExecMut = useUpdateAgentConfigAutoExecute(spaceId);
   const shellMut = useUpdateAgentConfigShellTool(spaceId);
   const compactionMut = useUpdateAgentConfigContextCompaction(spaceId);
   const systemPromptMut = useUpdateAgentConfigSystemPrompt(spaceId);
+  const skillsQ = useSkills(spaceId);
+  const skillMut = useSetSkillEnabled(spaceId);
   const [localPrompt, setLocalPrompt] = useState(agentConfig.systemPrompt);
 
   // ADR-0040 — the "namer" agent drives a single one-shot naming call.
@@ -104,6 +111,16 @@ export function AgentConfigModelPicker({
   // toggle is hidden for the namer config only.
   const canUseShellTool =
     agentConfig.name === "explorer" || agentConfig.name === "writer";
+
+  // ADR-0043 — skill enablement per AgentConfig. The enabled set comes
+  // from the agent's INSTALLED (on-disk) copies — the runtime truth — so
+  // the Switch reflects exactly what a new conversation would load. The
+  // namer never receives skills, so its query stays dormant.
+  const enabledSkillsQ = useEnabledSkills(spaceId, agentConfig.name, !isNamer);
+  const enabledSkillIds = useMemo(
+    () => new Set<SkillId>((enabledSkillsQ.data ?? []).map((s) => s.id)),
+    [enabledSkillsQ.data],
+  );
 
   // Confirm-on-enable gate for the shell tool (ADR-0042). Only the dialog's
   // open state is local; the Switch itself stays controlled by
@@ -256,6 +273,24 @@ export function AgentConfigModelPicker({
       toast.success(i18n.t("ai:agentConfigs.toast.updateSuccess"));
     } catch (err) {
       toast.error(i18n.t("ai:agentConfigs.toast.updateFailed"), {
+        description: translateError(toErrorPayload(err)),
+      });
+    }
+  }
+
+  // ADR-0043 §2 — enabling installs the skill's zip to disk, disabling
+  // removes the directory. Takes effect for new conversations (same
+  // lifecycle as model/shell/compaction, per the ADR-0024 agent cache).
+  async function handleSkillToggle(skillId: SkillId, enabled: boolean) {
+    try {
+      await skillMut.mutateAsync({
+        agentConfigId: agentConfig.id,
+        skillId,
+        enabled,
+      });
+      toast.success(i18n.t("skills:dialog.toast.updateSuccess"));
+    } catch (err) {
+      toast.error(i18n.t("skills:dialog.toast.updateFailed"), {
         description: translateError(toErrorPayload(err)),
       });
     }
@@ -509,6 +544,64 @@ export function AgentConfigModelPicker({
                 </SelectContent>
               </Select>
             </div>
+          )}
+
+          {/* Skills — per-AgentConfig enablement (ADR-0043). The catalog is
+              injected for explorer/writer only (never the namer), so the
+              whole section mirrors the shell-tool visibility gate. */}
+          {!isNamer && (
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-xs font-medium text-muted-foreground">
+                {t("skills:dialog.title")}
+              </span>
+              <span className="text-[0.6875rem] text-muted-foreground/70">
+                {t("skills:dialog.description")}
+              </span>
+            </div>
+            {skillsQ.isLoading ? (
+              <p className="text-xs text-muted-foreground">
+                {t("skills:dialog.loading")}
+              </p>
+            ) : skillsQ.isError ? (
+              <p className="text-xs text-destructive">
+                {t("skills:dialog.loadFailed")}
+              </p>
+            ) : (skillsQ.data ?? []).length === 0 ? (
+              <p className="text-xs italic text-muted-foreground/70">
+                {t("skills:dialog.empty")}
+              </p>
+            ) : (
+              <div className="flex flex-col divide-y divide-border rounded-md border border-border">
+                {(skillsQ.data ?? []).map((skill) => (
+                  <div
+                    key={skill.id}
+                    className="flex items-start justify-between gap-4 px-3 py-2.5"
+                  >
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                      {/* `name` is a lowercase-hyphen slug — code font. */}
+                      <span className="truncate font-mono text-xs font-medium">
+                        {skill.name}
+                      </span>
+                      <span className="line-clamp-2 text-[0.6875rem] text-muted-foreground/70">
+                        {skill.description}
+                      </span>
+                    </div>
+                    <Switch
+                      checked={enabledSkillIds.has(skill.id)}
+                      onCheckedChange={(checked) =>
+                        void handleSkillToggle(skill.id, checked)
+                      }
+                      disabled={disabled || skillMut.isPending}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="text-[0.6875rem] text-muted-foreground/70">
+              {t("skills:dialog.note")}
+            </p>
+          </div>
           )}
 
           {/* System prompt override — the namer's prompt is fixed in code
