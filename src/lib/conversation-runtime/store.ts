@@ -50,6 +50,7 @@ import type {
   Conversation,
   ContextCompaction,
   ConversationId,
+  EnabledSkill,
   Message,
   SpaceId,
   WorldId,
@@ -86,6 +87,13 @@ export type ResolvedModel =
        * Non-empty = replace the role's system prompt.
        */
       readonly systemPrompt: string;
+      /**
+       * Agent Skills enabled for this role (ADR-0043 §3). Empty array =
+       * none — no skill tools registered, no `<available_skills>` catalog.
+       * Resolved live per role from the Space's per-AgentConfig enablement;
+       * takes effect for new conversations (ADR-0024 agent cache).
+       */
+      readonly skills: EnabledSkill[];
     }
   | { readonly status: "loading" }
   | { readonly status: "unconfigured" };
@@ -562,6 +570,34 @@ function patchToolSegment(
   return next;
 }
 
+// ─── Skills catalog injection (ADR-0043 §3) ───────────────────────────────
+
+/**
+ * Build the `<available_skills>` catalog block appended to the effective
+ * system prompt at Agent construction — step 1 of progressive disclosure:
+ * a lightweight name + description listing (~100 tokens per skill) that
+ * sits permanently in context; the body and bundled files load only on
+ * demand via `activate_skill` / `read_skill_file`.
+ *
+ * Deterministic and greppable: one `<skill>` element per enabled skill, in
+ * the order the resolver produced. English by convention — system prompts
+ * are English throughout this codebase (ai-roles/index.ts).
+ */
+function buildAvailableSkillsBlock(skills: readonly EnabledSkill[]): string {
+  const entries = skills
+    .map(
+      (s) =>
+        `<skill>\n<name>${s.name}</name>\n<description>${s.description}</description>\n</skill>`,
+    )
+    .join("\n");
+  return [
+    "<available_skills>",
+    "The following skills are installed for this agent. When the user's task matches a skill's description, call activate_skill with its name BEFORE proceeding. Activated skill instructions persist for the conversation.",
+    entries,
+    "</available_skills>",
+  ].join("\n");
+}
+
 /**
  * Construct a stateful {@link Agent} for a conversation. Resolves the role
  * behavior, builds a `TauriSessionStore` + `AgentLoop`, and loads history via
@@ -579,6 +615,7 @@ async function constructAgent(
   shellToolEnabled: boolean,
   contextCompaction: ContextCompaction,
   systemPromptOverride: string,
+  skills: EnabledSkill[],
 ): Promise<Agent> {
   const roleBehavior = getRoleBehavior(conversation.agentConfigName);
   if (!roleBehavior) {
@@ -640,14 +677,27 @@ async function constructAgent(
     threadLookup: {
       findToolPair: (toolCallId) => agentRef.current?.findToolPair(toolCallId),
     },
+    // Agent Skills (ADR-0043 §3): the enabled catalog rides the context so
+    // `skillTools` can enum-constrain `activate_skill` to real names, and
+    // the mutable Set carries the per-conversation activation dedup state
+    // (one fresh Set per Agent — ADR-0024 conversation cache).
+    skills,
+    activatedSkills: new Set(),
   };
 
   const tools = roleBehavior.buildTools(ctx);
   // Apply the DB-stored system prompt override. Empty string = use the code
   // default from ROLE_BEHAVIOR. This lets users customize per-role prompts
   // from the Space config page without code changes.
+  const baseSystemPrompt = systemPromptOverride.trim() || roleBehavior.systemPrompt;
+  // ADR-0043 §3 catalog — appended AFTER the role/override prompt. It is
+  // additive machinery, not user content: a systemPrompt override still
+  // receives the catalog (the skill tools reference it by name). Skipped
+  // entirely when the role has no enabled skills.
   const effectiveSystemPrompt =
-    systemPromptOverride.trim() || roleBehavior.systemPrompt;
+    skills.length > 0
+      ? `${baseSystemPrompt}\n\n${buildAvailableSkillsBlock(skills)}`
+      : baseSystemPrompt;
   const loop = new AgentLoop({
     model,
     systemPrompt: effectiveSystemPrompt,
@@ -822,7 +872,7 @@ export function createConversationRuntimeStore(
         return null;
       }
 
-      const { model, autoExecuteDangerousTools, shellToolEnabled, contextCompaction, systemPrompt } = resolved;
+      const { model, autoExecuteDangerousTools, shellToolEnabled, contextCompaction, systemPrompt, skills } = resolved;
       const gate = createGate(worldId, conversationId);
       patchData(worldId, conversationId, (d) => ({ ...d, agentLoading: true }));
       try {
@@ -837,6 +887,7 @@ export function createConversationRuntimeStore(
           shellToolEnabled,
           contextCompaction,
           systemPrompt,
+          skills,
         );
         // ADR-0030 read path — pull the persisted Message rows (with usage
         // columns) STRAIGHT from the IPC, bypassing TauriSessionStore

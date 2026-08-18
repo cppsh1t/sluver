@@ -38,6 +38,7 @@ import { createLanguageModel } from "@/lib/ai";
 import { generateConversationTitle } from "@/lib/ai/auto-title";
 import { useResolvedModelConfig } from "@/hooks/use-ai-config";
 import { conversationKeys } from "@/hooks/use-conversations";
+import { useEnabledSkills } from "@/hooks/use-enabled-skills";
 import { logger } from "@/lib/logger";
 import {
   EMPTY_VIEW,
@@ -122,12 +123,26 @@ export function ConversationRuntimeProvider({
   // The dedicated naming agent (ADR-0040) — a one-shot `generateText` call,
   // never routed through the conversation AgentLoop or the chat role picker.
   // `config: null` (model unbound / credential missing / still loading) is
-  // the "not configured" gate: auto-titling silently does nothing.
+  // the "not configured" gate: auto-titling silently does nothing. The
+  // namer never carries skills (ADR-0043 §3) — no query for it.
   const namerConfig = useResolvedModelConfig(spaceId, "namer");
+  // Per-role enabled Agent Skills (ADR-0043 §3) — feed the `<available_skills>`
+  // catalog + skill tool registration at Agent-construction time, with the
+  // same live-resolution lifecycle as the model config above. Only `data` /
+  // `isLoading` are read (primitives, extracted during render so react-query
+  // prop-tracking sees them) — the resolver below consumes those.
+  const explorerSkills = useEnabledSkills(spaceId, "explorer");
+  const writerSkills = useEnabledSkills(spaceId, "writer");
+  const explorerSkillsData = explorerSkills.data;
+  const explorerSkillsLoading = explorerSkills.isLoading;
+  const writerSkillsData = writerSkills.data;
+  const writerSkillsLoading = writerSkills.isLoading;
 
   const modelResolver = useMemo<ModelResolver>(() => {
     return (role: string): ResolvedModel => {
       const cfg = role === "writer" ? writerConfig : explorerConfig;
+      const skillsData = role === "writer" ? writerSkillsData : explorerSkillsData;
+      const skillsLoading = role === "writer" ? writerSkillsLoading : explorerSkillsLoading;
       // While the Space-scoped AI config is still loading, the role's
       // configured-ness is UNKNOWN. Returning "loading" (not "unconfigured")
       // prevents `resolveAgent` from flashing a spurious MODEL_NOT_CONFIGURED
@@ -137,7 +152,12 @@ export function ConversationRuntimeProvider({
       // retrying resolution. They are themselves referentially stable
       // (`useResolvedModelConfig` memoizes), so this recomputes only on real
       // value changes, not every render.
-      if (cfg.isLoading) return { status: "loading" };
+      //
+      // The enabled-skills query rides the SAME gate: constructing the Agent
+      // before it resolves would cache a skillless Agent for the window's
+      // lifetime (ADR-0024), silently dropping the role's skills. On query
+      // error `isLoading` settles false and `data` is undefined → `[]`.
+      if (cfg.isLoading || skillsLoading) return { status: "loading" };
       if (!cfg.config) return { status: "unconfigured" };
       try {
         return {
@@ -147,6 +167,7 @@ export function ConversationRuntimeProvider({
           shellToolEnabled: cfg.shellToolEnabled,
           contextCompaction: cfg.contextCompaction,
           systemPrompt: cfg.systemPrompt,
+          skills: skillsData ?? [],
         };
       } catch (e) {
         // Provider package not installed / factory mismatch — surface as
@@ -158,7 +179,14 @@ export function ConversationRuntimeProvider({
         return { status: "unconfigured" };
       }
     };
-  }, [explorerConfig, writerConfig]);
+  }, [
+    explorerConfig,
+    writerConfig,
+    explorerSkillsData,
+    explorerSkillsLoading,
+    writerSkillsData,
+    writerSkillsLoading,
+  ]);
 
   const onPersistError = useCallback<PersistErrorHandler>((e) => {
     logger.error("conversation.persist_failed", { error: String(e) });
