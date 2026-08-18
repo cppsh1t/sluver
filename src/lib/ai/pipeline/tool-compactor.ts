@@ -55,6 +55,14 @@
  *    - no matching tool-result (should never happen — `filterIncompleteToolCalls`
  *      guarantees pairing upstream) → `failed` fallback.
  *
+ * ## Skill-tool exemption (ADR-0043 §4 — amendment to ADR-0031)
+ *
+ * `activate_skill` call pairs are NEVER stubbed, regardless of age: the
+ * skill's loaded instructions must persist in the model's view for the
+ * whole conversation — stubbing them out mid-session is silent behavior
+ * drift. `read_skill_file` is NOT exempt: its results are re-readable via
+ * the tool, so aging them out is safe. See {@link isCompactionExempt}.
+ *
  * ## No-op cases
  *
  * When `policy.enabled === false`, the input array is returned VERBATIM (same
@@ -76,6 +84,26 @@ import type {
 import type { CompactionPolicy } from "./types";
 
 // ─── Status derivation ───────────────────────────────────────────────────
+
+/**
+ * Tool names whose call/result pairs are exempt from stub compaction
+ * (ADR-0043 §4 — amendment to ADR-0031). `activate_skill` results carry
+ * the skill's instructions for the rest of the conversation; stubbing them
+ * once aged would silently drop those instructions from the model's view.
+ * `read_skill_file` is deliberately NOT listed — its results are
+ * re-readable via the tool, so aging them out is safe.
+ */
+const SKILL_TOOLS_NEVER_COMPACT: ReadonlySet<string> = new Set([
+    "activate_skill",
+]);
+
+/**
+ * Pure predicate: whether a tool's call/result pairs must survive
+ * compaction uncompacted, regardless of turn age (ADR-0043 §4).
+ */
+function isCompactionExempt(toolName: string): boolean {
+    return SKILL_TOOLS_NEVER_COMPACT.has(toolName);
+}
 
 /**
  * Derive the stub status from a {@link ToolResultPart}'s output union.
@@ -202,7 +230,10 @@ export function compactToolCalls(
     // assistant message whose turn-age is >= policy.turnAge. (We do NOT need
     // to look at the matching tool-result's age — by the turn invariant, a
     // user-message cut never splits a call/result pair, so the result lives
-    // in the same turn as the call.)
+    // in the same turn as the call.) Exempt tool names (ADR-0043 §4) never
+    // enter the set, so both their call parts and result parts survive
+    // verbatim — the pass-3 rewrite and result-drop are both keyed on this
+    // set alone.
     const compactableCallIds = new Set<string>();
     for (let i = 0; i < n; i++) {
         if (ages[i] < policy.turnAge) continue;
@@ -211,7 +242,10 @@ export function compactToolCalls(
         const { content } = msg;
         if (typeof content === "string" || !Array.isArray(content)) continue;
         for (const part of content) {
-            if (part.type === "tool-call") {
+            if (
+                part.type === "tool-call"
+                && !isCompactionExempt(part.toolName)
+            ) {
                 compactableCallIds.add(part.toolCallId);
             }
         }

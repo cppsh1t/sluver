@@ -332,6 +332,156 @@ describe("compactToolCalls Rule 2 (mixed assistant content)", () => {
   });
 });
 
+// ─── Skill-tool exemption (ADR-0043 §4 — amendment to ADR-0031) ───────────
+
+describe("compactToolCalls skill-tool exemption (ADR-0043)", () => {
+  /** A thread with one aged `activate_skill` pair AND one aged normal pair. */
+  function mixedAgedThread(): ModelMessage[] {
+    return [
+      { role: "user", content: "use the skill" },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "call-skill",
+            toolName: "activate_skill",
+            input: { name: "prose-style" },
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "call-skill",
+            toolName: "activate_skill",
+            output: okOutput("# skill instructions"),
+          },
+        ],
+      },
+      { role: "user", content: "look something up" },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "call-lookup",
+            toolName: "lookup",
+            input: { q: "x" },
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "call-lookup",
+            toolName: "lookup",
+            output: okOutput("found"),
+          },
+        ],
+      },
+      { role: "user", content: "now" },
+    ];
+  }
+
+  it("keeps an aged activate_skill pair uncompacted while an aged normal pair still stubs", () => {
+    const messages = mixedAgedThread();
+
+    const out = compactToolCalls(messages, policy(true, 1));
+
+    // Both pairs sit in aged turns (ages 2 and 1, turnAge 1) — but only the
+    // normal lookup pair stubs; the activate_skill pair survives verbatim.
+    expect(out.map((m) => m.role)).toEqual([
+      "user", // "use the skill"
+      "assistant", // activate_skill call — VERBATIM (exempt)
+      "tool", // activate_skill result — VERBATIM (exempt)
+      "user", // "look something up"
+      "user", // stub for call-lookup
+      "user", // "now"
+    ]);
+    expect(out[1]).toBe(messages[1]);
+    expect(out[2]).toBe(messages[2]);
+    expect(textContent(out[4])).toBe(
+      "[tool_call call-lookup] lookup \u2192 succeeded",
+    );
+  });
+
+  it("keeps an aged activate_skill pair uncompacted even at turnAge 0", () => {
+    const messages: ModelMessage[] = [
+      { role: "user", content: "go" },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "call-skill-0",
+            toolName: "activate_skill",
+            input: { name: "prose-style" },
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "call-skill-0",
+            toolName: "activate_skill",
+            output: okOutput("# skill instructions"),
+          },
+        ],
+      },
+      { role: "user", content: "current" },
+    ];
+
+    const out = compactToolCalls(messages, policy(true, 0));
+
+    expect(out).toHaveLength(4);
+    expect(out[1]).toBe(messages[1]);
+    expect(out[2]).toBe(messages[2]);
+  });
+
+  it("stubs read_skill_file pairs normally (only activate_skill is exempt)", () => {
+    const messages: ModelMessage[] = [
+      { role: "user", content: "go" },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "call-read",
+            toolName: "read_skill_file",
+            input: { name: "prose-style", path: "refs/style.md" },
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "call-read",
+            toolName: "read_skill_file",
+            output: okOutput("reference text"),
+          },
+        ],
+      },
+      { role: "user", content: "current" },
+    ];
+
+    const out = compactToolCalls(messages, policy(true, 1));
+
+    expect(out.map((m) => m.role)).toEqual(["user", "user", "user"]);
+    expect(textContent(out[1])).toBe(
+      "[tool_call call-read] read_skill_file \u2192 succeeded",
+    );
+  });
+});
+
 // ─── Turn-age semantics ───────────────────────────────────────────────────
 
 describe("compactToolCalls turn-age semantics", () => {
