@@ -111,6 +111,17 @@
       "kindEvent": "Event",
       "kindScene": "Scene"
     },
+    "activateSkill": {
+      "title": "Activate skill",
+      "loading": "Activating skill…",
+      "alreadyActive": "Already active",
+      "alreadyActiveDetail": "This skill is already active in this conversation — its instructions are still in context, so nothing was reloaded.",
+      "filesCount": "{{count}} files",
+      "instructionsLines": "{{count}} lines of instructions",
+      "noFiles": "No bundled files",
+      "noResult": "No activation result",
+      "location": "Location"
+    },
     "detail": {
       "deleted": "Deleted",
       "pendingDeletion": "Pending deletion",

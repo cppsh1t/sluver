@@ -33,8 +33,8 @@
   "NOTE_PARENT_NOT_FOLDER": "父级不是文件夹",
   "NOTE_MOVE_CYCLE": "不能移动到自身或其子孙节点",
   "NOTE_DUPLICATE_TITLE": "同级已存在同名笔记或文件夹：「{{title}}」",
-  "SKILL_NOT_FOUND": "未找到技能 ({{id}})",
-  "SKILL_PACKAGE_INVALID": "技能包无效或已损坏：{{reason}}",
-  "SKILL_NOT_INSTALLED": "技能「{{name}}」尚未安装",
+  "SKILL_NOT_FOUND": "未找到 Skill ({{id}})",
+  "SKILL_PACKAGE_INVALID": "Skill 包无效或已损坏：{{reason}}",
+  "SKILL_NOT_INSTALLED": "Skill「{{name}}」尚未安装",
   "INTERNAL_ERROR": "发生内部错误"
 }

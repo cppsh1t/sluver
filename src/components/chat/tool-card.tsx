@@ -43,6 +43,7 @@ import { PlanToolCard } from "./tool-cards/plan-tool-card";
 import { ChapterOverviewToolCard } from "./tool-cards/chapter-overview-tool-card";
 import { TimelineToolCard } from "./tool-cards/timeline-tool-card";
 import { GrepToolCard } from "./tool-cards/grep-tool-card";
+import { ActivateSkillToolCard } from "./tool-cards/activate-skill-tool-card";
 import { summarizeToolCall } from "./tool-summary";
 import { ToolBody, ToolSummaryLine } from "./tool-cards/tool-body";
 
@@ -83,6 +84,14 @@ export function ToolCard({ tool, worldId, conversationId }: ToolCardProps) {
     // snippets instead of the generic JSON fallback (bare name, no
     // action_entity prefix to parse).
     return <GrepToolCard tool={tool} />;
+  }
+  if (tool.toolName === "activate_skill") {
+    // Agent Skills (ADR-0043): render the activation summary (skill name,
+    // location, instruction line count, bundled files) instead of the generic
+    // JSON fallback — the SKILL.md body is model instructions and can be
+    // several KB, so it is counted, never dumped. read_skill_file keeps the
+    // generic fallback (out of scope by design).
+    return <ActivateSkillToolCard tool={tool} />;
   }
   return <GenericToolCard tool={tool} worldId={worldId} conversationId={conversationId} />;
 }

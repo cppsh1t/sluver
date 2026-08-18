@@ -1,42 +1,42 @@
 {
   "page": {
-    "title": "技能",
-    "subtitle": "为智能体导入可复用的专长包，然后在各智能体的配置弹窗中按需启用。",
+    "title": "Skill",
+    "subtitle": "为智能体导入可复用的 Skill，然后在各智能体的配置弹窗中按需启用。",
     "section": {
-      "title": "已导入的技能",
-      "description": "Anthropic 格式的 .zip 压缩包（内含 SKILL.md 文件）。社区技能包可直接导入。"
+      "title": "已导入的 Skill",
+      "description": ".zip 压缩包（内含 SKILL.md 文件）。社区 Skill 包可直接导入。"
     },
-    "upload": "导入技能",
+    "upload": "导入 Skill",
     "uploading": "导入中…",
-    "loading": "技能加载中…",
-    "loadFailed": "技能加载失败",
+    "loading": "Skill 加载中…",
+    "loadFailed": "Skill 加载失败",
     "empty": {
-      "title": "尚未导入技能",
-      "description": "技能是包含 SKILL.md（含名称与描述）的 .zip 压缩包，社区 Anthropic 技能包可直接导入。"
+      "title": "尚未导入 Skill",
+      "description": "Skill 是包含 SKILL.md（含名称与描述）的 .zip 压缩包，社区 Skill 包可直接导入。"
     },
     "enabledBy": "已启用：{{agents}}",
     "delete": {
-      "title": "删除技能",
+      "title": "删除 Skill",
       "description": "将永久删除「{{name}}」及其磁盘安装副本，并移除所有智能体对它的启用。"
     },
     "toast": {
-      "uploadSuccess": "技能「{{name}}」导入成功",
-      "uploadFailed": "技能导入失败",
-      "tooLarge": "技能包大小不能超过 10 MB",
-      "deleteSuccess": "技能已删除",
-      "deleteFailed": "技能删除失败"
+      "uploadSuccess": "Skill「{{name}}」导入成功",
+      "uploadFailed": "Skill 导入失败",
+      "tooLarge": "Skill 包大小不能超过 10 MB",
+      "deleteSuccess": "Skill 已删除",
+      "deleteFailed": "Skill 删除失败"
     }
   },
   "dialog": {
-    "title": "技能",
-    "description": "启用的技能会列在该智能体的上下文中；完整指令仅在智能体激活时加载。",
+    "title": "Skill",
+    "description": "启用的 Skill 会列在该智能体的上下文中；完整指令仅在智能体激活时加载。",
     "note": "更改对新会话生效。",
-    "empty": "尚未导入技能。可在本空间的技能页导入 .zip 技能包。",
-    "loading": "技能加载中…",
-    "loadFailed": "技能加载失败",
+    "empty": "尚未导入 Skill。可在本空间的 Skill 页导入 .zip Skill 包。",
+    "loading": "Skill 加载中…",
+    "loadFailed": "Skill 加载失败",
     "toast": {
-      "updateSuccess": "技能设置已更新",
-      "updateFailed": "技能设置更新失败"
+      "updateSuccess": "Skill 设置已更新",
+      "updateFailed": "Skill 设置更新失败"
     }
   }
 }

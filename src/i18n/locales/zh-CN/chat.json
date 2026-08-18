@@ -111,6 +111,17 @@
       "kindEvent": "事件",
       "kindScene": "场景"
     },
+    "activateSkill": {
+      "title": "激活 Skill",
+      "loading": "激活 Skill 中…",
+      "alreadyActive": "已激活",
+      "alreadyActiveDetail": "该 Skill 已在本对话中激活，指令仍在上下文中，无需重复加载。",
+      "filesCount": "{{count}} 个文件",
+      "instructionsLines": "{{count}} 行指令",
+      "noFiles": "无捆绑文件",
+      "noResult": "暂无激活结果",
+      "location": "位置"
+    },
     "detail": {
       "deleted": "已删除",
       "pendingDeletion": "待删除",

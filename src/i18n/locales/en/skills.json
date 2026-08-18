@@ -1,10 +1,10 @@
 {
   "page": {
     "title": "Skills",
-    "subtitle": "Import reusable expertise packages for your agents, then enable them per agent in its configure dialog.",
+    "subtitle": "Import reusable skills for your agents, then enable them per agent in its configure dialog.",
     "section": {
       "title": "Imported skills",
-      "description": "Anthropic-format .zip packages containing a SKILL.md file. Community skill archives import as-is."
+      "description": ".zip packages containing a SKILL.md file. Community skill packages import as-is."
     },
     "upload": "Import skill",
     "uploading": "Importing…",
@@ -12,7 +12,7 @@
     "loadFailed": "Failed to load skills",
     "empty": {
       "title": "No skills imported yet",
-      "description": "Skills are .zip packages containing a SKILL.md with a name and description. Community Anthropic skill archives can be imported as-is."
+      "description": "Skills are .zip packages containing a SKILL.md with a name and description. Community skill packages can be imported as-is."
     },
     "enabledBy": "Enabled by: {{agents}}",
     "delete": {
