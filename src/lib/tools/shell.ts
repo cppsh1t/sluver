@@ -12,10 +12,10 @@
  *
  * Consent level: `auto` (ADR-0042, supersedes ADR-0041 §2) — the tool is
  * gated by REGISTRATION, not the per-call approval gate: it is only
- * registered on the explorer role when the AgentConfig's
- * `shellToolEnabled` flag is on, and once registered it auto-executes
- * without per-call confirmation.
- * Registered on the explorer role only for v1 (least privilege).
+ * registered when the AgentConfig's `shellToolEnabled` flag is on, and
+ * once registered it auto-executes without per-call confirmation.
+ * Registered on both the explorer and writer roles (ADR-0042 §3), each
+ * gated by its own AgentConfig's flag; the namer never carries it.
  *
  * Abort (ADR-0041 §3): listener + natural-resolve pattern — on abort the
  * kill fires fire-and-forget and the `shell_exec` invoke resolves
