@@ -181,6 +181,43 @@ const SPACE_MIGRATION_008: &str = r#"
     ALTER TABLE agent_configs ADD COLUMN shell_tool_enabled INTEGER NOT NULL DEFAULT 0;
 "#;
 
+/// Migration 9 for `space.db`: Agent Skills tables (ADR-0043: storage-center
+/// install model). `skills` holds the uploaded zip blobs (the immutable
+/// original artifacts) with `name`/`description` parsed from SKILL.md
+/// frontmatter at upload; `agent_config_skills` is the per-AgentConfig
+/// enablement junction — a row EXISTS = enabled (no `enabled` column).
+/// Disk materialization lives at `spaces/{id}/skills/{name}/` and is driven
+/// entirely by the enable/disable commands (the DB is a storage source, not
+/// a sync service). Added as a separate migration so existing `space.db`
+/// files get the tables via `rusqlite_migration`'s incremental tracking —
+/// modifying the original `SPACE_SQL` would NOT re-run for already-migrated
+/// databases.
+const SPACE_MIGRATION_009: &str = r#"
+    -- Skill packages (ADR-0043). `name` is UNIQUE per Space (collisions
+    -- rejected at upload). `package` is the raw zip blob; it is never
+    -- selected through list/get commands (SkillSummary excludes it — a
+    -- serde Vec<u8> → JSON-number-array encoding trap, same reasoning as
+    -- the per-entity image columns).
+    CREATE TABLE IF NOT EXISTS skills (
+        id          TEXT PRIMARY KEY,
+        name        TEXT NOT NULL UNIQUE,
+        description TEXT NOT NULL,
+        package     BLOB NOT NULL,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+    );
+
+    -- AgentConfig ↔ Skill enablement junction (composite PK = set
+    -- semantics; row EXISTS = enabled). Both FKs cascade so deleting an
+    -- agent config or a skill automatically drops its junction rows.
+    CREATE TABLE IF NOT EXISTS agent_config_skills (
+        agent_config_id TEXT NOT NULL REFERENCES agent_configs(id) ON DELETE CASCADE,
+        skill_id        TEXT NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
+        created_at      TEXT NOT NULL,
+        PRIMARY KEY (agent_config_id, skill_id)
+    );
+"#;
+
 // ─── world DB schema ────────────────────────────────────────────────────────
 // Tier 3 of the three-database design (ADR-0007). One file per World at
 // `spaces/{spaceId}/worlds/{worldId}.db`. Schema is byte-for-byte identical
@@ -344,6 +381,7 @@ const SPACE_SLICE: &[M] = &[
     M::up(SPACE_MIGRATION_006),
     M::up(SPACE_MIGRATION_007),
     M::up(SPACE_MIGRATION_008),
+    M::up(SPACE_MIGRATION_009),
 ];
 pub const SPACE_MIGRATIONS: Migrations = Migrations::from_slice(SPACE_SLICE);
 
@@ -681,31 +719,34 @@ mod schema_tests {
         );
     }
 
-    /// space.db fresh install: eight migrations → user_version 8, exactly the
-    /// {worlds, space_config, provider_credentials, agent_configs} table set,
-    /// and a single named index idx_worlds_name (the UNIQUE constraints on
-    /// agent_configs.name / provider_credentials.provider_id are column-level
-    /// and produce only NULL-sql autoindexes).
+    /// space.db fresh install: nine migrations → user_version 9, exactly the
+    /// {worlds, space_config, provider_credentials, agent_configs, skills,
+    /// agent_config_skills} table set, and a single named index idx_worlds_name
+    /// (the UNIQUE constraints on agent_configs.name / provider_credentials.
+    /// provider_id / skills.name and the agent_config_skills composite PK are
+    /// column/table-level and produce only NULL-sql autoindexes).
     #[test]
     fn space_fresh_install_schema() {
         let mut conn = Connection::open_in_memory().expect("open in-memory space db");
         SPACE_MIGRATIONS.to_latest(&mut conn).expect("space to_latest");
 
-        assert_eq!(user_version(&conn), 8, "space user_version after to_latest");
+        assert_eq!(user_version(&conn), 9, "space user_version after to_latest");
         assert_eq!(
             table_names(&conn),
             [
+                "agent_config_skills",
                 "agent_configs",
                 "provider_credentials",
+                "skills",
                 "space_config",
                 "worlds",
             ],
-            "space table set at v8"
+            "space table set at v9"
         );
         assert_eq!(
             named_indexes(&conn),
             ["idx_worlds_name"],
-            "space named index set at v8"
+            "space named index set at v9"
         );
     }
 
@@ -924,13 +965,13 @@ mod schema_tests {
         }
     }
 
-    /// space.db upgrade path: step 0→8 on ONE connection, asserting
+    /// space.db upgrade path: step 0→9 on ONE connection, asserting
     /// user_version and the per-step schema facts (tables and columns added,
     /// namer row seeded at v7).
     #[test]
     fn space_upgrade_path_step_by_step() {
         let mut conn = Connection::open_in_memory().expect("open in-memory space db");
-        for v in 0..=8 {
+        for v in 0..=9 {
             SPACE_MIGRATIONS
                 .to_version(&mut conn, v)
                 .unwrap_or_else(|e| panic!("space to_version({v}): {e}"));
@@ -1010,7 +1051,20 @@ mod schema_tests {
                         "v8 adds agent_configs.shell_tool_enabled"
                     );
                 }
-                _ => unreachable!("loop is bounded to 0..=8"),
+                9 => {
+                    let tables = table_names(&conn);
+                    assert!(tables.contains(&"skills".to_string()), "v9 adds skills");
+                    assert!(
+                        tables.contains(&"agent_config_skills".to_string()),
+                        "v9 adds agent_config_skills"
+                    );
+                    assert_eq!(
+                        tables.len(),
+                        6,
+                        "final space schema has 6 tables"
+                    );
+                }
+                _ => unreachable!("loop is bounded to 0..=9"),
             }
         }
     }
@@ -1135,7 +1189,7 @@ mod schema_tests {
     fn to_latest_twice_is_idempotent_for_all_kinds() {
         let cases: [(&str, &Migrations, i64); 3] = [
             ("meta", &META_MIGRATIONS, 1),
-            ("space", &SPACE_MIGRATIONS, 8),
+            ("space", &SPACE_MIGRATIONS, 9),
             ("world", &WORLD_MIGRATIONS, 12),
         ];
         for (name, migrations, latest) in cases {
