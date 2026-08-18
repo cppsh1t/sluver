@@ -124,8 +124,18 @@ fn parse_skill_zip(bytes: &[u8]) -> Result<ParsedSkillPackage, DbError> {
         )));
     }
 
-    // Pass 1: entry names (zip-slip guard + UTF-8) + header sizes.
+    // Pass 1: entry names (zip-slip guard + UTF-8) + header sizes +
+    // directory markers. The marker MUST come from `is_dir()` (raw name
+    // inspection) — `enclosed_name()` NORMALIZES the path and drops the
+    // trailing '/', so by the time we hold the string a directory entry
+    // is indistinguishable from a file. Real-world zips (Explorer,
+    // macOS Archive Utility, `zip` CLI) always carry explicit dir
+    // entries; extracting one as a file writes a 0-byte "file" over the
+    // directory it describes — and a top-level marker strips down to the
+    // EMPTY relative path, i.e. a write to the extraction root itself
+    // (os error 3 on Windows).
     let mut names: Vec<String> = Vec::with_capacity(archive.len());
+    let mut is_dir: Vec<bool> = Vec::with_capacity(archive.len());
     for i in 0..archive.len() {
         let entry = archive
             .by_index(i)
@@ -140,6 +150,7 @@ fn parse_skill_zip(bytes: &[u8]) -> Result<ParsedSkillPackage, DbError> {
         };
         // Normalize to forward slashes (Windows Path rendering uses '\').
         names.push(raw.replace('\\', "/"));
+        is_dir.push(entry.is_dir());
         if entry.size() > MAX_ENTRY_BYTES as u64 {
             return Err(invalid("entry exceeds the 1 MiB uncompressed size limit"));
         }
@@ -196,7 +207,7 @@ fn parse_skill_zip(bytes: &[u8]) -> Result<ParsedSkillPackage, DbError> {
     // prefix from every path.
     let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
     for (i, name) in names.iter().enumerate() {
-        if name.ends_with('/') || comps[i].is_empty() {
+        if is_dir[i] || name.ends_with('/') || comps[i].is_empty() {
             continue; // explicit directory marker / degenerate name
         }
         let mut entry = archive
@@ -211,7 +222,15 @@ fn parse_skill_zip(bytes: &[u8]) -> Result<ParsedSkillPackage, DbError> {
         if buf.len() > MAX_ENTRY_BYTES {
             return Err(invalid("entry exceeds the 1 MiB uncompressed size limit"));
         }
-        entries.push((comps[i][prefix_depth - 1..].join("/"), buf));
+        let rel = comps[i][prefix_depth - 1..].join("/");
+        if rel.is_empty() {
+            // Contentless after prefix strip (e.g. a file named exactly
+            // like the wrapper directory — dir entries are already
+            // covered by the is_dir skip). Nothing to install; writing
+            // it would target the extraction root itself.
+            continue;
+        }
+        entries.push((rel, buf));
     }
 
     // Frontmatter: name + description.
@@ -875,9 +894,20 @@ mod tests {
     /// Build a deflate zip in memory and return it base64-encoded (the
     /// upload wire format).
     fn zip_base64(files: &[(&str, &str)]) -> String {
+        zip_base64_realistic(&[], files)
+    }
+
+    /// Like [`zip_base64`] but WITH explicit directory entries — the shape
+    /// every real-world archiver produces (Explorer, macOS Archive
+    /// Utility, `zip` CLI). `dirs` are raw entry names ending in '/'.
+    fn zip_base64_realistic(dirs: &[&str], files: &[(&str, &str)]) -> String {
         let mut zip = ZipWriter::new(std::io::Cursor::new(Vec::new()));
         let options =
             SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        for dir in dirs {
+            zip.add_directory(*dir, options)
+                .unwrap_or_else(|e| panic!("add_directory {dir}: {e}"));
+        }
         for (name, content) in files {
             zip.start_file(*name, options)
                 .unwrap_or_else(|e| panic!("start_file {name}: {e}"));
@@ -1421,5 +1451,89 @@ mod tests {
         ] {
             assert!(!is_valid_skill_name(bad), "{bad:?} must be invalid");
         }
+    }
+
+    // ── install: real-world archive shapes ─────────────────────────────────
+
+    // Regression (user-reported os error 3): zips with EXPLICIT directory
+    // entries. `enclosed_name()` normalizes away the trailing '/', so a
+    // name-based dir-marker check never fires — dir entries were extracted
+    // as 0-byte "files", and the top-level wrapper marker stripped down to
+    // the EMPTY relative path, i.e. a write onto the extraction root
+    // itself (`fs::write` on a trailing-separator path → os error 3 on
+    // Windows). The fix records `is_dir()` from the raw entry in pass 1.
+    #[test]
+    fn enable_installs_realistic_zip_with_dir_entries() {
+        let fx = make_space_with_world();
+        let ac = seed_agent_config(&fx, 1, "explorer");
+        // Exactly the shape of the user's captured archive: wrapper dir
+        // marker, nested dir marker, files beneath them.
+        let zip = zip_base64_realistic(
+            &["realistic-skill/", "realistic-skill/references/"],
+            &[
+                (
+                    "realistic-skill/SKILL.md",
+                    &skill_md("realistic-skill", "A realistic skill"),
+                ),
+                ("realistic-skill/references/techniques.md", "T"),
+                ("realistic-skill/references/vocabulary.md", "V"),
+            ],
+        );
+        let summary = do_upload_skill(&fx.mgr, &fx.space_id, &zip).expect("upload");
+        do_set_skill_enabled(&fx.mgr, &fx.space_id, &ac, &summary.id, true)
+            .expect("enable realistic zip");
+
+        let root = skills_root(&fx).join("realistic-skill");
+        assert!(root.join("SKILL.md").is_file(), "SKILL.md installed");
+        assert!(root.join("references/techniques.md").is_file());
+        assert!(root.join("references/vocabulary.md").is_file());
+        let mut installed: Vec<String> = Vec::new();
+        collect_files(&root, Path::new(""), &mut installed).expect("collect");
+        installed.sort();
+        assert_eq!(
+            installed,
+            vec![
+                "SKILL.md".to_string(),
+                "references/techniques.md".to_string(),
+                "references/vocabulary.md".to_string(),
+            ],
+            "exactly the three real files, no marker residue"
+        );
+        // And the runtime read surface works over the installed copy.
+        let entry = do_read_skill_entry(&fx.mgr, &fx.space_id, "realistic-skill")
+            .expect("read entry");
+        assert_eq!(
+            entry.files,
+            vec!["references/techniques.md", "references/vocabulary.md"]
+        );
+    }
+
+    // Root-layout variant of the same archive shape (no wrapper dir):
+    // dir markers at the archive root must not become 0-byte files at
+    // the install root either.
+    #[test]
+    fn enable_installs_realistic_root_layout_zip() {
+        let fx = make_space_with_world();
+        let ac = seed_agent_config(&fx, 1, "explorer");
+        let zip = zip_base64_realistic(
+            &["refs/"],
+            &[
+                ("SKILL.md", &skill_md("root-skill", "Root layout")),
+                ("refs/style.md", "S"),
+            ],
+        );
+        let summary = do_upload_skill(&fx.mgr, &fx.space_id, &zip).expect("upload");
+        do_set_skill_enabled(&fx.mgr, &fx.space_id, &ac, &summary.id, true)
+            .expect("enable realistic root zip");
+        let root = skills_root(&fx).join("root-skill");
+        assert!(root.join("SKILL.md").is_file());
+        assert!(root.join("refs/style.md").is_file());
+        let mut installed: Vec<String> = Vec::new();
+        collect_files(&root, Path::new(""), &mut installed).expect("collect");
+        installed.sort();
+        assert_eq!(
+            installed,
+            vec!["SKILL.md".to_string(), "refs/style.md".to_string()]
+        );
     }
 }
