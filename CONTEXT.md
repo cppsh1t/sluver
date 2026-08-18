@@ -76,6 +76,12 @@ _Avoid_: Document, Page, File, Entry
 A pure container node in the Notes tree — structure only, no content of its own. May contain Folders and Notes, nesting arbitrarily deep. Identity is by `id` (UUID v7); the display label is unique among siblings.
 _Avoid_: Directory, Category, Group, Notebook
 
+### Skills
+
+**Skill**:
+A portable expertise package that teaches an Agent a specialized kind of work — a writing technique, a procedure, a style convention. Authored outside the app as a standard skill folder (a manifest of name + description plus instructions, optionally bundled with reference files and scripts) and imported into a Space's skill library; belongs wholly to its Space. The skill library is a storage center: skills are imported and removed, never edited in-app. Enabled per AgentConfig; enabling installs the skill's files into the Space, and the installed copy is what runs. An Agent sees only a Skill's manifest until it judges the current task relevant and loads the full instructions (progressive disclosure); reference files are read on demand; bundled scripts run only through the shell tool when the user has enabled it. A Skill never bypasses tool approval — it influences the Agent through instructions only. Distinct from Notes (the author's own working material, which the Agent must not touch unprompted) and from the AgentConfig system prompt (always-on instructions, not a loadable package).
+_Avoid_: Plugin, Extension, Add-on, Prompt Template, Macro
+
 ### Views
 
 **Timeline**:
