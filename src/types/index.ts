@@ -150,3 +150,15 @@ export {
   messageSchema,
   type Message,
 } from './conversation';
+
+// ─── Agent Skills (storage-center install model — ADR-0043) ───────────────
+export {
+  skillIdSchema,
+  type SkillId,
+  skillSummarySchema,
+  type SkillSummary,
+  enabledSkillSchema,
+  type EnabledSkill,
+  skillEntrySchema,
+  type SkillEntry,
+} from './skill';
