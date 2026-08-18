@@ -105,6 +105,12 @@ zip = { version = "8", default-features = false, features = ["deflate"] }
 # minimal — we only need the standard alphabet.
 base64 = { version = "0.22", default-features = false }
 
+# Agent Skills (commands/skill.rs — ADR-0043): SKILL.md frontmatter
+# parsing. serde_yaml is archived upstream but stable and dependency-light;
+# the frontmatter grammar is tiny and fixed (a `name` + `description` map),
+# so the maintenance risk is nil.
+serde_yaml = "0.9"
+
 # System font enumeration (commands/font.rs): the resvg project's
 # cross-platform in-memory font database. `load_system_fonts` scans the
 # predefined OS font directories (no system API interaction); we only
