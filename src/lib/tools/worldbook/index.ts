@@ -14,6 +14,12 @@
  * Shell execution (`run_shell_command`, ADR-0041/0042) is registered on
  * both explorer and writer, each gated by that role's AgentConfig
  * `shellToolEnabled` flag. The namer role never carries it.
+ *
+ * Agent Skills (`activate_skill` / `read_skill_file`, ADR-0043) are
+ * registered on both roles, gated by `ctx.skills` being non-empty — no
+ * enabled skills means no skill tools AND no `<available_skills>` catalog
+ * (Anthropic client-implementation guidance; same conditional-spread idea
+ * as the shell gate). The namer role never carries them either.
  */
 
 import type { ToolSet } from "@/lib/ai";
@@ -21,6 +27,7 @@ import type { ToolSet } from "@/lib/ai";
 import { grepTools } from "../grep";
 import { noteTools } from "../note";
 import { shellTools } from "../shell";
+import { skillTools } from "../skill";
 import { systemTools } from "../system";
 import type { ToolDef, ToolContext } from "../types";
 import { buildToolSet } from "../types";
@@ -95,6 +102,9 @@ export function buildExplorerTools(ctx: ToolContext): ToolSet {
       // AgentConfig's `shellToolEnabled` is on, then consentLevel "auto"
       // (executes without per-call confirmation).
       ...(ctx.shellToolEnabled ? shellTools() : {}),
+      // Agent Skills (ADR-0043) — progressive disclosure tools, registered
+      // only when the role has ≥1 enabled skill (empty catalog = nothing).
+      ...(ctx.skills.length > 0 ? skillTools(ctx) : {}),
     },
     ctx,
   );
@@ -140,6 +150,9 @@ export function buildWriterTools(ctx: ToolContext): ToolSet {
       // AgentConfig's `shellToolEnabled` is on, then consentLevel "auto"
       // (executes without per-call confirmation).
       ...(ctx.shellToolEnabled ? shellTools() : {}),
+      // Agent Skills (ADR-0043) — progressive disclosure tools, registered
+      // only when the role has ≥1 enabled skill (empty catalog = nothing).
+      ...(ctx.skills.length > 0 ? skillTools(ctx) : {}),
     },
     ctx,
   );
