@@ -15,6 +15,7 @@ pub mod search;
 pub mod session;
 pub mod setting;
 pub mod shell;
+pub mod skill;
 pub mod space;
 pub mod timeline;
 pub mod tray;
