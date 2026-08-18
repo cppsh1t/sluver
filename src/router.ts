@@ -6,6 +6,7 @@ import { indexRoute } from "./routes/index";
 import { spaceLayoutRoute } from "./routes/space.$spaceId/_space";
 import { spaceHomeRoute } from "./routes/space.$spaceId/index";
 import { spaceConfigRoute } from "./routes/space.$spaceId/config";
+import { spaceSkillsRoute } from "./routes/space.$spaceId/skills";
 import { spaceLibraryRoute } from "./routes/space.$spaceId/library";
 import { worldLayoutRoute } from "./routes/world.$worldId/_world";
 import { worldIndexRoute } from "./routes/world.$worldId/index";
@@ -36,6 +37,7 @@ const routeTree = rootRoute.addChildren([
   spaceLayoutRoute.addChildren([
     spaceHomeRoute,
     spaceConfigRoute,
+    spaceSkillsRoute,
     spaceLibraryRoute,
     worldLayoutRoute.addChildren([
       worldIndexRoute,

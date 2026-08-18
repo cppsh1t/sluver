@@ -8,6 +8,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import {
   BookOpen02Icon,
   Globe02Icon,
+  PuzzleIcon,
   Settings02Icon,
 } from "@hugeicons/core-free-icons";
 
@@ -23,12 +24,13 @@ import { SettingsDialog } from "@/components/settings-dialog";
  *   - `_app.tsx` (landing / global settings) → **landing mode**: brand only
  *     (no primary nav); footer hosts the Space picker + global Settings.
  *   - space-tier pages (`index.tsx` = 世界, `config.tsx` = 配置,
- *     `library.tsx` = 资料库) → **space mode**: brand + a three-item Space
- *     nav; same footer.
+ *     `skills.tsx` = 技能, `library.tsx` = 资料库) → **space mode**: brand +
+ *     a four-item Space nav; same footer.
  *
  * World routes never mount this component — `_world.tsx` renders
  * `WorldSidebar` instead — so the spaceId regex only needs to match the
- * three non-world Space destinations (`/space/{id}` + `/config` + `/library`).
+ * non-world Space destinations (`/space/{id}` + `/config` + `/skills` +
+ * `/library`).
  *
  * The Space management affordances (rename / password / delete) previously
  * lived here as a "Manage Space" dropdown; they have moved into the 配置
@@ -38,10 +40,11 @@ function AppSidebar() {
   const { t } = useTranslation(["common", "space", "world"]);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
-  // Match `/space/{id}`, `/space/{id}/config`, `/space/{id}/library` — but
-  // NOT `/space/{id}/world/...` (those render WorldSidebar, not this).
+  // Match `/space/{id}`, `/space/{id}/config`, `/space/{id}/skills`,
+  // `/space/{id}/library` — but NOT `/space/{id}/world/...` (those render
+  // WorldSidebar, not this).
   const spaceMatch = pathname.match(
-    /^\/space\/([^/]+)(?:\/(config|library))?\/?$/,
+    /^\/space\/([^/]+)(?:\/(config|skills|library))?\/?$/,
   );
   const spaceId = spaceMatch?.[1] ?? null;
 
@@ -69,7 +72,7 @@ function AppSidebar() {
 export { AppSidebar };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Space mode — three-item primary nav (世界 / 配置 / 资料库)
+// Space mode — four-item primary nav (世界 / 配置 / 技能 / 资料库)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function SpaceNavContent({
@@ -94,6 +97,12 @@ function SpaceNavContent({
       to: "/space/$spaceId/config" as const,
       icon: Settings02Icon,
       active: pathname === `${root}/config`,
+    },
+    {
+      label: t("common:nav.skills"),
+      to: "/space/$spaceId/skills" as const,
+      icon: PuzzleIcon,
+      active: pathname === `${root}/skills`,
     },
     {
       label: t("common:nav.library"),
