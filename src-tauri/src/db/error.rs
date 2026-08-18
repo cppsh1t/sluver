@@ -191,6 +191,29 @@ pub enum DbError {
     /// error. Surfaces as `NOTE_DUPLICATE_TITLE` with `{ title }`.
     #[error("Note title already taken by a sibling: {0}")]
     NoteDuplicateTitle(String),
+
+    /// Skill row not found (enable/delete/read on a missing skill id).
+    /// Surfaces as `SKILL_NOT_FOUND` with `{ entity, id }` (same shape as
+    /// the generic `NotFound`; the dedicated code lets the frontend render
+    /// a skill-specific message).
+    #[error("Skill not found: {0}")]
+    SkillNotFound(String),
+
+    /// Uploaded skill package rejected — not a zip, oversized (package or
+    /// single entry), too many entries, zip-slip entry name, missing/mis-
+    /// placed SKILL.md, or invalid frontmatter (ADR-0043 §1 upload safety).
+    /// Surfaces as `SKILL_PACKAGE_INVALID` with `{ reason }` so the frontend
+    /// can render a targeted "this file is not a valid skill package"
+    /// message.
+    #[error("Invalid skill package: {0}")]
+    SkillPackageInvalid(String),
+
+    /// `read_skill_entry` targeted a skill whose installed directory is not
+    /// on disk (`spaces/{id}/skills/{name}/SKILL.md` missing — never
+    /// enabled, or the dir was removed). Surfaces as `SKILL_NOT_INSTALLED`
+    /// with `{ name }`.
+    #[error("Skill not installed: {0}")]
+    SkillNotInstalled(String),
 }
 
 impl DbError {
@@ -309,6 +332,24 @@ impl DbError {
                 "NOTE_DUPLICATE_TITLE",
                 HashMap::from([("title".to_string(), title.clone())]),
             ),
+            // Agent Skills (ADR-0043). SKILL_NOT_FOUND mirrors the generic
+            // NotFound's {entity, id} shape; the other two interpolate their
+            // single diagnostic arg ({{reason}} / {{name}}).
+            DbError::SkillNotFound(id) => (
+                "SKILL_NOT_FOUND",
+                HashMap::from([
+                    ("entity".to_string(), "skill".to_string()),
+                    ("id".to_string(), id.clone()),
+                ]),
+            ),
+            DbError::SkillPackageInvalid(reason) => (
+                "SKILL_PACKAGE_INVALID",
+                HashMap::from([("reason".to_string(), reason.clone())]),
+            ),
+            DbError::SkillNotInstalled(name) => (
+                "SKILL_NOT_INSTALLED",
+                HashMap::from([("name".to_string(), name.clone())]),
+            ),
         };
         ErrorPayload {
             code: code.to_string(),
@@ -378,6 +419,28 @@ mod space_error_tests {
         let p = DbError::NoteMoveCycle("abc".into()).to_payload();
         assert_eq!(p.code, "NOTE_MOVE_CYCLE");
         assert_eq!(p.args.get("id"), Some(&"abc".to_string()));
+    }
+
+    #[test]
+    fn skill_not_found_payload() {
+        let p = DbError::SkillNotFound("abc".into()).to_payload();
+        assert_eq!(p.code, "SKILL_NOT_FOUND");
+        assert_eq!(p.args.get("entity"), Some(&"skill".to_string()));
+        assert_eq!(p.args.get("id"), Some(&"abc".to_string()));
+    }
+
+    #[test]
+    fn skill_package_invalid_payload() {
+        let p = DbError::SkillPackageInvalid("not a zip".into()).to_payload();
+        assert_eq!(p.code, "SKILL_PACKAGE_INVALID");
+        assert_eq!(p.args.get("reason"), Some(&"not a zip".to_string()));
+    }
+
+    #[test]
+    fn skill_not_installed_payload() {
+        let p = DbError::SkillNotInstalled("my-skill".into()).to_payload();
+        assert_eq!(p.code, "SKILL_NOT_INSTALLED");
+        assert_eq!(p.args.get("name"), Some(&"my-skill".to_string()));
     }
 
     /// Regression guard: existing variants must keep their stable codes.
