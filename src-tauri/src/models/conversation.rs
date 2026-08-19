@@ -77,6 +77,12 @@ pub struct CreateConversationInput {
 /// is responsible for attaching them to exactly one row and leaving them
 /// absent on the rest. `Option<i64>` mirrors {@link Message}; `None` here
 /// means "do not write a value" (the column defaults to NULL).
+///
+/// `attachments` carries the message's file attachments inline (ADR-0044 /
+/// plan D2) — `#[serde(default)]` so payloads from pre-attachment clients
+/// (and messages without attachments) deserialize unchanged with an empty
+/// vec. Rows are inserted in the same transaction as the message; the bytes
+/// are validated server-side before reaching SQLite.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageInput {
@@ -87,6 +93,8 @@ pub struct MessageInput {
     pub usage_input_tokens: Option<i64>,
     #[serde(default)]
     pub usage_output_tokens: Option<i64>,
+    #[serde(default)]
+    pub attachments: Vec<crate::models::attachment::AttachmentInput>,
 }
 
 /// Input for `append_messages` — a batch of messages plus the target
