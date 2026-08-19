@@ -619,6 +619,39 @@ const WORLD_MIGRATION_012: &str = r#"
     );
 "#;
 
+/// Migration 13 for each world DB: the `message_attachments` sidecar
+/// table (ADR-0044 / plan D1) — chat file attachments (images ≤ 5 MiB,
+/// text ≤ 1 MiB) stored as BLOB rows, modeled on `scene_images`
+/// (WORLD_MIGRATION_008).
+///
+/// The `ON DELETE CASCADE` on `message_id` chains with the existing
+/// `messages.conversation_id` cascade: deleting a conversation removes
+/// its messages, which removes their attachments — no standalone delete
+/// command exists. There is intentionally NO `UNIQUE(message_id,
+/// position)` — the `scene_images` precedent: positions are fixed at
+/// send time (append-only), so a plain index is sufficient. Attachment
+/// bytes flow ONLY through `append_messages` (inline `AttachmentInput`
+/// rows) and the dedicated read commands — `Message` payloads never
+/// touch this table (keeps `load_messages` light and avoids the serde
+/// Vec<u8> → JSON-number-array trap). Added as a separate migration so
+/// existing world DB files get the table via `rusqlite_migration`'s
+/// incremental migration tracking — modifying the original `WORLD_SQL`
+/// would NOT re-run for already-migrated databases.
+const WORLD_MIGRATION_013: &str = r#"
+    CREATE TABLE IF NOT EXISTS message_attachments (
+        id          TEXT PRIMARY KEY,
+        message_id  TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+        position    INTEGER NOT NULL,
+        kind        TEXT NOT NULL CHECK (kind IN ('image','text')),
+        mime        TEXT NOT NULL,
+        filename    TEXT NOT NULL,
+        size_bytes  INTEGER NOT NULL,
+        data_blob   BLOB NOT NULL,
+        created_at  TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_message_attachments_message ON message_attachments(message_id, position);
+"#;
+
 const WORLD_SLICE: &[M] = &[
     M::up(WORLD_SQL),
     M::up(WORLD_MIGRATION_002),
@@ -632,6 +665,7 @@ const WORLD_SLICE: &[M] = &[
     M::up(WORLD_MIGRATION_010),
     M::up(WORLD_MIGRATION_011),
     M::up(WORLD_MIGRATION_012),
+    M::up(WORLD_MIGRATION_013),
 ];
 pub const WORLD_MIGRATIONS: Migrations = Migrations::from_slice(WORLD_SLICE);
 
@@ -750,15 +784,16 @@ mod schema_tests {
         );
     }
 
-    /// world.db fresh install: twelve migrations → user_version 12, the exact
-    /// 19-table set, and the exact 18 named indexes (3 FK lookups from v1 +
-    /// 11 UNIQUE from v2 + messages/scene_images/notes indexes from v4/v8/v11).
+    /// world.db fresh install: thirteen migrations → user_version 13, the
+    /// exact 20-table set, and the exact 19 named indexes (3 FK lookups from
+    /// v1 + 11 UNIQUE from v2 + messages/scene_images/notes/message_attachments
+    /// indexes from v4/v8/v11/v13).
     #[test]
     fn world_fresh_install_schema() {
         let mut conn = Connection::open_in_memory().expect("open in-memory world db");
         WORLD_MIGRATIONS.to_latest(&mut conn).expect("world to_latest");
 
-        assert_eq!(user_version(&conn), 12, "world user_version after to_latest");
+        assert_eq!(user_version(&conn), 13, "world user_version after to_latest");
         assert_eq!(
             table_names(&conn),
             [
@@ -771,6 +806,7 @@ mod schema_tests {
                 "items",
                 "locations",
                 "lores",
+                "message_attachments",
                 "messages",
                 "notes",
                 "novels",
@@ -782,7 +818,7 @@ mod schema_tests {
                 "scenes",
                 "world_config",
             ],
-            "world table set at v12 (19 tables)"
+            "world table set at v13 (20 tables)"
         );
         assert_eq!(
             named_indexes(&conn),
@@ -796,6 +832,7 @@ mod schema_tests {
                 "idx_items_name",
                 "idx_locations_name",
                 "idx_lores_name",
+                "idx_message_attachments_message",
                 "idx_messages_conversation_id",
                 "idx_notes_parent_pos",
                 "idx_notes_sibling_title",
@@ -806,19 +843,19 @@ mod schema_tests {
                 "idx_scenes_chapter_pos",
                 "idx_scenes_chapter_title",
             ],
-            "world named index set at v12 (18 indexes)"
+            "world named index set at v13 (19 indexes)"
         );
     }
 
     // ── family (b): historical upgrade path ────────────────────────────────
 
-    /// world.db upgrade path: step 0→12 on ONE connection, asserting
+    /// world.db upgrade path: step 0→13 on ONE connection, asserting
     /// user_version and the per-step schema facts (tables added, columns
     /// added / renamed).
     #[test]
     fn world_upgrade_path_step_by_step() {
         let mut conn = Connection::open_in_memory().expect("open in-memory world db");
-        for v in 0..=12 {
+        for v in 0..=13 {
             WORLD_MIGRATIONS
                 .to_version(&mut conn, v)
                 .unwrap_or_else(|e| panic!("world to_version({v}): {e}"));
@@ -957,10 +994,26 @@ mod schema_tests {
                     assert_eq!(
                         table_names(&conn).len(),
                         19,
-                        "final world schema has 19 tables"
+                        "world schema has 19 tables at v12"
                     );
                 }
-                _ => unreachable!("loop is bounded to 0..=12"),
+                13 => {
+                    assert!(
+                        table_names(&conn).contains(&"message_attachments".to_string()),
+                        "v13 adds message_attachments"
+                    );
+                    assert!(
+                        named_indexes(&conn)
+                            .contains(&"idx_message_attachments_message".to_string()),
+                        "v13 adds idx_message_attachments_message"
+                    );
+                    assert_eq!(
+                        table_names(&conn).len(),
+                        20,
+                        "final world schema has 20 tables"
+                    );
+                }
+                _ => unreachable!("loop is bounded to 0..=13"),
             }
         }
     }
@@ -1190,7 +1243,7 @@ mod schema_tests {
         let cases: [(&str, &Migrations, i64); 3] = [
             ("meta", &META_MIGRATIONS, 1),
             ("space", &SPACE_MIGRATIONS, 9),
-            ("world", &WORLD_MIGRATIONS, 12),
+            ("world", &WORLD_MIGRATIONS, 13),
         ];
         for (name, migrations, latest) in cases {
             let mut conn = Connection::open_in_memory().expect("open in-memory db");
