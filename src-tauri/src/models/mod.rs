@@ -1,4 +1,5 @@
 pub mod agent_config;
+pub mod attachment;
 pub mod catalog;
 pub mod character;
 pub mod conversation;
