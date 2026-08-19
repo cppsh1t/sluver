@@ -214,6 +214,27 @@ pub enum DbError {
     /// with `{ name }`.
     #[error("Skill not installed: {0}")]
     SkillNotInstalled(String),
+
+    /// Chat message attachment rejected — the decoded payload exceeds the
+    /// kind-specific ceiling (image 5 MiB / text 1 MiB — ADR-0044 §D6).
+    /// Surfaces as `ATTACHMENT_TOO_LARGE` with `{ kind, max }` so the
+    /// frontend can render a translated "file is too large (max {{max}})"
+    /// message; `max` is MiB-formatted for direct interpolation.
+    #[error("Attachment too large: {kind} over {max_bytes} bytes")]
+    AttachmentTooLarge { kind: String, max_bytes: usize },
+
+    /// Chat message attachment MIME not in the kind-specific allowlist
+    /// (image: webp/jpeg/png; text: plain/markdown/csv — ADR-0044 §D6).
+    /// Surfaces as `ATTACHMENT_INVALID_MIME` with `{ mime }`.
+    #[error("Attachment mime not allowed: {0}")]
+    AttachmentInvalidMime(String),
+
+    /// Chat message text attachment payload is not valid UTF-8 (text files
+    /// are inlined into the model input as sentinel TextParts, so the bytes
+    /// must decode — ADR-0044 §D4). Surfaces as `ATTACHMENT_INVALID_TEXT`
+    /// with no args.
+    #[error("Attachment text is not valid UTF-8")]
+    AttachmentInvalidText,
 }
 
 impl DbError {
@@ -350,6 +371,27 @@ impl DbError {
                 "SKILL_NOT_INSTALLED",
                 HashMap::from([("name".to_string(), name.clone())]),
             ),
+            // Chat attachments (ADR-0044). `max` is MiB-formatted so the
+            // translated message can interpolate it directly ("max {{max}}");
+            // `kind` rides along for diagnostics. The other two interpolate
+            // their single user-meaningful arg / take none.
+            DbError::AttachmentTooLarge { kind, max_bytes } => (
+                "ATTACHMENT_TOO_LARGE",
+                HashMap::from([
+                    ("kind".to_string(), kind.clone()),
+                    (
+                        "max".to_string(),
+                        format!("{} MiB", max_bytes / (1024 * 1024)),
+                    ),
+                ]),
+            ),
+            DbError::AttachmentInvalidMime(mime) => (
+                "ATTACHMENT_INVALID_MIME",
+                HashMap::from([("mime".to_string(), mime.clone())]),
+            ),
+            DbError::AttachmentInvalidText => {
+                ("ATTACHMENT_INVALID_TEXT", HashMap::new())
+            }
         };
         ErrorPayload {
             code: code.to_string(),
@@ -443,6 +485,33 @@ mod space_error_tests {
         assert_eq!(p.args.get("name"), Some(&"my-skill".to_string()));
     }
 
+    #[test]
+    fn attachment_too_large_payload() {
+        let p = DbError::AttachmentTooLarge {
+            kind: "image".into(),
+            max_bytes: 5 * 1024 * 1024,
+        }
+        .to_payload();
+        assert_eq!(p.code, "ATTACHMENT_TOO_LARGE");
+        assert_eq!(p.args.get("kind"), Some(&"image".to_string()));
+        // `max` is MiB-formatted for direct {{max}} interpolation.
+        assert_eq!(p.args.get("max"), Some(&"5 MiB".to_string()));
+    }
+
+    #[test]
+    fn attachment_invalid_mime_payload() {
+        let p = DbError::AttachmentInvalidMime("application/pdf".into()).to_payload();
+        assert_eq!(p.code, "ATTACHMENT_INVALID_MIME");
+        assert_eq!(p.args.get("mime"), Some(&"application/pdf".to_string()));
+    }
+
+    #[test]
+    fn attachment_invalid_text_payload() {
+        let p = DbError::AttachmentInvalidText.to_payload();
+        assert_eq!(p.code, "ATTACHMENT_INVALID_TEXT");
+        assert!(p.args.is_empty());
+    }
+
     /// Regression guard: existing variants must keep their stable codes.
     #[test]
     fn existing_codes_unchanged() {
@@ -457,6 +526,26 @@ mod space_error_tests {
         assert_eq!(
             DbError::Internal("boom".into()).to_payload().code,
             "INTERNAL_ERROR"
+        );
+        // New attachment codes (ADR-0044) — pinned here so they stay stable.
+        assert_eq!(
+            DbError::AttachmentTooLarge {
+                kind: "text".into(),
+                max_bytes: 1024 * 1024,
+            }
+            .to_payload()
+            .code,
+            "ATTACHMENT_TOO_LARGE"
+        );
+        assert_eq!(
+            DbError::AttachmentInvalidMime("image/gif".into())
+                .to_payload()
+                .code,
+            "ATTACHMENT_INVALID_MIME"
+        );
+        assert_eq!(
+            DbError::AttachmentInvalidText.to_payload().code,
+            "ATTACHMENT_INVALID_TEXT"
         );
     }
 }
