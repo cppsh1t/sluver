@@ -132,6 +132,10 @@ _Avoid_: Chat, Thread, Session, Dialogue
 A single turn within a Conversation — the app-layer, typed counterpart of the library's `SessionMessage` (ADR-0020). Carries role (user / assistant / tool), content, identity (`id`), timestamp, and — for assistant messages — optional token-usage metadata recording what that turn cost (ADR-0030). The atomic unit of a Conversation's history.
 _Avoid_: ChatMessage, StoredMessage, MessageRecord
 
+**Attachment**:
+A file sent with a user Message in a Conversation — the way the user shows the Agent an image or hands it text material (an outline, a CSV of notes). Two kinds: **image** and **text**. Stored as BLOB rows in the per-World `message_attachments` sidecar table; the message body references the bytes as `attachment://{id}`, and they are hydrated back to data URLs at the session-store boundary when the Conversation loads. Whether the currently bound AgentConfig's model can actually see images is a per-run delivery concern, not a property of the Attachment itself (non-vision models receive filename-bearing text markers instead). Distinct from Notes (persistent World-authored material): an Attachment is message payload, tied to the one Message it arrived with and deleted with it.
+_Avoid_: Upload, Media, Inline Image, Blob
+
 **Plan**:
 A persisted, Conversation-scoped working agenda authored by the Agent via the `plan` tool — an ordered TODO list that implicitly guides the Agent's subsequent turns within that Conversation. At most one **active Plan** per Conversation; calling the `plan` tool replaces the prior Plan wholesale (last-write-wins). Persistence is per-Conversation (lives in `conversations.meta.plan`); the Plan survives app restarts and Conversation switches. The Plan is **NOT** a Message — it is never appended to the persisted thread; instead it is re-injected into the Derived Model Input on every subsequent turn (see ADR-0028). Each Plan item carries a status of `pending` (not yet started), `in_progress` (an item the Agent has started but not yet finished), or `done` (completed).
 _Avoid_: TodoList, Scratchpad, Agenda, Outline, Checklist
