@@ -20,6 +20,7 @@ export * from './timeline';
 export * from './novel';
 export * from './note';
 export * from './conversation';
+export * from './attachment';
 export * from './space';
 export * from './session';
 export * from './ai';
