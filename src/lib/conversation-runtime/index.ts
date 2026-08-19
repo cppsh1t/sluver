@@ -29,6 +29,7 @@ export {
   useConversationStore,
   useConversationView,
   useDraft,
+  useDraftAttachments,
   useEnsureRuntime,
   useRemoveConversation,
   useResolveApproval,
@@ -37,10 +38,14 @@ export {
 
 export {
   EMPTY_VIEW,
+  MAX_DRAFT_ATTACHMENTS,
   createConversationRuntimeStore,
   type ConversationRuntimeData,
   type ConversationRuntimeState,
   type ConversationView,
+  type ConvertedFromEncoding,
+  type DraftAttachment,
+  type ImageInputSupportedResolver,
   type ModelResolver,
   type PendingApproval,
   type PersistErrorHandler,
@@ -49,3 +54,5 @@ export {
   type StreamState,
   type ToolCallView,
 } from "./store";
+
+export { imageInputSupportedForModel } from "./vision";

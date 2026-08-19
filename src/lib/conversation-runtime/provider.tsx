@@ -19,6 +19,7 @@
  */
 
 import { useStore, type StoreApi } from "zustand";
+import type { UserContent } from "ai";
 
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -36,20 +37,28 @@ import {
 import { listConversations, updateConversationTitle } from "@/api";
 import { createLanguageModel } from "@/lib/ai";
 import { generateConversationTitle } from "@/lib/ai/auto-title";
-import { useResolvedModelConfig } from "@/hooks/use-ai-config";
+import {
+  useAgentConfigs,
+  useModelsDevCatalog,
+  useResolvedModelConfig,
+} from "@/hooks/use-ai-config";
 import { conversationKeys } from "@/hooks/use-conversations";
 import { useEnabledSkills } from "@/hooks/use-enabled-skills";
 import { logger } from "@/lib/logger";
 import {
   EMPTY_VIEW,
+  MAX_DRAFT_ATTACHMENTS,
   createConversationRuntimeStore,
   type AutoTitleCallback,
   type ConversationRuntimeState,
   type ConversationView,
+  type DraftAttachment,
+  type ImageInputSupportedResolver,
   type ModelResolver,
   type PersistErrorHandler,
   type ResolvedModel,
 } from "./store";
+import { imageInputSupportedForModel } from "./vision";
 
 import type { Conversation, ConversationId, SpaceId } from "@/types";
 
@@ -60,6 +69,14 @@ interface ConversationRuntimeContextValue {
   readonly spaceId: SpaceId;
   readonly modelResolver: ModelResolver;
   readonly onPersistError: PersistErrorHandler;
+  /**
+   * Per-role vision capability for the currently bound model (ADR-0044 §D9
+   * step 2). Built by the Provider from the models.dev catalog react-query
+   * data (the store is non-React, so the Provider captures the resolved
+   * data here and forwards it with each `send`). Tri-state: `undefined`
+   * while queries load / for custom models — NEVER defaulted to `false`.
+   */
+  readonly resolveImageInputSupported: ImageInputSupportedResolver;
   /**
    * Silent auto-titling entry point (ADR-0040). Injected by the Provider
    * (which owns the `"namer"` agent's resolved model config) and forwarded
@@ -192,6 +209,29 @@ export function ConversationRuntimeProvider({
     logger.error("conversation.persist_failed", { error: String(e) });
   }, []);
 
+  // ── Vision capability resolution (ADR-0044 §D9 step 2) ──────────────────
+  // Same data the token-status-bar joins for `contextWindow` (the established
+  // catalog-access precedent): the Space's agent configs + the global
+  // models.dev catalog. Both queries are shared/cache-hit with the ones
+  // `useResolvedModelConfig` runs above — no extra IPC. Only `data` is
+  // extracted during render (primitive, prop-tracking friendly); the
+  // resolver below consumes it per-send.
+  const agentConfigs = useAgentConfigs(spaceId);
+  const modelsDevCatalog = useModelsDevCatalog();
+  const agentConfigsData = agentConfigs.data;
+  const catalogData = modelsDevCatalog.data;
+
+  const resolveImageInputSupported = useCallback<ImageInputSupportedResolver>(
+    (role) => {
+      const agentConfig = agentConfigsData?.find((a) => a.name === role);
+      return imageInputSupportedForModel(
+        catalogData,
+        agentConfig?.modelId ?? null,
+      );
+    },
+    [agentConfigsData, catalogData],
+  );
+
   // QueryClient is safe to use here: the Provider mounts inside
   // QueryClientProvider (the Space layout root).
   const qc = useQueryClient();
@@ -281,8 +321,22 @@ export function ConversationRuntimeProvider({
   );
 
   const value = useMemo<ConversationRuntimeContextValue>(
-    () => ({ store, spaceId, modelResolver, onPersistError, autoTitle }),
-    [store, spaceId, modelResolver, onPersistError, autoTitle],
+    () => ({
+      store,
+      spaceId,
+      modelResolver,
+      onPersistError,
+      resolveImageInputSupported,
+      autoTitle,
+    }),
+    [
+      store,
+      spaceId,
+      modelResolver,
+      onPersistError,
+      resolveImageInputSupported,
+      autoTitle,
+    ],
   );
 
   return (
@@ -328,26 +382,40 @@ export function useConversationView(
 
 /**
  * Returns a turn driver bound to the store's `send` action, with the live
- * `modelResolver` + `onPersistError` + `autoTitle` injected from context.
+ * `modelResolver` + `onPersistError` + `resolveImageInputSupported` +
+ * `autoTitle` injected from context.
+ *
+ * The outgoing content is the SDK's `UserContent` (ADR-0044): a plain string
+ * (the historical form — existing string callers compile unchanged) or a
+ * parts array carrying text + image/text file attachments (data-URL `data`).
  */
 export function useSend(
   worldId: string,
-): (conversationId: ConversationId, text: string) => Promise<void> {
-  const { store, modelResolver, onPersistError, autoTitle } = useRuntimeContext();
+): (conversationId: ConversationId, content: UserContent) => Promise<void> {
+  const { store, modelResolver, onPersistError, resolveImageInputSupported, autoTitle } =
+    useRuntimeContext();
   return useCallback(
-    async (conversationId: ConversationId, text: string) => {
+    async (conversationId: ConversationId, content: UserContent) => {
       await store
         .getState()
         .send(
           worldId,
           conversationId,
-          text,
+          content,
           modelResolver,
           onPersistError,
           autoTitle,
+          resolveImageInputSupported,
         );
     },
-    [store, worldId, modelResolver, onPersistError, autoTitle],
+    [
+      store,
+      worldId,
+      modelResolver,
+      onPersistError,
+      resolveImageInputSupported,
+      autoTitle,
+    ],
   );
 }
 
@@ -386,6 +454,53 @@ export function useDraft(
     [store, worldId, conversationId],
   );
   return [draft, setDraft];
+}
+
+/**
+ * Read + write the staged attachments for one conversation (ADR-0044 §D8) —
+ * mirrors {@link useDraft}'s shape. The list is part of the per-conversation
+ * view, so it survives conversation switches (ADR-0024); `send` clears it.
+ *
+ * `addAttachments` performs NO mime/size validation (Rust validates
+ * authoritatively; the composer pre-validates in Wave 3) — only the
+ * {@link MAX_DRAFT_ATTACHMENTS} count cap is enforced (overflow ignored).
+ */
+export function useDraftAttachments(
+  worldId: string,
+  conversationId: string,
+): {
+  draftAttachments: DraftAttachment[];
+  addAttachments: (items: DraftAttachment[]) => void;
+  removeAttachment: (id: string) => void;
+  maxAttachments: number;
+} {
+  const { store } = useRuntimeContext();
+  // Stable `[]` fallback (EMPTY_VIEW's array is a module constant) so the
+  // selector keeps default Object.is equality semantics.
+  const draftAttachments = useStore(
+    store,
+    (state) =>
+      state.worlds.get(worldId)?.get(conversationId)?.view.draftAttachments ??
+      EMPTY_VIEW.draftAttachments,
+  );
+  const addAttachments = useCallback(
+    (items: DraftAttachment[]) => {
+      store.getState().addDraftAttachments(worldId, conversationId, items);
+    },
+    [store, worldId, conversationId],
+  );
+  const removeAttachment = useCallback(
+    (id: string) => {
+      store.getState().removeDraftAttachment(worldId, conversationId, id);
+    },
+    [store, worldId, conversationId],
+  );
+  return {
+    draftAttachments,
+    addAttachments,
+    removeAttachment,
+    maxAttachments: MAX_DRAFT_ATTACHMENTS,
+  };
 }
 
 /**
