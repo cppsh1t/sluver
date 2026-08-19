@@ -6,10 +6,17 @@
  * the Space-level provider (`_space.tsx`), so in-flight runs survive
  * navigation between conversations and worlds.
  *
- * The optimistic `pendingUserText` bridges the runtime's send→finalize gap:
- * `send` appends the user message to the Agent thread immediately, but the
- * reactive `view.messages` only refreshes on run finalization. The view echoes
- * the text optimistically and clears it once the persisted thread catches up.
+ * The optimistic `pendingTurn` (text + attachments, plan D7) bridges the
+ * runtime's send→finalize gap: `send` appends the user message to the Agent
+ * thread immediately, but the reactive `view.messages` only refreshes on run
+ * finalization. The view echoes the turn optimistically and clears it once
+ * the persisted thread catches up.
+ *
+ * `imageDeliveryDisabled` (plan D9 step 4) joins the selected conversation's
+ * AgentConfig model with the models.dev catalog — the same shared react-query
+ * data + pure helper the runtime Provider resolves per-send — to badge image
+ * attachments when the currently-bound model is catalog-confirmed to lack
+ * image input. `undefined` (unknown/custom models) NEVER badges.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -22,8 +29,10 @@ import { Composer } from "@/components/chat/composer";
 import { ConsentBanner } from "@/components/chat/consent-banner";
 import { ConversationList } from "@/components/chat/conversation-list";
 import { ConversationView } from "@/components/chat/conversation-view";
+import type { PendingTurn } from "@/components/chat/message-render";
 import { TokenStatusBar } from "@/components/chat/token-status-bar";
-import { useConversations } from "@/hooks";
+import { useAgentConfigs, useConversations, useModelsDevCatalog } from "@/hooks";
+import { imageInputSupportedForModel } from "@/lib/conversation-runtime";
 import type { ConversationId, SpaceId, WorldId } from "@/types";
 
 function ChatPage() {
@@ -37,7 +46,7 @@ function ChatPage() {
   const { data: conversations = [] } = useConversations(sid, wid);
 
   const [selectedId, setSelectedId] = useState<ConversationId | null>(null);
-  const [pendingUserText, setPendingUserText] = useState<string | null>(null);
+  const [pendingTurn, setPendingTurn] = useState<PendingTurn | null>(null);
 
   // Resolve the full conversation object for the selection (needed to
   // construct/ensure the runtime). Falls back to null when absent.
@@ -45,6 +54,21 @@ function ChatPage() {
     () => conversations.find((c) => c.id === selectedId) ?? null,
     [conversations, selectedId],
   );
+
+  // Vision capability join for the SELECTED conversation's bound model
+  // (plan D9 step 4). Same shared queries the runtime Provider uses — no
+  // extra IPC. `=== false` only: unknown (undefined) never badges.
+  const agentConfigs = useAgentConfigs(sid);
+  const modelsDevCatalog = useModelsDevCatalog();
+  const agentConfigsData = agentConfigs.data;
+  const catalogData = modelsDevCatalog.data;
+  const selectedRole = selected?.agentConfigName;
+  const imageDeliveryDisabled = useMemo(() => {
+    if (!selectedRole) return false;
+    const modelId =
+      agentConfigsData?.find((a) => a.name === selectedRole)?.modelId ?? null;
+    return imageInputSupportedForModel(catalogData, modelId) === false;
+  }, [agentConfigsData, catalogData, selectedRole]);
 
   // Auto-select the most-recently-updated conversation when nothing is chosen.
   useEffect(() => {
@@ -67,7 +91,7 @@ function ChatPage() {
 
   const handleSelect = (conv: { id: ConversationId }) => {
     setSelectedId(conv.id);
-    setPendingUserText(null);
+    setPendingTurn(null);
   };
 
   return (
@@ -86,8 +110,9 @@ function ChatPage() {
               key={selected.id}
               worldId={wid}
               conversation={selected}
-              pendingUserText={pendingUserText}
-              onPendingUserConsumed={() => setPendingUserText(null)}
+              pendingTurn={pendingTurn}
+              onPendingUserConsumed={() => setPendingTurn(null)}
+              imageDeliveryDisabled={imageDeliveryDisabled}
             />
             {/* Do NOT add a `key={selected.id}` here: it would duplicate the
                 keyed ConversationView's key value among siblings. Duplicate
@@ -100,7 +125,18 @@ function ChatPage() {
             <Composer
               worldId={wid}
               conversationId={selected.id}
-              onUserSent={setPendingUserText}
+              onUserSent={(text, attachments) =>
+                setPendingTurn({
+                  text,
+                  attachments: attachments.map((a) => ({
+                    kind: a.kind,
+                    mime: a.mime,
+                    filename: a.filename,
+                    dataUrl: a.dataUrl,
+                  })),
+                })
+              }
+              imageDeliveryDisabled={imageDeliveryDisabled}
               prefix={
                 <TokenStatusBar
                   spaceId={sid}
