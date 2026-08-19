@@ -49,6 +49,7 @@ Tauri v2 desktop app for **worldbuilding & novel writing**. React 19 + TypeScrip
   - [ADR-0041](./docs/adr/0041-agent-shell-execution-tool.md) — Agent shell execution via Rust-side `deno_task_shell` (`shell_exec`/`shell_kill`); `consentLevel: "always"`; `ToolDef.execute` gains per-call `ToolCallOptions { abortSignal }`
   - [ADR-0042](./docs/adr/0042-shell-tool-config-gated-auto-execution.md) — Shell tool consent: default-off `shellToolEnabled` opt-in per AgentConfig (risk-acknowledged enable, auto-executes when on; supersedes ADR-0041 §2 only)
   - [ADR-0043](./docs/adr/0043-agent-skills-install-model.md) — Agent Skills: storage-center install model (Anthropic zip upload, per-AgentConfig enable, disk-installed copy as runtime truth, progressive disclosure, ADR-0031 compaction exemption, no tool gating)
+  - [ADR-0044](./docs/adr/0044-chat-file-attachments.md) — Chat file attachments: sidecar blob table with hydration at the session-store boundary
 
 ## Git commit style
 
