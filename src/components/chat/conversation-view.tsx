@@ -6,10 +6,11 @@
  * - {@link useEnsureRuntime} — lazily constructs the Agent + loads history.
  * - {@link useConversationView} — the reactive `view` + `agentLoading`.
  *
- * The optimistic `pendingUserText` prop bridges the gap between `send` (which
- * appends the user message to the Agent thread immediately) and run
- * finalization (which is when `view.messages` finally refreshes). It is
- * cleared by the parent once the persisted thread catches up.
+ * The optimistic `pendingTurn` prop (text + attachments, plan D7) bridges
+ * the gap between `send` (which appends the user message to the Agent
+ * thread immediately) and run finalization (which is when `view.messages`
+ * finally refreshes). It is cleared by the parent once the persisted thread
+ * catches up.
  */
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -26,18 +27,30 @@ import {
 import { cn } from "@/lib/utils";
 import type { Conversation, WorldId } from "@/types";
 
+import { AttachmentStrip } from "./attachment-strip";
 import { Markdown } from "./markdown";
+import {
+  buildBlocks,
+  type PendingTurn,
+  type RenderBlock,
+} from "./message-render";
 import { MessageTokenFooter } from "./message-token-footer";
-import { buildBlocks, type RenderBlock } from "./message-render";
 import { ToolCard } from "./tool-card";
 
 interface ConversationViewProps {
   readonly worldId: WorldId;
   readonly conversation: Conversation;
-  /** Optimistic user text for the in-flight turn; `null` when idle. */
-  readonly pendingUserText: string | null;
+  /** Optimistic user turn (text + attachments) for the in-flight message; `null` when idle. */
+  readonly pendingTurn: PendingTurn | null;
   /** Notifies the parent when the optimistic echo is no longer needed. */
   readonly onPendingUserConsumed: () => void;
+  /**
+   * The currently-bound model is catalog-confirmed to lack image input
+   * (plan D9 step 4) — history image thumbnails get the "not delivered"
+   * badge. Computed by the route; recomputed live when the user switches
+   * models, nothing persisted.
+   */
+  readonly imageDeliveryDisabled: boolean;
 }
 
 /** Blinking block cursor appended to streaming assistant text. */
@@ -114,6 +127,7 @@ function renderBlock(
   block: RenderBlock,
   worldId: WorldId,
   conversationId: Conversation["id"],
+  imageDeliveryDisabled: boolean,
 ): ReactNode {
   switch (block.kind) {
     case "user":
@@ -121,11 +135,21 @@ function renderBlock(
         <div key={block.id} className="flex justify-end">
           <div
             className={cn(
-              "max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-primary px-3 py-1.5 text-sm text-primary-foreground",
+              "flex max-w-[85%] flex-col items-end gap-1",
               block.optimistic && "opacity-90",
             )}
           >
-            {block.text}
+            {block.attachments && block.attachments.length > 0 && (
+              <AttachmentStrip
+                attachments={block.attachments}
+                imageDeliveryDisabled={imageDeliveryDisabled}
+              />
+            )}
+            {block.text.length > 0 && (
+              <div className="whitespace-pre-wrap rounded-2xl rounded-br-sm bg-primary px-3 py-1.5 text-sm text-primary-foreground">
+                {block.text}
+              </div>
+            )}
           </div>
         </div>
       );
@@ -164,8 +188,9 @@ function renderBlock(
 export function ConversationView({
   worldId,
   conversation,
-  pendingUserText,
+  pendingTurn,
   onPendingUserConsumed,
+  imageDeliveryDisabled,
 }: ConversationViewProps) {
   const { t } = useTranslation(["chat", "common"]);
   const agentLoading = useEnsureRuntime(worldId, conversation);
@@ -195,7 +220,7 @@ export function ConversationView({
   // then we clear once the count grows past it.
   const baselineUserCountRef = useRef<number | null>(null);
   useEffect(() => {
-    if (!pendingUserText) {
+    if (!pendingTurn) {
       baselineUserCountRef.current = null;
       return;
     }
@@ -209,7 +234,7 @@ export function ConversationView({
     if (currentCount > baselineUserCountRef.current || view.error !== null) {
       onPendingUserConsumed();
     }
-  }, [pendingUserText, view.messages, view.error, onPendingUserConsumed]);
+  }, [pendingTurn, view.messages, view.error, onPendingUserConsumed]);
 
   const onScroll = () => {
     const el = scrollRef.current;
@@ -222,7 +247,7 @@ export function ConversationView({
     view.messages,
     view.stream,
     view.isRunning,
-    pendingUserText,
+    pendingTurn,
     view.stopReason,
     view.messageUsages,
     view.lastTurnUsage,
@@ -259,7 +284,9 @@ export function ConversationView({
               </p>
             </div>
           ) : (
-            blocks.map((b) => renderBlock(b, worldId, conversation.id))
+            blocks.map((b) =>
+              renderBlock(b, worldId, conversation.id, imageDeliveryDisabled),
+            )
           )}
 
           {errorMessage && (

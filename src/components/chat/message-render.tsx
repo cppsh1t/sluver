@@ -31,6 +31,27 @@ import type { MessageUsage } from "@/lib/conversation-runtime/store";
 import type { LanguageModelUsage, ModelMessage, SessionMessage } from "@/lib/ai";
 // ─── Block model ──────────────────────────────────────────────────────────
 
+/**
+ * One rendered attachment on a user message (ADR-0044 §D5) — a projection
+ * of a hydrated `FilePart` (data-URL `data`). `kind` drives the chip style:
+ * image thumbnails vs text file chips.
+ */
+export interface AttachmentBlockItem {
+  readonly kind: "image" | "text";
+  readonly mime: string;
+  readonly filename: string;
+  readonly dataUrl: string;
+}
+
+/**
+ * The optimistic in-flight turn (plan D7): the composer's just-sent text
+ * plus its attachments, bridging the send → run-finalization gap.
+ */
+export interface PendingTurn {
+  readonly text: string;
+  readonly attachments: readonly AttachmentBlockItem[];
+}
+
 /** Unified data shape for a single tool card (persisted or live). */
 export interface ToolBlockData {
   readonly toolCallId: string;
@@ -77,7 +98,14 @@ export interface TokenFooterBlock {
  * React can key a list without index fallbacks.
  */
 export type RenderBlock =
-  | { readonly kind: "user"; readonly id: string; readonly text: string; readonly optimistic?: boolean }
+  | {
+      readonly kind: "user";
+      readonly id: string;
+      readonly text: string;
+      /** Hydrated file attachments on this user message (ADR-0044). */
+      readonly attachments?: readonly AttachmentBlockItem[];
+      readonly optimistic?: boolean;
+    }
   | { readonly kind: "assistant-text"; readonly id: string; readonly text: string; readonly streaming: boolean }
   | { readonly kind: "reasoning"; readonly id: string; readonly text: string; readonly live: boolean }
   | { readonly kind: "tool"; readonly id: string; readonly tool: ToolBlockData }
@@ -106,6 +134,18 @@ interface ToolResultPartLike {
   readonly toolCallId: string;
   readonly toolName?: string;
   readonly output?: unknown;
+}
+/**
+ * Narrowed view of an AI-SDK `FilePart` (`{type:'file', data, mediaType,
+ * filename?}`) as it round-trips through persisted message bodies. Fields
+ * are optional because the JSON body is defensively typed via an index
+ * signature — callers validate before use.
+ */
+interface FilePartLike {
+  readonly type: "file";
+  readonly data?: unknown;
+  readonly mediaType?: string;
+  readonly filename?: string;
 }
 
 type ContentPart =
@@ -140,6 +180,44 @@ export function messageText(message: ModelMessage): string {
     .filter((p): p is TextPartLike => p.type === "text")
     .map((p) => p.text)
     .join("");
+}
+
+/**
+ * Extract the renderable attachments of a user message (ADR-0044 §D5):
+ * every `file` part whose `data` is a hydrated `data:` URL, projected onto
+ * {@link AttachmentBlockItem}. Kinds derive from the media type (`image/*`
+ * → image, `text/*` → text).
+ *
+ * Defensive skips: `attachment://` refs (shouldn't occur post-hydration —
+ * if they do, never render a broken `<img>`), non-string data, and
+ * non-image/text media types. Empty array when there are none.
+ */
+export function messageAttachments(
+  message: ModelMessage,
+): AttachmentBlockItem[] {
+  const { content } = message;
+  if (isStringContent(content)) return [];
+  const items: AttachmentBlockItem[] = [];
+  for (const part of asParts(content)) {
+    if (part.type !== "file") continue;
+    const fp = part as FilePartLike;
+    const data = fp.data;
+    if (typeof data !== "string" || !data.startsWith("data:")) continue;
+    const mediaType = fp.mediaType ?? "";
+    const kind = mediaType.startsWith("image/")
+      ? "image"
+      : mediaType.startsWith("text/")
+        ? "text"
+        : null;
+    if (kind === null) continue;
+    items.push({
+      kind,
+      mime: mediaType,
+      filename: fp.filename ?? "attachment",
+      dataUrl: data,
+    });
+  }
+  return items;
 }
 
 // ─── Formatting helpers (for tool cards) ──────────────────────────────────
@@ -220,10 +298,12 @@ function blocksForMessages(
         // System messages are never shown in the chat surface.
         continue;
       case "user": {
+        const attachments = messageAttachments(msg);
         blocks.push({
           kind: "user",
           id: msg.id,
           text: messageText(msg),
+          ...(attachments.length > 0 ? { attachments } : {}),
         });
         continue;
       }
@@ -338,8 +418,12 @@ function toolBlockFromLive(
  * @param messages  persisted thread (oldest → newest).
  * @param stream    live stream state, or `null` when idle.
  * @param isRunning whether a run is in flight (gates the streaming cursor).
- * @param pendingUserText optimistic user text for the in-flight turn; shown
- *   only when no matching user message is already present in `messages`.
+ * @param pendingTurn optimistic user turn (text + attachments, plan D7) for
+ *   the in-flight message; shown only when no matching user message is
+ *   already present in `messages`. The equality guard compares TEXT plus
+ *   the attachment filename sequence (consecutive attachment-only turns
+ *   both have text ""; belt-and-suspenders — the primary clearing is
+ *   count-based in the view).
  * @param stopReason why the most recent run ended, when user-visible
  *   (`"aborted"`). Drives the "Stopped" marker both in the live-stream window
  *   (even when partial text exists) and after finalization (when the stream is
@@ -355,7 +439,7 @@ export function buildBlocks(
   messages: readonly SessionMessage[],
   stream: StreamState | null,
   isRunning: boolean,
-  pendingUserText: string | null,
+  pendingTurn: PendingTurn | null,
   stopReason: "aborted" | null = null,
   messageUsages: Record<string, MessageUsage> = {},
   lastTurnUsage?: LanguageModelUsage,
@@ -380,15 +464,36 @@ export function buildBlocks(
   // Optimistic user echo for the in-flight turn. The runtime appends the user
   // message to the Agent thread on send but `view.messages` only refreshes on
   // finalization, so without this the user's message vanishes while streaming.
-  if (pendingUserText) {
+  // Widened to carry attachments (plan D7); an attachment-only turn (empty
+  // text) still echoes.
+  if (
+    pendingTurn &&
+    (pendingTurn.text.length > 0 || pendingTurn.attachments.length > 0)
+  ) {
+    // Suppression guard compares text AND the attachment filename sequence —
+    // text alone would false-suppress consecutive attachment-only turns
+    // (both have text ""). Text-only turns keep the historical behavior
+    // (0 === 0 filenames). Belt-and-suspenders; the primary clearing is
+    // count-based in the view.
+    const pendingFilenames = pendingTurn.attachments
+      .map((a) => a.filename)
+      .join("\u0000");
     const alreadyShown = messages.some(
-      (m) => m.role === "user" && messageText(m) === pendingUserText,
+      (m) =>
+        m.role === "user" &&
+        messageText(m) === pendingTurn.text &&
+        messageAttachments(m)
+          .map((a) => a.filename)
+          .join("\u0000") === pendingFilenames,
     );
     if (!alreadyShown) {
       blocks.push({
         kind: "user",
         id: "__pending_user__",
-        text: pendingUserText,
+        text: pendingTurn.text,
+        ...(pendingTurn.attachments.length > 0
+          ? { attachments: pendingTurn.attachments }
+          : {}),
         optimistic: true,
       });
     }
