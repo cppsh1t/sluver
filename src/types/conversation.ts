@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { attachmentInputSchema } from "./attachment";
+
 /**
  * Conversation / Message — persisted AI chat transcripts.
  *
@@ -51,6 +53,13 @@ export type Conversation = z.infer<typeof conversationSchema>;
  *
  * Per ADR-0030 §2, only ONE row per turn (the last `role === "assistant"`)
  * ever carries usage; the rest have it absent/`null`.
+ *
+ * `attachments` is an INPUT-ONLY field (ADR-0044 / plan D2): it rides on
+ * `append_messages` payloads so message rows and their sidecar
+ * `message_attachments` blobs are written in one transaction. It is NEVER
+ * populated on rows read back (`load_messages` returns the Rust `Message`
+ * struct, which has no attachments field) — readers use
+ * `list_message_attachments` instead.
  */
 export const messageSchema = z.object({
   id: z.string(),
@@ -59,6 +68,7 @@ export const messageSchema = z.object({
   createdAt: z.iso.datetime(),
   usageInputTokens: z.number().int().nullable().optional(),
   usageOutputTokens: z.number().int().nullable().optional(),
+  attachments: z.array(attachmentInputSchema).optional(),
 });
 
 export type Message = z.infer<typeof messageSchema>;

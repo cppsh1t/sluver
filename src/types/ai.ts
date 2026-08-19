@@ -149,6 +149,16 @@ export const catalogModelSchema = z.object({
    * (ADR-0030 §6). `undefined` only before the catalog query resolves.
    */
   contextWindow: z.number().nullable().optional(),
+  /**
+   * Input modalities from the upstream models.dev `modalities.input` array
+   * (e.g. `["text", "image"]`), surfaced by the Rust adapter as camelCase
+   * `inputModalities`. `null` when upstream omits the field (the adapter
+   * filters empty arrays into `None` so `null` reliably means "unknown",
+   * never "known empty"). This is the vision-capability signal
+   * (`includes("image")`) for the catalog-driven downgrade flow
+   * (ADR-0044 §D9).
+   */
+  inputModalities: z.array(z.string()).nullable().optional(),
 });
 
 export type CatalogModel = z.infer<typeof catalogModelSchema>;

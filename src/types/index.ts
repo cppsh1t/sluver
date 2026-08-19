@@ -151,6 +151,16 @@ export {
   type Message,
 } from './conversation';
 
+// ─── Chat message attachments (ADR-0044) ──────────────────────────────────
+export {
+  attachmentKindSchema,
+  type AttachmentKind,
+  attachmentInputSchema,
+  type AttachmentInput,
+  attachmentMetaSchema,
+  type AttachmentMeta,
+} from './attachment';
+
 // ─── Agent Skills (storage-center install model — ADR-0043) ───────────────
 export {
   skillIdSchema,
