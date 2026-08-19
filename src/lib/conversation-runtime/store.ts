@@ -27,6 +27,7 @@
  */
 
 import { createStore, type StoreApi } from "zustand";
+import type { UserContent } from "ai";
 
 import {
   Agent,
@@ -103,6 +104,61 @@ export type ResolvedModel =
  * by the Provider from `useResolvedModelConfig`; passed into store actions.
  */
 export type ModelResolver = (role: string) => ResolvedModel;
+
+/**
+ * Resolves whether the model currently bound to a role accepts image input
+ * (ADR-0044 §D9 step 2 — catalog-driven vision downgrade). Built by the
+ * Provider from the models.dev catalog (`inputModalities.includes("image")`).
+ *
+ * Tri-state by contract:
+ * - `true`  — catalog confirms the model takes images (pass parts through);
+ * - `false` — catalog confirms it does NOT (downgrade to text markers);
+ * - `undefined` — unknown (no catalog entry / no modalities / no model
+ *   chosen / queries still loading). NEVER defaults to `false` — a custom
+ *   OpenAI-compatible vision setup must not be silently downgraded.
+ */
+export type ImageInputSupportedResolver = (role: string) => boolean | undefined;
+
+/**
+ * Legacy text encoding a text attachment was deterministically converted
+ * from at pick time (ADR-0044): `"utf-16le"` / `"utf-16be"` (byte-order-mark
+ * detected) or `"gb18030"` (GBK/GB2312 superset — the realistic zh-CN
+ * legacy case). See `attachment-picker.ts` for the cascade.
+ */
+export type ConvertedFromEncoding = "utf-16le" | "utf-16be" | "gb18030";
+
+/**
+ * A staged-but-unsent chat attachment (ADR-0044 §D8). Lives on
+ * {@link ConversationView} next to `draft` so it survives conversation
+ * switches (ADR-0024); cleared inside `send`. `dataUrl` holds the full
+ * base64 data URL (`data:{mime};base64,…`) — the same runtime form the
+ * message thread uses, so `send` can build `FilePart`s from it directly.
+ */
+export interface DraftAttachment {
+  /** Client-minted UUID v4 (`crypto.randomUUID()`) — stable across re-renders. */
+  readonly id: string;
+  readonly kind: "image" | "text";
+  readonly mime: string;
+  readonly filename: string;
+  readonly sizeBytes: number;
+  readonly dataUrl: string;
+  /**
+   * Present only when a legacy text encoding was auto-converted to UTF-8 at
+   * pick time; `undefined` = staged as-is (already valid UTF-8). When set,
+   * `dataUrl` + `sizeBytes` describe the CONVERTED UTF-8 bytes (what actually
+   * reaches the model and persistence). Drives the composer's conversion
+   * toast — conversion is never silent.
+   */
+  readonly convertedFrom?: ConvertedFromEncoding;
+}
+
+/**
+ * Max attachments per message (plan D6 — context-bloat control; the cap is
+ * frontend-only, NOT enforced Rust-side in v1). Exported so the UI layer
+ * (Wave 3 composer) can pre-validate; `addDraftAttachments` enforces it
+ * defensively by IGNORING overflow items.
+ */
+export const MAX_DRAFT_ATTACHMENTS = 8;
 
 /** Routes a background persistence failure to the logger (ADR-0014). */
 export type PersistErrorHandler = (error: unknown) => void;
@@ -285,6 +341,13 @@ export interface ConversationView {
   readonly stopReason: "aborted" | null;
   /** Draft text — preserved across conversation switches (ADR-0024). */
   draft: string;
+  /**
+   * Staged attachments for the next send (ADR-0044 §D8) — the composer's
+   * chip strip. Preserved across conversation switches like `draft`;
+   * cleared inside `send`. Enforced to at most {@link MAX_DRAFT_ATTACHMENTS}
+   * entries by `addDraftAttachments`.
+   */
+  draftAttachments: DraftAttachment[];
 }
 
 /**
@@ -333,14 +396,42 @@ export interface ConversationRuntimeState {
   send: (
     worldId: string,
     conversationId: string,
-    text: string,
+    /**
+     * The outgoing user turn (ADR-0044): a plain string (the historical
+     * form) or an SDK `UserContent` parts array (text + image/text file
+     * attachments with data-URL `data`).
+     */
+    content: UserContent,
     modelResolver: ModelResolver,
     onPersistError: PersistErrorHandler,
     autoTitle: AutoTitleCallback,
+    /**
+     * Per-send vision capability for the role's bound model (ADR-0044 §D9
+     * step 2). Forwarded to `agent.run` as `imageInputSupported`.
+     */
+    imageInputSupportedResolver: ImageInputSupportedResolver,
   ) => Promise<void>;
 
   abort: (worldId: string, conversationId: string) => void;
   setDraft: (worldId: string, conversationId: string, text: string) => void;
+  /**
+   * Stage draft attachments (ADR-0044 §D8). Does NO mime/size validation —
+   * Rust validates authoritatively at persist time and the UI pre-validates
+   * for instant feedback; the ONLY guard here is the count cap
+   * ({@link MAX_DRAFT_ATTACHMENTS}): items beyond the cap are IGNORED
+   * (not truncated-with-error) — a deliberate choice; the UI layer
+   * pre-validates and this is the defensive backstop.
+   */
+  addDraftAttachments: (
+    worldId: string,
+    conversationId: string,
+    items: DraftAttachment[],
+  ) => void;
+  removeDraftAttachment: (
+    worldId: string,
+    conversationId: string,
+    id: string,
+  ) => void;
   removeConversation: (worldId: string, conversationId: string) => void;
   clearError: (worldId: string, conversationId: string) => void;
   resolveApproval: (worldId: string, conversationId: string, toolCallId: string, approved: boolean) => void;
@@ -358,6 +449,7 @@ export const EMPTY_VIEW: ConversationView = {
   error: null,
   stopReason: null,
   draft: "",
+  draftAttachments: [],
 };
 
 /**
@@ -956,7 +1048,7 @@ export function createConversationRuntimeStore(
       },
 
       // ── send ──
-      send: async (worldId, conversationId, text, modelResolver, onPersistError, autoTitle) => {
+      send: async (worldId, conversationId, content, modelResolver, onPersistError, autoTitle, imageInputSupportedResolver) => {
         const data = getData(get(), worldId, conversationId);
         if (!data) {
           // ensureRuntime was never called for this conversation.
@@ -976,10 +1068,19 @@ export function createConversationRuntimeStore(
         );
         if (!agent) return; // resolveAgent set view.error.
 
+        // ADR-0044 §D9 step 2 — resolve the bound model's vision capability
+        // PER-SEND (live resolution, ADR-0023): switching models between
+        // turns just works. `undefined` (unknown) passes image parts
+        // through unchanged; only a catalog-confirmed `false` downgrades.
+        const imageInputSupported = imageInputSupportedResolver(
+          data.conversation.agentConfigName,
+        );
+
         // Clear error + flip to running. Stream is set after we have the runId.
         // `lastTurnUsage` is reset here so the previous turn's value does not
         // linger while the new run is in-flight (ADR-0030 — it gets re-set on
-        // finalization).
+        // finalization). The staged attachments leave with this turn — they
+        // are now part of `content` (ADR-0044 §D8: clear happens in send).
         patchData(worldId, conversationId, (d) => ({
           ...d,
           view: {
@@ -990,12 +1091,13 @@ export function createConversationRuntimeStore(
             stopReason: null,
             lastTurnUsage: undefined,
             lastStepInputTokens: undefined,
+            draftAttachments: [],
           },
         }));
 
         let handle: AgentRunHandle;
         try {
-          handle = agent.run(text);
+          handle = agent.run(content, { imageInputSupported });
         } catch (e) {
           // ConfigError (already running) or other synchronous failure.
           patchData(worldId, conversationId, (d) => ({
@@ -1507,6 +1609,41 @@ export function createConversationRuntimeStore(
         patchData(worldId, conversationId, (d) => ({
           ...d,
           view: { ...d.view, draft: text },
+        }));
+      },
+
+      // ── addDraftAttachments ──
+      addDraftAttachments: (worldId, conversationId, items) => {
+        patchData(worldId, conversationId, (d) => {
+          const current = d.view.draftAttachments;
+          // Count cap backstop (plan D6): keep at most
+          // MAX_DRAFT_ATTACHMENTS total; overflow items are IGNORED — the
+          // UI pre-validates, so this branch is purely defensive. `d` is
+          // returned unchanged when there is no room, so zustand sees the
+          // same data reference and skips the re-render.
+          const room = MAX_DRAFT_ATTACHMENTS - current.length;
+          if (room <= 0 || items.length === 0) return d;
+          const accepted = items.slice(0, room);
+          return {
+            ...d,
+            view: {
+              ...d.view,
+              draftAttachments: [...current, ...accepted],
+            },
+          };
+        });
+      },
+
+      // ── removeDraftAttachment ──
+      removeDraftAttachment: (worldId, conversationId, id) => {
+        patchData(worldId, conversationId, (d) => ({
+          ...d,
+          view: {
+            ...d.view,
+            draftAttachments: d.view.draftAttachments.filter(
+              (a) => a.id !== id,
+            ),
+          },
         }));
       },
 
