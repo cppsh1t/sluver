@@ -12,7 +12,8 @@
     "World": "世界",
     "Space": "空间",
     "Note": "笔记",
-    "Conversation": "对话"
+    "Conversation": "对话",
+    "Attachment": "附件"
   },
   "WORLD_NOT_FOUND": "未找到世界 ({{id}})",
   "NOT_FOUND": "未找到{{entity}} ({{id}})",
@@ -36,5 +37,8 @@
   "SKILL_NOT_FOUND": "未找到 Skill ({{id}})",
   "SKILL_PACKAGE_INVALID": "Skill 包无效或已损坏：{{reason}}",
   "SKILL_NOT_INSTALLED": "Skill「{{name}}」尚未安装",
+  "ATTACHMENT_TOO_LARGE": "文件过大（最大 {{max}}）",
+  "ATTACHMENT_INVALID_MIME": "不支持的文件类型：{{mime}}",
+  "ATTACHMENT_INVALID_TEXT": "文本附件必须是有效的 UTF-8 编码",
   "INTERNAL_ERROR": "发生内部错误"
 }

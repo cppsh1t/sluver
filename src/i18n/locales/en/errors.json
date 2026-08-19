@@ -12,7 +12,8 @@
     "World": "World",
     "Space": "Space",
     "Note": "Note",
-    "Conversation": "Conversation"
+    "Conversation": "Conversation",
+    "Attachment": "Attachment"
   },
   "WORLD_NOT_FOUND": "World not found ({{id}})",
   "NOT_FOUND": "{{entity}} not found ({{id}})",
@@ -36,5 +37,8 @@
   "SKILL_NOT_FOUND": "Skill not found ({{id}})",
   "SKILL_PACKAGE_INVALID": "The skill package is invalid or corrupt: {{reason}}",
   "SKILL_NOT_INSTALLED": "Skill \"{{name}}\" is not installed",
+  "ATTACHMENT_TOO_LARGE": "File is too large (max {{max}})",
+  "ATTACHMENT_INVALID_MIME": "Unsupported file type: {{mime}}",
+  "ATTACHMENT_INVALID_TEXT": "Text attachment must be valid UTF-8",
   "INTERNAL_ERROR": "An internal error occurred"
 }
