@@ -648,7 +648,11 @@ fn parse_catalog(json: &str) -> Result<ModelsDevCatalog, DbError> {
             let mut models: Vec<CatalogModel> = models
                 .into_iter()
                 .map(|(mid, m)| {
-                    let RawModel { name, limit } = m;
+                    let RawModel {
+                        name,
+                        limit,
+                        modalities,
+                    } = m;
                     CatalogModel {
                         id: mid.clone(),
                         name: name.unwrap_or(mid),
@@ -659,6 +663,17 @@ fn parse_catalog(json: &str) -> Result<ModelsDevCatalog, DbError> {
                         // `{ context, output }` upstream; we keep only the
                         // context half.
                         context_window: limit.and_then(|l| l.context),
+                        // Surface the upstream `modalities.input` as
+                        // `input_modalities` (`inputModalities` in the
+                        // JSON payload). `unwrap_or_default` + the
+                        // non-empty filter make `None` mean "upstream
+                        // omitted it / unknown" — never "known empty" —
+                        // so the vision check (input.includes("image"))
+                        // and the pass-through rule for unknown models
+                        // (ADR-0044 §D9) both key off the same Option.
+                        input_modalities: modalities
+                            .map(|md| md.input.unwrap_or_default())
+                            .filter(|v| !v.is_empty()),
                     }
                 })
                 .collect();
@@ -984,7 +999,8 @@ mod tests {
     /// Minimal catalog fixture exercising every code path: two providers,
     /// one with npm+iconUrl and one without; one model with an explicit name
     /// and one relying on the id fallback; plus an unknown field at every
-    /// level (`extra`) that serde must tolerate.
+    /// level (`extra`) that serde must tolerate. `modalities` carries the
+    /// real upstream OBJECT shape (`{ input, output }`, ADR-0044 §D9).
     const FIXTURE_JSON: &str = r#"{
         "anthropic": {
             "name": "Anthropic",
@@ -994,7 +1010,7 @@ mod tests {
             "models": {
                 "claude-sonnet-5": {
                     "name": "Claude Sonnet 5",
-                    "modalities": ["text"],
+                    "modalities": { "input": ["text", "image"], "output": ["text"] },
                     "extra": "ignored"
                 },
                 "claude-haiku": {
@@ -1040,6 +1056,79 @@ mod tests {
         assert_eq!(openai.models.len(), 1);
         assert_eq!(openai.models[0].id, "gpt-4o");
         assert_eq!(openai.models[0].name, "GPT-4o");
+
+        // Input modalities projection (ADR-0044 §D9): present upstream →
+        // Some; absent → None. Models sorted by id → [haiku, sonnet-5].
+        assert_eq!(
+            anthropic.models[0].input_modalities, None,
+            "claude-haiku has no modalities upstream → None"
+        );
+        assert_eq!(
+            anthropic.models[1].input_modalities,
+            Some(vec!["text".to_string(), "image".to_string()]),
+            "claude-sonnet-5 modalities.input projects verbatim"
+        );
+        assert_eq!(
+            openai.models[0].input_modalities, None,
+            "gpt-4o has no modalities upstream → None"
+        );
+    }
+
+    /// Pins the `modalities.input` → `input_modalities` projection rules
+    /// (ADR-0044 §D9): object present → Some(input array); object omitted
+    /// or input omitted/empty → None (unknown, never "known empty").
+    #[test]
+    fn parse_catalog_projects_input_modalities() {
+        let json = r#"{
+            "p": {
+                "models": {
+                    "vision-model": {
+                        "modalities": { "input": ["text", "image"], "output": ["text"] }
+                    },
+                    "text-only": {
+                        "modalities": { "input": ["text"] }
+                    },
+                    "no-modalities": {
+                        "name": "No Modalities"
+                    },
+                    "empty-modalities": {
+                        "modalities": { "input": [] }
+                    },
+                    "output-only": {
+                        "modalities": { "output": ["text"] }
+                    }
+                }
+            }
+        }"#;
+        let cat = parse_catalog(json).expect("modalities shapes must parse");
+        let models = &cat.providers[0].models;
+        // Sorted by id: empty-modalities, no-modalities, output-only,
+        // text-only, vision-model.
+        assert_eq!(
+            models[0].input_modalities,
+            None,
+            "empty input array → None (filtered)"
+        );
+        assert_eq!(
+            models[1].input_modalities,
+            None,
+            "modalities omitted upstream → None"
+        );
+        assert_eq!(
+            models[2].input_modalities,
+            None,
+            "modalities without input → None"
+        );
+        assert_eq!(
+            models[3].input_modalities,
+            Some(vec!["text".to_string()]),
+            "text-only input projects as-is"
+        );
+        assert_eq!(
+            models[4].input_modalities,
+            Some(vec!["text".to_string(), "image".to_string()]),
+            "vision input projects verbatim"
+        );
     }
 
     #[test]

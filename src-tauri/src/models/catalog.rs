@@ -51,6 +51,14 @@ pub struct CatalogModel {
     /// about the semantic "how big a context can this model hold," not the
     /// upstream field name. Used by the UI's context-occupancy indicator.
     pub context_window: Option<u64>,
+    /// Input modalities from the upstream `modalities.input` array (e.g.
+    /// `["text", "image"]`). `None` when upstream omits the field or the
+    /// array is empty — `parse_catalog` filters empties so `None` reliably
+    /// means "unknown", never "known empty" (a model with no input
+    /// modalities is not a thing). Serialized as `inputModalities`. This
+    /// is the vision-capability signal (`input.includes("image")`) for the
+    /// catalog-driven downgrade flow (ADR-0044 §D9).
+    pub input_modalities: Option<Vec<String>>,
 }
 
 // ─── intermediate parsing structs (private) ─────────────────────────────────
@@ -94,6 +102,30 @@ pub(crate) struct RawModel {
     /// `limit.context` -> `CatalogModel.context_window`.
     #[serde(default)]
     pub(crate) limit: Option<RawModelLimit>,
+    /// Upstream models.dev field `modalities` — an OBJECT:
+    ///   `"modalities": { "input": ["text","image"], "output": ["text"] }`
+    /// `Option` because some upstream rows omit it (text-only models and
+    /// unknown/custom entries alike). `parse_catalog` projects
+    /// `modalities.input` -> `CatalogModel.input_modalities`.
+    #[serde(default)]
+    pub(crate) modalities: Option<RawModalities>,
+}
+
+/// Inner shape of the upstream `modalities` object (ADR-0044 §D9). `input`
+/// is the capability signal (vision check = `input.contains("image")`);
+/// `output` is currently unread — kept to faithfully mirror the upstream
+/// shape. Both `#[serde(default)]` so a row reporting only one half still
+/// parses.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RawModalities {
+    #[serde(default)]
+    pub(crate) input: Option<Vec<String>>,
+    /// Max completion length. Currently unread — kept to faithfully mirror
+    /// the upstream shape (same policy as `RawModelLimit::output`).
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub(crate) output: Option<Vec<String>>,
 }
 
 /// Inner shape of the upstream `limit` object. `context` is the maximum
