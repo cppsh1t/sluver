@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { simulateReadableStream } from "ai";
+import type { UserContent } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 
 import {
@@ -360,6 +361,216 @@ describe("Agent.run derived-model-input transforms", () => {
     expect(pair).toBeDefined();
     expect(JSON.stringify(pair?.result.output)).toContain("snapshot");
     expect(JSON.stringify(agent.getMessages()[2]?.content)).toContain("pages of prose");
+  });
+});
+
+// ─── run(): multimodal content (ADR-0044 P2 — D3/D4/D9) ──────────────────
+
+describe("Agent.run multimodal content", () => {
+  /** Encode `text` as a base64 data URL (multi-byte UTF-8 safe). */
+  function textAttachmentDataUrl(text: string, mime = "text/markdown"): string {
+    const bytes = new TextEncoder().encode(text);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return `data:${mime};base64,${btoa(binary)}`;
+  }
+
+  /**
+   * Structural view of a provider prompt for exact text-part assertions
+   * (JSON.stringify escapes quotes — containment on serialized strings is
+   * brittle; comparing the decoded part text is exact).
+   */
+  type PromptMessage = {
+    role: string;
+    content: string | Array<{ type: string; text?: string }>;
+  };
+
+  function promptTextsAt(prompt: PromptMessage[], index: number): string[] {
+    const content = prompt[index]?.content;
+    if (!Array.isArray(content)) return [];
+    return content.flatMap((part) =>
+      part.type === "text" && typeof part.text === "string" ? [part.text] : [],
+    );
+  }
+
+  /** Aged tool thread for the compaction + inputLength regression below. */
+  function agedToolThread(): SessionMessage[] {
+    return [
+      sess({ role: "user", content: "first question" }, 1),
+      sess(
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "tc-mm",
+              toolName: "lookup",
+              input: { q: "x" },
+            },
+          ],
+        },
+        2,
+      ),
+      sess(
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "tc-mm",
+              toolName: "lookup",
+              output: { type: "text", value: "found" },
+            },
+          ],
+        },
+        3,
+      ),
+    ];
+  }
+
+  it("lands parts-array user content verbatim in the thread; the model receives the text sentinel and the raw image", async () => {
+    const pngB64 = btoa("FAKEPNGBYTES");
+    const content: UserContent = [
+      { type: "text", text: "look at these" },
+      {
+        type: "file",
+        mediaType: "image/png",
+        filename: "sunset.png",
+        data: `data:image/png;base64,${pngB64}`,
+      },
+      {
+        type: "file",
+        mediaType: "text/markdown",
+        filename: "notes.md",
+        data: textAttachmentDataUrl("# Title\nbody"),
+      },
+    ];
+    const { store } = createStore();
+    const model = replyModel("ok");
+    const agent = await makeAgent(model, store);
+
+    const handle = agent.run(content);
+    await handle.result;
+
+    // Persisted Thread: the user message content is the parts array VERBATIM.
+    const thread = agent.getMessages();
+    const userMsg = thread[0];
+    if (userMsg?.role !== "user") throw new Error("expected user message");
+    expect(userMsg.content).toEqual(content);
+
+    // Derived Model Input: the text file became a sentinel TextPart; the
+    // image passed through untouched (imageInputSupported absent = unknown).
+    const prompt = model.doStreamCalls[0]?.prompt ?? [];
+    expect(promptTextsAt(prompt, 1)).toContain(
+      '<attachment filename="notes.md" mime="text/markdown">\n# Title\nbody\n</attachment>',
+    );
+    expect(JSON.stringify(prompt)).not.toContain("data:text/markdown");
+    expect(JSON.stringify(prompt)).toContain(pngB64);
+  });
+
+  it("downgrades image parts when imageInputSupported is explicitly false", async () => {
+    const pngB64 = btoa("SECRETIMAGEBYTES");
+    const content: UserContent = [
+      { type: "text", text: "describe this" },
+      {
+        type: "file",
+        mediaType: "image/png",
+        filename: "sunset.png",
+        data: `data:image/png;base64,${pngB64}`,
+      },
+    ];
+    const { store } = createStore();
+    const model = replyModel("a sunset");
+    const agent = await makeAgent(model, store);
+
+    const handle = agent.run(content, { imageInputSupported: false });
+    await handle.result;
+
+    // The model sees the downgrade marker, never the image payload.
+    const prompt = model.doStreamCalls[0]?.prompt ?? [];
+    expect(promptTextsAt(prompt, 1)).toContain(
+      '[image attachment: "sunset.png" — image content NOT delivered: the bound model does not accept image input]',
+    );
+    expect(JSON.stringify(prompt)).not.toContain(pngB64);
+
+    // The Persisted Thread keeps the original image FilePart (source of truth).
+    const userMsg = agent.getMessages()[0];
+    if (userMsg?.role !== "user") throw new Error("expected user message");
+    expect(userMsg.content).toEqual(content);
+  });
+
+  it("passes image parts through when imageInputSupported is true", async () => {
+    const pngB64 = btoa("FAKEPNGBYTES");
+    const content: UserContent = [
+      {
+        type: "file",
+        mediaType: "image/png",
+        filename: "sunset.png",
+        data: `data:image/png;base64,${pngB64}`,
+      },
+    ];
+    const { store } = createStore();
+    const model = replyModel("ok");
+    const agent = await makeAgent(model, store);
+
+    await agent.run(content, { imageInputSupported: true }).result;
+
+    expect(JSON.stringify(model.doStreamCalls[0]?.prompt)).toContain(pngB64);
+  });
+
+  it("slices the delta correctly when attachments and compaction reshape the input (inputLength regression)", async () => {
+    const content: UserContent = [
+      { type: "text", text: "check these" },
+      {
+        type: "file",
+        mediaType: "text/plain",
+        filename: "lines.txt",
+        data: textAttachmentDataUrl("alpha\nbeta", "text/plain"),
+      },
+    ];
+    const { store, appendCalls } = createStore({ messages: agedToolThread() });
+    const model = replyModel("answer");
+    const agent = await makeAgent(model, store, {
+      compactionPolicy: { enabled: true, turnAge: 1 },
+    });
+
+    const handle = agent.run(content);
+    const result = await handle.result;
+    expect(result.finishReason).toBe("stop");
+
+    // Input reshaped: aged pair compacted to a stub user line + the new user
+    // message with the inlined sentinel. The aged turn's ORIGINAL user
+    // message survives (only the assistant+tool pair collapses), so the
+    // prompt is system + 3 user messages. Count changes come ONLY from
+    // compaction (before the inputLength snapshot); the part-mapping
+    // transforms preserve the count.
+    const prompt = model.doStreamCalls[0]?.prompt ?? [];
+    expect(prompt.map((m) => m.role)).toEqual([
+      "system",
+      "user",
+      "user",
+      "user",
+    ]);
+    expect(promptTextsAt(prompt, 2)).toContain(
+      "[tool_call tc-mm] lookup \u2192 succeeded",
+    );
+    expect(promptTextsAt(prompt, 3)).toContain(
+      '<attachment filename="lines.txt" mime="text/plain">\nalpha\nbeta\n</attachment>',
+    );
+
+    // inputLength invariant: the persisted delta is EXACTLY the run's new
+    // assistant message — no reshaped user message ever leaks into it.
+    expect(appendCalls[1]?.delta).toHaveLength(1);
+    expect(appendCalls[1]?.delta[0]?.role).toBe("assistant");
+    expect(agent.getMessages().map((m) => m.role)).toEqual([
+      "user",
+      "assistant",
+      "tool",
+      "user",
+      "assistant",
+    ]);
   });
 });
 

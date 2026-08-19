@@ -10,7 +10,7 @@
  * ## Lifecycle
  *
  * Constructed via the async factory {@link Agent.open}, which loads history
- * from the store. Each `agent.run(text)` appends a user message (persisted
+ * from the store. Each `agent.run(content)` appends a user message (persisted
  * best-effort), drives the loop, and on resolution appends the response delta. Because `AgentLoop` never rejects (ADR-0018, revised),
  * the same `.then()` path handles success, abort, and error uniformly.
  *
@@ -34,12 +34,15 @@ import {
 import {
   compactToolCalls,
   composeSystemPrompt,
+  downgradeImageParts,
+  inlineTextFileParts,
   stripDeleteSnapshots,
   type CompactionPolicy,
 } from "@/lib/ai/pipeline";
 import type {
   ToolCallPart,
   ToolResultPart,
+  UserContent,
 } from "ai";
 
 import type { Plan } from "./plan";
@@ -115,7 +118,7 @@ export interface AgentOptions {
 /**
  * A stateful, single-session conversational wrapper around {@link AgentLoop}.
  *
- * Construct once per session via {@link Agent.open}. Call `run(text)` per turn.
+ * Construct once per session via {@link Agent.open}. Call `run(content)` per turn.
  * Never construct directly — use the async factory to ensure history is loaded.
  */
 export class Agent {
@@ -273,6 +276,17 @@ export class Agent {
   /**
    * Send a user message and drive the loop for one turn.
    *
+   * `content` is the SDK's {@link UserContent}: a plain string (the
+   * historical form — existing callers compile unchanged) or a parts array
+   * (text + image/text file attachments, ADR-0044). The parts land in the
+   * Persisted Thread verbatim; only the Derived Model Input is reshaped (see
+   * step 2 below).
+   *
+   * `options.imageInputSupported` is a tri-state capability hint resolved
+   * per-run by the app layer (D9): absent (`undefined`, unknown/custom model)
+   * and `true` pass image FileParts through; an explicit `false` replaces
+   * them with downgrade markers.
+   *
    * Appends the user message to the thread and fires a best-effort persist,
    * then runs the loop with the full message history. On resolution (success,
    * abort, or error — all resolve per ADR-0018 revised), appends the response
@@ -289,8 +303,11 @@ export class Agent {
    *   `AgentLoop` — one turn at a time per Agent).
    */
   run(
-    text: string,
-    options?: { readonly abortSignal?: AbortSignal },
+    content: UserContent,
+    options?: {
+      readonly abortSignal?: AbortSignal;
+      readonly imageInputSupported?: boolean;
+    },
   ): AgentRunHandle {
     // 0. Snapshot the Plan at function entry. The Derived Model Input MUST be
     //    a pure function of immutable snapshots (ADR-0028 invariant 2) — a
@@ -302,7 +319,7 @@ export class Agent {
     //    throw from loop.run() (concurrent-run guard) leaves this.messages
     //    and the store untouched.
     const userMessage = toSessionMessage(
-      { role: "user", content: text },
+      { role: "user", content },
       this.sessionId,
     );
 
@@ -319,8 +336,18 @@ export class Agent {
     //    `{ deleted, id, snapshot }` tool results to a `{ deleted, id, name }`
     //    echo so the model never carries deleted-entity prose. The Persisted
     //    Thread keeps the full snapshots (UI delete cards + `context_read`).
+    //
+    //    inlineTextFileParts + downgradeImageParts (ADR-0044 D4/D9) map parts
+    //    WITHIN user messages — data-URL text FileParts become sentinel
+    //    TextParts; image FileParts become downgrade markers when the caller
+    //    explicitly flags the bound model as non-vision. Both preserve
+    //    message count/order (the `inputLength` invariant below) and run
+    //    BEFORE the snapshot so the slicing tracks the reshaped array.
     const rawMessages = [...this.messages, userMessage].map(toModelMessage);
-    const modelMessages = compactToolCalls(rawMessages, this.compactionPolicy);
+    const modelMessages = downgradeImageParts(
+      inlineTextFileParts(compactToolCalls(rawMessages, this.compactionPolicy)),
+      options?.imageInputSupported,
+    );
     const inputLength = modelMessages.length;
 
     // 2b. Compose the per-run system prompt via the pipeline (ADR-0028). The
