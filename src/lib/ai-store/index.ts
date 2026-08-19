@@ -21,6 +21,9 @@
  * ADR-0021 (novel scene autosave -- same full-replacement persistence idiom).
  */
 
+import type { FilePart, TextPart } from "ai";
+
+import { getMessageAttachment } from "@/api/attachment";
 import {
   appendMessages as appendMessagesApi,
   createConversation,
@@ -29,6 +32,8 @@ import {
   loadMessages,
   updateConversationPlan,
 } from "@/api/conversation";
+import { base64Encode } from "@/lib/image-bytes";
+import { logger } from "@/lib/logger";
 import {
   toModelMessage,
   type LanguageModelUsage,
@@ -40,6 +45,8 @@ import {
   type SessionStore,
 } from "@/lib/ai";
 import type {
+  AttachmentInput,
+  AttachmentKind,
   Conversation,
   ConversationId,
   Message,
@@ -167,7 +174,19 @@ export class TauriSessionStore implements SessionStore {
       this.options.worldId as WorldId,
       sessionId as ConversationId,
     );
-    return messages.map(messageToSessionMessage);
+    // ADR-0044 D3 — hydrate `attachment://{id}` refs back into data URLs
+    // after the row mapping. The fetcher swallows EVERY rejection into
+    // `null` so `hydrateAttachments` (and therefore `loadMessages`) NEVER
+    // throws — the per-part degradation + logger.warn happen inside.
+    return hydrateAttachments(
+      messages.map(messageToSessionMessage),
+      (id) =>
+        getMessageAttachment(
+          this.options.spaceId,
+          this.options.worldId as WorldId,
+          id,
+        ).catch(() => null),
+    );
   }
 
   async appendMessages(
@@ -175,6 +194,12 @@ export class TauriSessionStore implements SessionStore {
     delta: SessionMessage[],
     turnUsage?: LanguageModelUsage,
   ): Promise<void> {
+    // ADR-0044 D3 — dehydrate data-URL file parts into sidecar
+    // AttachmentInput rows + `attachment://{id}` refs BEFORE building the
+    // IPC payload, so the message bodies and their blobs land in ONE
+    // transaction (plan D2).
+    const { messages: dehydrated, attachmentsByMessage } =
+      dehydrateAttachments(delta);
     await appendMessagesApi(
       this.options.spaceId,
       this.options.worldId as WorldId,
@@ -186,14 +211,16 @@ export class TauriSessionStore implements SessionStore {
         // a real row. We find the index by scanning backwards; if no
         // assistant is found (defensive — should not happen for a real
         // turn) `turnUsage` is silently dropped rather than crashing.
-        messages: delta.map((sm, i) => {
-          if (i === lastAssistantIndex(delta) && turnUsage) {
-            return sessionMessageToMessage(sm, {
-              inputTokens: turnUsage.inputTokens,
-              outputTokens: turnUsage.outputTokens,
-            });
-          }
-          return sessionMessageToMessage(sm);
+        messages: dehydrated.map((sm, i) => {
+          const row =
+            i === lastAssistantIndex(delta) && turnUsage
+              ? sessionMessageToMessage(sm, {
+                  inputTokens: turnUsage.inputTokens,
+                  outputTokens: turnUsage.outputTokens,
+                })
+              : sessionMessageToMessage(sm);
+          const attachments = attachmentsByMessage.get(sm.id);
+          return attachments ? { ...row, attachments } : row;
         }),
       },
     );
@@ -284,6 +311,189 @@ export class TauriSessionStore implements SessionStore {
       plan,
     );
   }
+}
+
+// --- Attachment boundary (ADR-0044 / plan D3) ------------------------------
+//
+// The single hydrate/dehydrate seam between the runtime thread (data URLs,
+// provider-ready) and the persisted bodies (`attachment://{id}` refs,
+// JSON-safe). Lives HERE — app layer — so the pure library never knows about
+// `attachment://` (ADR-0019 purity, ADR-0028 layering).
+
+/** Prefix marking a persisted FilePart `data` as an attachment ref. */
+const ATTACHMENT_REF_PREFIX = "attachment://";
+/** Prefix marking a runtime FilePart `data` as an inline base64 data URL. */
+const DATA_URL_PREFIX = "data:";
+
+/** Filename fallback when a FilePart carries none (display-only). */
+const FALLBACK_FILENAME = "attachment";
+
+/**
+ * Map a media type onto the attachment kind domain (`image/*` → `"image"`,
+ * `text/*` → `"text"`). Returns `null` for anything else — a defensive
+ * guard: dehydrate passes such parts through UNCHANGED (Rust is the
+ * authoritative validator; this boundary never invents kinds it cannot
+ * persist).
+ */
+function attachmentKindForMediaType(mediaType: string): AttachmentKind | null {
+  if (mediaType.startsWith("image/")) return "image";
+  if (mediaType.startsWith("text/")) return "text";
+  return null;
+}
+
+/** Result of {@link dehydrateAttachments}. */
+export interface DehydratedDelta {
+  /** Delta with data-URL file parts swapped to `attachment://{id}` refs.
+   * Messages without eligible parts pass through BY REFERENCE. */
+  readonly messages: SessionMessage[];
+  /** Per-message-id attachment inputs, in position order. Empty for
+   * messages without attachments. */
+  readonly attachmentsByMessage: Map<string, AttachmentInput[]>;
+}
+
+/**
+ * Dehydrate a turn delta for persistence (plan D3): walk USER messages with
+ * array content; for each `FilePart` whose `data` is a base64 data URL of an
+ * `image/*` / `text/*` media type, mint an attachment id
+ * (`crypto.randomUUID()`), carry the base64 payload verbatim (sliced after
+ * the data-URL comma — no decode/re-encode round-trip, so multi-byte
+ * content needs no handling here), and swap the part's `data` to
+ * `attachment://{id}` in a COPIED message.
+ *
+ * Everything else — non-user messages, string content, non-file parts,
+ * non-data-URL data, unsupported media types — passes through untouched, by
+ * reference. Message count and order are strictly preserved.
+ */
+export function dehydrateAttachments(
+  delta: SessionMessage[],
+): DehydratedDelta {
+  const attachmentsByMessage = new Map<string, AttachmentInput[]>();
+  const messages = delta.map((message) => {
+    if (message.role !== "user") return message;
+    const { content } = message;
+    if (!Array.isArray(content)) return message;
+
+    let position = 0;
+    let touched = false;
+    const rewrittenContent = content.map((part) => {
+      if (
+        part.type !== "file" ||
+        typeof part.data !== "string" ||
+        !part.data.startsWith(DATA_URL_PREFIX)
+      ) {
+        return part;
+      }
+      const kind = attachmentKindForMediaType(part.mediaType);
+      if (kind === null) return part; // unsupported media type — leave as-is
+      const comma = part.data.indexOf(",");
+      if (comma === -1) return part; // malformed data URL — leave as-is
+      const id = crypto.randomUUID();
+      touched = true;
+      const input: AttachmentInput = {
+        id,
+        position,
+        kind,
+        mime: part.mediaType,
+        filename: part.filename ?? FALLBACK_FILENAME,
+        dataBase64: part.data.slice(comma + 1),
+      };
+      position += 1;
+      const existing = attachmentsByMessage.get(message.id);
+      if (existing) existing.push(input);
+      else attachmentsByMessage.set(message.id, [input]);
+      return { ...part, data: `${ATTACHMENT_REF_PREFIX}${id}` };
+    });
+    return touched ? { ...message, content: rewrittenContent } : message;
+  });
+  return { messages, attachmentsByMessage };
+}
+
+/** Byte fetcher used by {@link hydrateAttachments}; `null` = row missing. */
+export type AttachmentFetcher = (id: string) => Promise<ArrayBuffer | null>;
+
+/**
+ * Hydrate persisted `attachment://{id}` refs back into
+ * `data:{mime};base64,…` data URLs (plan D3). Fetches for all refs run
+ * concurrently (`Promise.all`); each result is swapped into a COPIED
+ * message. Non-user messages, non-ref parts, and messages without refs pass
+ * through by reference; message count and order are strictly preserved.
+ *
+ * NEVER throws (the `loadMessages` contract):
+ * - a rejected fetch is defensively degraded to `null` (missing row);
+ * - a missing row degrades that single part to a TextPart
+ *   `[Attachment unavailable: {filename}]` and logs
+ *   `attachment.hydrate.missing` with snake_case fields (ADR-0016).
+ */
+export async function hydrateAttachments(
+  messages: SessionMessage[],
+  fetcher: AttachmentFetcher,
+): Promise<SessionMessage[]> {
+  // Pass 1: collect every ref and kick off its fetch (deduped by id —
+  // the same attachment can be referenced by multiple parts in theory).
+  const inflight = new Map<string, Promise<ArrayBuffer | null>>();
+  for (const message of messages) {
+    if (message.role !== "user") continue;
+    const { content } = message;
+    if (!Array.isArray(content)) continue;
+    for (const part of content) {
+      if (part.type !== "file" || typeof part.data !== "string") continue;
+      if (!part.data.startsWith(ATTACHMENT_REF_PREFIX)) continue;
+      const id = part.data.slice(ATTACHMENT_REF_PREFIX.length);
+      if (!inflight.has(id)) {
+        // Defensive catch-all: a rejecting fetcher must never break the
+        // never-throws contract — degrade to "missing row".
+        inflight.set(
+          id,
+          Promise.resolve(fetcher(id)).then(
+            (buf) => buf,
+            () => null,
+          ),
+        );
+      }
+    }
+  }
+  if (inflight.size === 0) return messages;
+
+  const bytesById = new Map<string, ArrayBuffer | null>();
+  await Promise.all(
+    Array.from(inflight.entries(), async ([id, promise]) => {
+      bytesById.set(id, await promise);
+    }),
+  );
+
+  // Pass 2: rebuild only the messages that carry refs.
+  return messages.map((message) => {
+    if (message.role !== "user") return message;
+    const { content } = message;
+    if (!Array.isArray(content)) return message;
+    let touched = false;
+    const rewrittenContent = content.map(
+      (part): typeof part => {
+        if (part.type !== "file" || typeof part.data !== "string") return part;
+        if (!part.data.startsWith(ATTACHMENT_REF_PREFIX)) return part;
+        const id = part.data.slice(ATTACHMENT_REF_PREFIX.length);
+        const bytes = bytesById.get(id) ?? null;
+        touched = true;
+        if (bytes === null) {
+          logger.warn("attachment.hydrate.missing", {
+            attachment_id: id,
+            message_id: message.id,
+          });
+          const degraded: TextPart = {
+            type: "text",
+            text: `[Attachment unavailable: ${part.filename ?? FALLBACK_FILENAME}]`,
+          };
+          return degraded;
+        }
+        const hydrated: FilePart = {
+          ...part,
+          data: `data:${part.mediaType};base64,${base64Encode(new Uint8Array(bytes))}`,
+        };
+        return hydrated;
+      },
+    );
+    return touched ? { ...message, content: rewrittenContent } : message;
+  });
 }
 
 // --- Mapping helpers ------------------------------------------------------
