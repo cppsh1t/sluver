@@ -63,8 +63,11 @@ export function base64Encode(bytes: Uint8Array): string {
  *
  * Supported: JPEG, PNG, WebP. Falls back to `"image/webp"` (the default
  * output format of the crop dialog) for anything unrecognised.
+ *
+ * Exported since ADR-0044: the chat attachment picker reuses it to verify
+ * picked files against their declared MIME before staging them.
  */
-function sniffImageMime(bytes: ArrayBuffer): string {
+export function sniffImageMime(bytes: ArrayBuffer): string {
   const u = new Uint8Array(bytes, 0, Math.min(12, bytes.byteLength));
   // JPEG: FF D8 FF
   if (u[0] === 0xff && u[1] === 0xd8 && u[2] === 0xff) return "image/jpeg";
