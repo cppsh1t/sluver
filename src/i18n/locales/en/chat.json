@@ -19,7 +19,22 @@
   "composer": {
     "placeholder": "Type a message…",
     "send": "Send",
-    "stop": "Stop"
+    "stop": "Stop",
+    "attach": "Attach files",
+    "removeAttachment": "Remove attachment"
+  },
+  "attachment": {
+    "imageAlt": "Attached image",
+    "textChip": "{{name}} · {{size}}",
+    "previewTitle": "Attachment preview",
+    "previewTruncated": "Content is long — showing the first 2000 characters",
+    "tooMany": "Too many attachments (max {{max}})",
+    "tooLarge": "File is too large",
+    "unsupportedType": "Unsupported file type",
+    "readFailed": "Failed to read file",
+    "invalidText": "\"{{name}}\" is not valid UTF-8 text — re-save it as UTF-8 and try again",
+    "convertedToUtf8": "\"{{name}}\" ({{encoding}}) was automatically converted to UTF-8",
+    "notDelivered": "Image not delivered: current model does not accept image input"
   },
   "tool": {
     "running": "Running",

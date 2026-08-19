@@ -19,7 +19,22 @@
   "composer": {
     "placeholder": "输入消息…",
     "send": "发送",
-    "stop": "停止"
+    "stop": "停止",
+    "attach": "添加附件",
+    "removeAttachment": "移除附件"
+  },
+  "attachment": {
+    "imageAlt": "图片附件",
+    "textChip": "{{name}} · {{size}}",
+    "previewTitle": "附件预览",
+    "previewTruncated": "内容过长，仅显示前 2000 字符",
+    "tooMany": "附件数量超限（最多 {{max}} 个）",
+    "tooLarge": "文件过大",
+    "unsupportedType": "不支持的文件类型",
+    "readFailed": "读取文件失败",
+    "invalidText": "“{{name}}”不是有效的 UTF-8 文本——请以 UTF-8 编码重新保存后再试",
+    "convertedToUtf8": "检测到“{{name}}”为 {{encoding}} 编码，已自动转换为 UTF-8",
+    "notDelivered": "图片未送达：当前模型不支持识图"
   },
   "tool": {
     "running": "运行中",
