@@ -7,6 +7,10 @@
  *   tool-result pairs to short text (Context mode, ADR-0031 Phase 1).
  * - {@link ./delete-snapshot} — `stripDeleteSnapshots`: compacts delete-tool
  *   snapshot payloads to a `{ deleted, id, name }` echo (payload hygiene).
+ * - {@link ./inline-text-files} — `inlineTextFileParts`: converts data-URL
+ *   text FileParts in user messages to sentinel TextParts (ADR-0044 D4).
+ * - {@link ./downgrade-image-parts} — `downgradeImageParts`: replaces image
+ *   FileParts with filename-bearing markers for non-vision models (D9).
  * - {@link ./types}          — `SystemPromptComposerInput`, `CompactionPolicy`.
  *
  * Purity: this module and its siblings import only from siblings,
@@ -18,4 +22,6 @@
 export { composeSystemPrompt } from "./plan-injector";
 export { compactToolCalls, deriveStatus } from "./tool-compactor";
 export { stripDeleteSnapshots } from "./delete-snapshot";
+export { inlineTextFileParts } from "./inline-text-files";
+export { downgradeImageParts } from "./downgrade-image-parts";
 export type { SystemPromptComposerInput, CompactionPolicy } from "./types";
