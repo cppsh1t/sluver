@@ -1,4 +1,5 @@
 pub mod ai;
+pub mod attachment;
 pub mod character;
 pub mod conversation;
 pub mod diagnostics;

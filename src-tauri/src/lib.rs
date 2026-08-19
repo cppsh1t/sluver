@@ -291,6 +291,10 @@ pub fn run() {
             commands::conversation::append_messages,
             commands::conversation::update_conversation_plan,
             commands::conversation::update_conversation_title,
+            // Chat message attachments (read paths — writes ride
+            // append_messages; ADR-0044)
+            commands::attachment::get_message_attachment,
+            commands::attachment::list_message_attachments,
             // World config (TimeMapper — ADR-0026)
             commands::world_config::get_time_mapper,
             commands::world_config::set_time_mapper,
