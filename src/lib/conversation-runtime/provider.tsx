@@ -290,7 +290,6 @@ export function ConversationRuntimeProvider({
           title = await generateConversationTitle(
             namerConfig.config,
             input.userText,
-            input.assistantText,
           );
         } catch (e) {
           logger.warn("chat.auto_title.failed", {

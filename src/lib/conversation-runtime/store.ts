@@ -177,10 +177,8 @@ export type PersistErrorHandler = (error: unknown) => void;
 export interface AutoTitleInput {
   readonly worldId: WorldId;
   readonly conversationId: ConversationId;
-  /** The conversation's FIRST user message, in full. */
+  /** The conversation's FIRST user message, in full (truncated downstream). */
   readonly userText: string;
-  /** The just-completed run's LAST assistant text (truncated downstream). */
-  readonly assistantText: string;
 }
 
 /**
@@ -524,29 +522,20 @@ function messageText(message: ModelMessage): string {
 }
 
 /**
- * Pick the (FIRST user text, LAST assistant text) pair from a finalized
- * thread for auto-titling. Non-text parts and empty messages are skipped;
- * `null` when either side has nothing extractable.
+ * Pick the FIRST user text from a finalized thread for auto-titling.
+ * Non-text parts and empty messages are skipped; `null` when there is
+ * nothing extractable.
  */
-function extractTitleTexts(
+function extractTitleText(
   messages: readonly ModelMessage[],
-): { userText: string; assistantText: string } | null {
-  let userText: string | null = null;
-  let assistantText: string | null = null;
+): string | null {
   for (const message of messages) {
     if (message.role === "user") {
-      if (userText === null) {
-        const text = messageText(message);
-        if (text !== "") userText = text;
-      }
-    } else if (message.role === "assistant") {
-      // Keep overwriting → the LAST non-empty assistant text wins.
       const text = messageText(message);
-      if (text !== "") assistantText = text;
+      if (text !== "") return text;
     }
   }
-  if (userText === null || assistantText === null) return null;
-  return { userText, assistantText };
+  return null;
 }
 
 function getData(
@@ -1610,8 +1599,8 @@ export function createConversationRuntimeStore(
               result.finishReason !== "aborted" &&
               result.finishReason !== "error"
             ) {
-              const texts = extractTitleTexts(agent.getMessages());
-              if (texts) {
+              const userText = extractTitleText(agent.getMessages());
+              if (userText !== null) {
                 patchData(worldId, conversationId, (d) => ({
                   ...d,
                   autoTitlePending: true,
@@ -1619,8 +1608,7 @@ export function createConversationRuntimeStore(
                 void autoTitle({
                   worldId: worldId as WorldId,
                   conversationId: conversation.id,
-                  userText: texts.userText,
-                  assistantText: texts.assistantText,
+                  userText,
                 })
                   .then((title) => {
                     patchData(worldId, conversationId, (d) => ({

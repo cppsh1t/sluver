@@ -1,14 +1,19 @@
 /**
  * Automatic conversation titling (ADR-0040).
  *
- * A pure, React-free module that produces a short conversation title from the
- * first user message + last assistant reply, via ONE one-shot `generateText`
- * call. It is driven by the dedicated `"namer"` agent config — resolved live
- * by the Provider — and is NEVER user-invokable from the chat UI.
+ * A pure, React-free module that produces a short conversation title from
+ * the FIRST segment of the conversation's first user message, via ONE
+ * one-shot `generateText` call. It is driven by the dedicated `"namer"`
+ * agent config — resolved live by the Provider — and is NEVER
+ * user-invokable from the chat UI.
  *
  * Contract:
  * - No tools, no `AgentLoop`, no session — a single `generateText` round trip.
  * - Low temperature (~0.3) for deterministic, label-like output.
+ * - The user message is truncated to {@link USER_CONTEXT_CHARS} before
+ *   entering the prompt — the title names the topic, and the topic is
+ *   established up front; the assistant reply is deliberately NOT sent
+ *   (token economy, ADR-0040 tradeoffs).
  * - The title MUST be in the SAME LANGUAGE as the user's message.
  * - Post-processing is aggressive (quote stripping, whitespace collapsing,
  *   hard length clamp) and NEVER returns an empty string — an emptied result
@@ -27,8 +32,8 @@ import { createLanguageModel, type ResolvedModelConfig } from "@/lib/ai";
 /** Low temperature — a title is a label, not creative prose. */
 const TITLE_TEMPERATURE = 0.3;
 
-/** The assistant reply is truncated before entering the prompt. */
-const ASSISTANT_CONTEXT_CHARS = 1500;
+/** The user message is truncated before entering the prompt. */
+const USER_CONTEXT_CHARS = 1500;
 
 /** Hard ceiling applied AFTER post-processing (DB column is generous; UI is not). */
 const MAX_TITLE_LENGTH = 60;
@@ -97,9 +102,8 @@ export function cleanTitle(raw: string): string {
  *
  * @param config   The resolved `"namer"` agent model config (Provider gates
  *                 on it being ready before calling).
- * @param userText The FIRST user message of the conversation, in full.
- * @param assistantText The LAST assistant reply (truncated here to
- *                 {@link ASSISTANT_CONTEXT_CHARS} chars before prompting).
+ * @param userText The conversation's FIRST user message, in full (truncated
+ *                 here to {@link USER_CONTEXT_CHARS} chars before prompting).
  * @returns The cleaned title (non-empty, ≤ 60 chars).
  * @throws When the model call fails or post-processing empties the output.
  *         Callers treat any throw as a silent failure — log + skip.
@@ -107,17 +111,13 @@ export function cleanTitle(raw: string): string {
 export async function generateConversationTitle(
   config: ResolvedModelConfig,
   userText: string,
-  assistantText: string,
 ): Promise<string> {
   const model = createLanguageModel(config);
 
-  const truncatedAssistant = assistantText.slice(0, ASSISTANT_CONTEXT_CHARS);
+  const truncatedUser = userText.slice(0, USER_CONTEXT_CHARS);
   const prompt = [
-    "User message:",
-    userText,
-    "",
-    "Assistant reply (may be truncated):",
-    truncatedAssistant,
+    "User message (may be truncated):",
+    truncatedUser,
     "",
     "Title:",
   ].join("\n");
