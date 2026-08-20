@@ -98,15 +98,25 @@ Each World is its own SQLite file (`worlds/{uuid}.db`); `meta.db` holds only the
 ### Backend (Rust) — `src-tauri/src/`
 
 ```
-lib.rs          # Builder: setup (creates data_dir + worlds/), manages DbManager, registers ~40 commands
-main.rs         # Binary entry → sluver_lib::run()
-util.rs         # new_id() = UUID v7; now_iso() = ISO 8601 ms precision
+lib.rs            # Builder: setup (creates data_dir + worlds/), manages DbManager, registers ~160 commands
+main.rs           # Binary entry → sluver_lib::run()
+util.rs           # new_id() = UUID v7; now_iso() = ISO 8601 ms precision; normalize_iso(); decode_and_validate_image()
+util/             # password.rs — Space password hashing (argon2id, ADR-0008)
+logging.rs        # tracing subscriber init, panic hook, retention cleanup (see Logging section)
+tray.rs           # System tray setup + locale-aware menu refresh
+window_manager.rs # Per-Space OS window lifecycle (label `space-{uuid}`, ADR-0011); frameless chrome via tauri-plugin-decorum
+export.rs         # Novel export rendering: EPUB (epub-builder; WebP→PNG transcode) + TXT (ADR-0027)
+testutil.rs       # #[cfg(test)]-only shared fixtures (see Testing section)
 db/
-  manager.rs    # DbManager — the ONLY managed State. with_meta() / with_world() closure pattern
-  migrations.rs # ALL migrations inline as &str SQL — NO .sql files. META_MIGRATIONS + WORLD_MIGRATIONS
-  error.rs      # DbError enum — serializes to ErrorPayload {code, message, args} (see Internationalization section)
-commands/       # One file per domain: world, character, element, event, novel
-models/         # One file per entity: structs with #[serde(rename_all = "camelCase")]
+  manager.rs      # DbManager — the ONLY managed State. with_meta() / with_world() closure pattern
+  migrations.rs   # ALL migrations inline as &str SQL — NO .sql files. META_MIGRATIONS + WORLD_MIGRATIONS
+  error.rs        # DbError enum — serializes to ErrorPayload {code, message, args} (see Internationalization section)
+commands/         # 26 modules / ~160 commands, one file per domain: world, space, setting, window, tray,
+                  #   character, element, event, novel, note, conversation, session, attachment, ai, skill,
+                  #   shell, search, world_search, grep, timeline, export_book, font, notification,
+                  #   world_config, diagnostics — plus events.rs (shared `entity-changed` emit helpers,
+                  #   NOT a command domain; note the singular/plural split: event.rs = Event entity CRUD)
+models/           # One file per entity: structs with #[serde(rename_all = "camelCase")]
 ```
 
 **Command conventions:**
@@ -116,6 +126,8 @@ models/         # One file per entity: structs with #[serde(rename_all = "camelC
 - Junction refs (Event `character_refs`, Scene `character_refs`/`item_ids`/`event_ids`) = delete-all + re-insert in a transaction.
 - Reorder commands (`reorder_chapters`, `reorder_scenes`, `reorder_phases`) take `Vec<String>` of IDs, set `position = index`.
 - `commands/element.rs` uses a `load_element!` macro — Location/Item/Lore share identical schema.
+- After every successful entity write (create/update/delete/reorder/image ops), commands emit the `entity-changed` Tauri event via `commands/events.rs::emit_entity_changed` so React Query caches invalidate. Payload is camelCase `{kind, id?, spaceId, worldId?}`; the frontend listens in `src/routes/__root.tsx`.
+- Entity images: entity tables carry an `image_blob` BLOB column; reads expose a computed `hasImage` flag instead of the blob. `update_*_image` / `clear_*_image` commands take a base64 payload (decoded + validated by `util::decode_and_validate_image`). Remote images are downloaded, center-cropped, resized, and re-encoded as lossless WebP by `fetch_and_prepare_image` (`commands/search.rs`).
 
 **Rust gotchas:**
 
@@ -125,13 +137,23 @@ models/         # One file per entity: structs with #[serde(rename_all = "camelC
 - `#[serde(rename_all = "camelCase")]` on ALL models — Rust snake_case internally, frontend camelCase.
 - DbManager lock ordering: `with_world()` resolves the world DB path via the `meta` lock, releases it, THEN acquires the `worlds` cache lock — reversing this order deadlocks (see ADR-0001).
 
+**Platform-facing subsystems** (beyond entity CRUD — see `Cargo.toml` for pinned versions and rationale comments):
+
+- **Web search & fetch** (`commands/search.rs`): Bing results-page HTML parsing (`scraper` + `url`, including unwrapping `/ck/a?` tracking redirects), main-article extraction (`readabilityrs`), and on Windows a hidden-WebView2 fetch path (`webview2-com` + `windows` crates, tokio-coordinated — Tauri's `eval()` is fire-and-forget and can't return JS results).
+- **Entity image pipeline**: `image` crate for decoding (JPEG/PNG/WebP) and lossless WebP re-encoding; EPUB export transcodes WebP→PNG (readers have inconsistent WebP support). Pinned `=0.25.2` due to an upstream zune-core packaging regression — see the Cargo.toml comment before bumping.
+- **System font enumeration** (`commands/font.rs`): `fontdb` family-name scan only (no rasterization).
+- **Window chrome & native dialogs**: `tauri-plugin-decorum` (frameless windows + snap overlay, used by `window_manager.rs` and the custom TitleBar — ADR-0009) and `tauri-plugin-dialog` (native directory picker for log export).
+- **Native notifications** (`commands/notification.rs`): `notify-rust` with explicit AUMID + HKCU self-registration via `winreg` (ADR-0036).
+- **Agent shell execution** (`commands/shell.rs`): `deno_task_shell` with per-state Windows Job Object tree-kill (ADR-0041/0042).
+
 ### Frontend — `src/`
 
 ```
-main.tsx, App.tsx   # STILL DEFAULT TAURI BOILERPLATE — not yet wired to the api/ layer
+main.tsx           # App entry: QueryClient + RouterProvider; runs bootstrap (locale chain, fonts, log-buffer flush)
+App.tsx            # Intentionally empty (`export {}`) — legacy placeholder; do NOT add code here
 api/                # Typed IPC layer wrapping invoke()
   client.ts         # call<T>(cmd, args?) → invoke<T>(). Rejections carry ErrorPayload (see Internationalization section); use toErrorPayload() at catch sites.
-  *.ts              # One file per domain: createX/getX/listX/updateX/deleteX. World-scoped take worldId first.
+  *.ts              # One file per domain (~24 files): entity CRUD (createX/getX/listX/updateX/deleteX) + feature domains (ai, search, shell, skill, session, diagnostics, …). World-scoped take worldId first.
   types.ts          # CreateInput<T,R> derives input types from entity types (no field duplication).
 types/              # Zod schemas are the SINGLE SOURCE OF TRUTH; TS types via z.infer
   index.ts          # Barrel re-export of all branded IDs + schemas + types
@@ -144,7 +166,7 @@ lib/utils.ts        # cn() = clsx + tailwind-merge
 **Frontend patterns:**
 
 - `types/element.ts` defines `elementBaseSchema` shared by Location/Item/Lore; each extends it with a branded ID.
-- App.tsx is boilerplate calling `invoke("greet")` — a command no longer registered in `lib.rs`. The real API surface lives in `src/api/` + `src/types/`. When building UI, import from `@/api` and `@/types`, do not extend App.tsx's demo code.
+- The app entry is `src/main.tsx` (QueryClient + RouterProvider + bootstrap: locale resolution, font application, log-buffer flush); `App.tsx` is an intentionally empty legacy placeholder — never extend it. The real API surface lives in `src/api/` + `src/types/`. When building UI, import from `@/api` and `@/types`.
 - Routing is **code-based TanStack Router** (`src/router.ts` composes the tree via `addChildren` — the `src/routes/` layout mirrors file-based naming but there is NO codegen plugin; a new route must be created AND registered in `router.ts` or it silently doesn't exist). State: zustand + @tanstack/react-query. Tests exist for `src/lib/ai/**` and `src/lib/tools/**` (pure logic + vi.mock of `@/api/*`); routes/components are untested.
 - Markdown rendering: `react-markdown` + `remark-gfm` + `rehype-highlight` (see `src/components/chat/markdown.tsx`). CodeMirror 6 is used for TimeMapper JS editing (`src/components/timemapper/code-editor.tsx`). `markdown-it` has been REMOVED. Scene `content` is **plain text by design** (see CONTEXT.md) — markdown rendering belongs to chat (and Notes). Icons: `@hugeicons/react` + `@hugeicons/core-free-icons`, used throughout.
 
@@ -167,7 +189,7 @@ lib/utils.ts        # cn() = clsx + tailwind-merge
 | `common`   | Shared UI atoms (actions.cancel/save/delete, nav labels, shared empty states)   |
 | `world`    | World hub page, world card, create/edit dialogs, world toasts                   |
 | `settings` | Settings page (theme/color/language options + toasts)                           |
-| `errors`   | Error code translations + entity name map (Character→角色, Location→地点, etc.) |
+| `errors`   | Error code translations + entity display-name map for localized messages (e.g. Character → 角色, Location → 地点 in zh-CN) |
 
 Add a namespace when a new domain (e.g. `novel`, `character`) accumulates enough strings. Add a locale by creating a new `{locale}/` folder with all namespace JSONs AND appending the code to `SUPPORTED_LOCALES` in `src/i18n/index.ts`.
 
@@ -400,11 +422,11 @@ Do NOT rely on LSP diagnostics for verification — unreliable. Use commands ins
 - Frontend: `pnpm type-check`, `pnpm test`, `pnpm lint`
 - Backend: `cargo check` (run from `src-tauri/`); `cargo clippy --lib --tests` for linting; `cargo test --lib` for tests.
 
-## 禁令 (HARD PROHIBITIONS)
+## Hard Prohibitions
 
-### 🚫 严禁 git clone 查看源码 (STRICTLY FORBIDDEN: git clone to read source)
+### 🚫 STRICTLY FORBIDDEN: `git clone` to read source code
 
-**进行 `git clone` 来查看某个仓库的源码，是严重的「钻牛角尖」行为，本项目完全禁止。**
+**Running `git clone` in order to read a repository's source is a serious rabbit-hole practice and is completely prohibited in this project.**
 
 This applies to ALL agents and subagents (librarian, explore, oracle, task categories — everyone). No exceptions.
 
@@ -433,4 +455,4 @@ STOP. The answer is almost always available via: official docs, npm/crates packa
 - `tauri.conf.json` sets `beforeDevCommand: "pnpm dev"` and `beforeBuildCommand: "pnpm build"`. When running `pnpm tauri dev/build`, these commands execute automatically.
 - Rust source lives in `src-tauri/` — oxlint ignores this directory. Use `cargo check` / `cargo clippy` for Rust linting.
 - CSP is disabled (`"csp": null`). Adjust in `tauri.conf.json` before production.
-- Capabilities (`src-tauri/capabilities/default.json`): `core:default` + `opener:default` only. Add new permissions here when invoking new Tauri APIs.
+- Capabilities (`src-tauri/capabilities/default.json`): `core:default`, `opener:default` + `opener:allow-open-path`, `os:default`, `dialog:default`, eight `core:window:*` permissions (minimize / maximize / toggle-maximize / close / is-maximized / set-size / set-focus / start-dragging), and `decorum:allow-show-snap-overlay`. Applies to `windows: ["*"]` so dynamically-created Space windows (ADR-0011) inherit the same ACL. Add new permissions here when invoking new Tauri APIs.
