@@ -36,6 +36,7 @@
     "modelPlaceholder": "Select model",
     "modelLabel": "Model",
     "modelNone": "No model selected",
+    "modelVisionFilterNote": "Models known to lack image input are hidden; models with unknown capabilities (e.g. self-hosted) remain selectable.",
     "nonePlaceholder": "None",
     "configure": "Configure",
     "dialog": {

@@ -36,6 +36,7 @@
     "modelPlaceholder": "选择模型",
     "modelLabel": "模型",
     "modelNone": "未选择模型",
+    "modelVisionFilterNote": "已隐藏不支持图像输入的模型；能力未知的模型（如自建接入）仍可选择。",
     "nonePlaceholder": "无",
     "configure": "配置",
     "dialog": {
