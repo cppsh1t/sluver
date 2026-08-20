@@ -48,10 +48,12 @@
     "name": {
       "explorer": "Explorer",
       "writer": "Writer",
-      "namer": "Auto-namer"
+      "namer": "Auto-namer",
+      "vision": "Vision"
     },
     "roleDescription": {
-      "namer": "Automatically generates a short title for a conversation after its first reply. Leave the model unconfigured to disable it."
+      "namer": "Automatically generates a short title for a conversation after its first reply. Leave the model unconfigured to disable it.",
+      "vision": "Provides image descriptions for chat models without vision (powers the look_at tool). Leave the model unassigned to disable."
     },
     "autoExecute": {
       "title": "Auto-execute tools",
