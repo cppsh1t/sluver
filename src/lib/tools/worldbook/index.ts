@@ -15,6 +15,11 @@
  * both explorer and writer, each gated by that role's AgentConfig
  * `shellToolEnabled` flag. The namer role never carries it.
  *
+ * The `look_at` vision tool (ADR-0045) is registered on both roles, gated
+ * by the Space's dedicated seeded `vision` AgentConfig being bound
+ * (`ctx.visionConfig != null` — same conditional-spread idea as the shell
+ * gate). The namer role never carries it either.
+ *
  * Agent Skills (`activate_skill` / `read_skill_file`, ADR-0043) are
  * registered on both roles, gated by `ctx.skills` being non-empty — no
  * enabled skills means no skill tools AND no `<available_skills>` catalog
@@ -25,6 +30,7 @@
 import type { ToolSet } from "@/lib/ai";
 
 import { grepTools } from "../grep";
+import { lookAtTools } from "../look-at";
 import { noteTools } from "../note";
 import { shellTools } from "../shell";
 import { skillTools } from "../skill";
@@ -63,11 +69,12 @@ function queryOnly(tools: Record<string, ToolDef>): Record<string, ToolDef> {
 
 /**
  * Explorer toolset: full worldbook CRUD + novel/chapter/scene query + system.
- * 60 tools (51 + 8 search + shell). The Explorer surveys and builds the world
- * (characters, locations, items, lore, events) and can read (but not modify)
- * the novel structure. It also carries the shell execution tool
+ * 61 tools (51 + 8 search + shell + look_at). The Explorer surveys and builds
+ * the world (characters, locations, items, lore, events) and can read (but
+ * not modify) the novel structure. It also carries the shell execution tool
  * (ADR-0041/0042) — registered only when `shellToolEnabled` is on (then
- * auto-executing).
+ * auto-executing) — and the `look_at` vision tool (ADR-0045), registered
+ * only when the Space's `vision` agent config is bound.
  */
 export function buildExplorerTools(ctx: ToolContext): ToolSet {
   return buildToolSet(
@@ -105,6 +112,9 @@ export function buildExplorerTools(ctx: ToolContext): ToolSet {
       // Agent Skills (ADR-0043) — progressive disclosure tools, registered
       // only when the role has ≥1 enabled skill (empty catalog = nothing).
       ...(ctx.skills.length > 0 ? skillTools(ctx) : {}),
+      // Look-at vision (ADR-0045) — registered only when the Space's
+      // dedicated `vision` agent config is bound; then consentLevel "auto".
+      ...(ctx.visionConfig ? lookAtTools() : {}),
     },
     ctx,
   );
@@ -112,10 +122,12 @@ export function buildExplorerTools(ctx: ToolContext): ToolSet {
 
 /**
  * Writer toolset: full novel/chapter/scene CRUD + worldbook query + system.
- * 52 tools (43 + 8 search + shell). The Writer drafts and refines prose
- * (novels, chapters, scenes) and can read (but not modify) the worldbook for
- * reference. It also carries the shell execution tool (ADR-0041/0042) —
- * registered only when `shellToolEnabled` is on (then auto-executing).
+ * 53 tools (43 + 8 search + shell + look_at). The Writer drafts and refines
+ * prose (novels, chapters, scenes) and can read (but not modify) the
+ * worldbook for reference. It also carries the shell execution tool
+ * (ADR-0041/0042) — registered only when `shellToolEnabled` is on (then
+ * auto-executing) — and the `look_at` vision tool (ADR-0045), registered
+ * only when the Space's `vision` agent config is bound.
  */
 export function buildWriterTools(ctx: ToolContext): ToolSet {
   return buildToolSet(
@@ -153,6 +165,9 @@ export function buildWriterTools(ctx: ToolContext): ToolSet {
       // Agent Skills (ADR-0043) — progressive disclosure tools, registered
       // only when the role has ≥1 enabled skill (empty catalog = nothing).
       ...(ctx.skills.length > 0 ? skillTools(ctx) : {}),
+      // Look-at vision (ADR-0045) — registered only when the Space's
+      // dedicated `vision` agent config is bound; then consentLevel "auto".
+      ...(ctx.visionConfig ? lookAtTools() : {}),
     },
     ctx,
   );
