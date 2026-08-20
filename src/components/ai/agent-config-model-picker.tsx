@@ -109,6 +109,12 @@ export function AgentConfigModelPicker({
   const isOneShot =
     agentConfig.name === "namer" || agentConfig.name === "vision";
 
+  // ADR-0045 — the vision role's model dropdown filters to image-capable
+  // (or unknown-capability) models; tri-state semantics live in
+  // ModelCascadingSelect's isImageSelectable. The namer does text-only
+  // work, so it keeps the unfiltered list.
+  const isVision = agentConfig.name === "vision";
+
   // ADR-0042 — the shell tool is registered on the explorer and writer
   // roles (each gated by that role's `shellToolEnabled` flag), so its
   // toggle is hidden for the namer config only.
@@ -418,6 +424,7 @@ export function AgentConfigModelPicker({
               selectedProviderId={localProvider}
               selectedModelId={localModel}
               disabled={disabled || updateMut.isPending}
+              requireImageInput={isVision}
               onProviderChange={handleProviderChange}
               onModelChange={handleModelChange}
             />
