@@ -107,6 +107,7 @@ tray.rs           # System tray setup + locale-aware menu refresh
 window_manager.rs # Per-Space OS window lifecycle (label `space-{uuid}`, ADR-0011); frameless chrome via tauri-plugin-decorum
 export.rs         # Novel export rendering: EPUB (epub-builder; WebP→PNG transcode) + TXT (ADR-0027)
 testutil.rs       # #[cfg(test)]-only shared fixtures (see Testing section)
+tests/            # extracted test modules (src-root: export/logging/util); commands/, db/, util/ have their own tests/ subdirs
 db/
   manager.rs      # DbManager — the ONLY managed State. with_meta() / with_world() closure pattern
   migrations.rs   # ALL migrations inline as &str SQL — NO .sql files. META_MIGRATIONS + WORLD_MIGRATIONS
@@ -399,15 +400,18 @@ Project skills live in `.opencode/skills/`. **Agents MUST assess the current tas
 - **Formatter is oxfmt** (from oxc), not prettier. `.vscode/settings.json` forces whole-file format on save (oxfmt only supports whole-file mode).
 - **Tailwind CSS v4** with `@tailwindcss/vite` plugin. Config is inline in CSS via `@theme` — **do not create a `tailwind.config.js`**.
 - **tsconfig is strict**: `noUnusedLocals` + `noUnusedParameters` are ON — `pnpm type-check` FAILS on unused vars/params. Clean them up before committing.
-- **Tests**: vitest (frontend, colocated `*.test.ts`) + inline `#[cfg(test)]` Rust modules. See the Testing section below for the `do_*` helper and `testutil` conventions.
+- **Tests**: vitest (frontend, colocated `*.test.ts`) + Rust test modules extracted to sibling `tests/` dirs via `#[path]`. See the Testing section below for the `do_*` helper and `testutil` conventions.
 
 ## Testing
 
-**Rust (`src-tauri/`)** — inline `#[cfg(test)]` modules at the bottom of each source file; run `cargo test --lib`. Conventions:
+**Rust (`src-tauri/`)** — test modules live in sibling `tests/` directories, loaded via `#[path]`: each source file ends with `#[cfg(test)]` + `#[path = "tests/<stem>.rs"]` + `mod <name>;`, which loads `src/<dir>/tests/<stem>.rs` (e.g. `commands/space.rs` → `commands/tests/space.rs`; src-root files like `export.rs` → `src/tests/export.rs`). Run `cargo test --lib`. Conventions:
+
+- **Extracted test files keep the original module name** (`schema_tests`, `stress_tests`, `attachment_tests`, … — not always `tests`) and typically start with `use super::*`. The `#[path]` declaration keeps them child modules of the source file, so `pub(crate)`/private-item access works unchanged. New/edited test files are rustfmt-formatted (edition 2021, default config — no rustfmt.toml).
+- **Do NOT move these into the crate-root `tests/` directory** — that compiles them as a separate crate with `pub`-only visibility, breaking the `do_*` helpers, `testutil` fixture, and no-mock-runtime conventions below.
 
 - **No mock runtime.** This crate never constructs `State<'_, DbManager>` or `AppHandle` in tests. Mutating commands are split into a thin `#[tauri::command]` wrapper + a `pub(crate) fn do_*` helper taking `(mgr: &DbManager, space_id: &str, world_id: &str, ..., app: Option<&AppHandle>)` — tests call the `do_*` with `app: None` (precedent: `commands/space.rs`, `commands/session.rs` `*_impl` fns). Event emission lives inside the helper behind `if let Some(app)`.
 - **Shared fixture**: `src-tauri/src/testutil.rs` (`#[cfg(test)] mod testutil` in `lib.rs`) — `make_space_with_world()` bootstraps a tempdir `DbManager` with one Space + one migrated World (registry row inserted, `with_world` works out of the box); `uuid_shape(n)` makes deterministic UUID-shaped ids (required — `validate_id` rejects non-UUID shapes).
-- **Schema/migration tests** live in `db/migrations.rs::schema_tests`: fresh-install (tables/indexes/user_version), per-version upgrade path via `MIGRATIONS.to_version(conn, v)` stepping, the world v7 `changes→description` rename data-preservation, and the space v7 `namer` seed row.
+- **Schema/migration tests** live in `db/tests/migrations.rs::schema_tests`: fresh-install (tables/indexes/user_version), per-version upgrade path via `MIGRATIONS.to_version(conn, v)` stepping, the world v7 `changes→description` rename data-preservation, and the space v7 `namer` seed row.
 - Name-uniqueness violations surface as raw `DbError::Sqlite(rusqlite::Error::SqliteFailure(e, _))` with `e.code == ErrorCode::ConstraintViolation` — there is NO `DuplicateName` business variant (notes are the exception: `NoteDuplicateTitle`).
 
 **Frontend (`src/`)** — vitest + jsdom, colocated `*.test.ts`; run `pnpm test`. Conventions:
