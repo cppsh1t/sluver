@@ -873,8 +873,8 @@ mod tests {
     // ── fixtures ───────────────────────────────────────────────────────────
 
     /// Insert an agent_config row directly — the fixture's space.db only
-    /// carries the migration-seeded `namer`, and these tests want
-    /// deterministic ids.
+    /// carries the migration-seeded `namer` / `vision`, and these tests
+    /// want deterministic ids.
     fn seed_agent_config(fx: &WorldFixture, n: u64, name: &str) -> String {
         let id = uuid_shape(n);
         fx.mgr

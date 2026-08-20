@@ -1,9 +1,13 @@
 use serde::{Deserialize, Serialize};
 
 /// An AI agent config stored in `space.db` (ADR-0012). Each Space is seeded
-/// with exactly three agent configs on creation — `explorer`, `writer`, and
-/// `namer` (see `commands::space::do_create_space`; pre-existing Spaces get
-/// `namer` via SPACE_MIGRATION_007). These configs cannot be created
+/// with exactly four agent configs on creation — `explorer`, `writer`,
+/// `namer`, and `vision` (see `commands::space::do_create_space`;
+/// pre-existing Spaces get `namer` via SPACE_MIGRATION_007 and `vision` via
+/// SPACE_MIGRATION_010). `namer` (conversation auto-titling) and `vision`
+/// (backs the `look_at` tool — one-shot image description for non-vision
+/// chat models) are non-conversational roles alongside the two
+/// conversational ones. These configs cannot be created
 /// or deleted by the frontend; only their `model_id` selection is mutable.
 ///
 /// `model_id` is a composite `"{provider_id}/{model_id}"` (e.g.
