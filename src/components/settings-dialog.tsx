@@ -488,177 +488,179 @@ function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="flex max-h-[85vh] flex-col overflow-hidden sm:max-w-lg">
+          <DialogHeader className="shrink-0">
             <DialogTitle>{t("settings:title")}</DialogTitle>
             <DialogDescription>
               {t("settings:subtitle", { app: "sluver" })}
             </DialogDescription>
           </DialogHeader>
 
-          <section className="flex flex-col divide-y divide-border border-y border-border">
-            <SettingRow
-              title={t("settings:theme.title")}
-              description={t("settings:theme.description")}
-            >
-              <Segmented
-                ariaLabel={t("settings:theme.title")}
-                loading={loading}
-                options={themeOptions}
-                value={theme}
-                onChange={(v) => handleChangeTheme(v as ThemeMode)}
-              />
-            </SettingRow>
-
-            <SettingRow
-              title={t("settings:color.title")}
-              description={t("settings:color.description")}
-            >
-              <Segmented
-                ariaLabel={t("settings:color.title")}
-                loading={loading}
-                options={colorOptions}
-                value={colorTheme}
-                onChange={(v) => handleChangeColor(v as ColorTheme)}
-                renderLabel={(opt) => (
-                  <span className="flex items-center gap-1.5">
-                    <span
-                      aria-hidden
-                      className="size-2.5 rounded-full ring-1 ring-inset ring-black/10"
-                      style={{ backgroundColor: opt.swatch }}
-                    />
-                    {opt.label}
-                  </span>
-                )}
-              />
-            </SettingRow>
-
-            <SettingRow
-              title={t("settings:language.title")}
-              description={t("settings:language.description")}
-            >
-              <Segmented
-                ariaLabel={t("settings:language.title")}
-                loading={loading}
-                options={languageOptions}
-                value={locale}
-                onChange={(v) => handleChangeLanguage(v as AppSetting["locale"])}
-              />
-            </SettingRow>
-
-            <SettingRow
-              title={t("settings:font.ui.title")}
-              description={t("settings:font.ui.description")}
-            >
-              <FontCombobox
-                ariaLabel={t("settings:font.ui.title")}
-                value={fontUi}
-                fonts={systemFonts}
-                loading={loading || fontsQuery.isPending}
-                placeholder={t("settings:font.placeholder")}
-                defaultLabel={t("settings:font.default")}
-                emptyLabel={t("settings:font.empty")}
-                onSelect={handleChangeUiFont}
-              />
-            </SettingRow>
-
-            <SettingRow
-              title={t("settings:font.article.title")}
-              description={t("settings:font.article.description")}
-            >
-              <FontCombobox
-                ariaLabel={t("settings:font.article.title")}
-                value={fontArticle}
-                fonts={systemFonts}
-                loading={loading || fontsQuery.isPending}
-                placeholder={t("settings:font.placeholder")}
-                defaultLabel={t("settings:font.default")}
-                emptyLabel={t("settings:font.empty")}
-                onSelect={handleChangeArticleFont}
-              />
-            </SettingRow>
-          </section>
-
-          {/* ── Diagnostics ──────────────────────────────────────────── */}
-          <section className="flex flex-col gap-3 border-t border-border pt-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {t("settings:diagnostics.title")}
-            </p>
-
-            <div className="flex items-start justify-between gap-6">
-              <div className="flex flex-col gap-0.5">
-                <p className="text-sm font-medium">
-                  {t("settings:diagnostics.verbosity.label")}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {t("settings:diagnostics.verbosity.help")}
-                </p>
-              </div>
-              <Select
-                value={verbosity}
-                onValueChange={(v) => {
-                  if (typeof v === "string") {
-                    handleChangeVerbosity(v as VerbosityTier);
-                  }
-                }}
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
+            <section className="flex flex-col divide-y divide-border border-y border-border">
+              <SettingRow
+                title={t("settings:theme.title")}
+                description={t("settings:theme.description")}
               >
-                <SelectTrigger
-                  className="w-32 shrink-0"
-                  disabled={verbosityLoading}
+                <Segmented
+                  ariaLabel={t("settings:theme.title")}
+                  loading={loading}
+                  options={themeOptions}
+                  value={theme}
+                  onChange={(v) => handleChangeTheme(v as ThemeMode)}
+                />
+              </SettingRow>
+
+              <SettingRow
+                title={t("settings:color.title")}
+                description={t("settings:color.description")}
+              >
+                <Segmented
+                  ariaLabel={t("settings:color.title")}
+                  loading={loading}
+                  options={colorOptions}
+                  value={colorTheme}
+                  onChange={(v) => handleChangeColor(v as ColorTheme)}
+                  renderLabel={(opt) => (
+                    <span className="flex items-center gap-1.5">
+                      <span
+                        aria-hidden
+                        className="size-2.5 rounded-full ring-1 ring-inset ring-black/10"
+                        style={{ backgroundColor: opt.swatch }}
+                      />
+                      {opt.label}
+                    </span>
+                  )}
+                />
+              </SettingRow>
+
+              <SettingRow
+                title={t("settings:language.title")}
+                description={t("settings:language.description")}
+              >
+                <Segmented
+                  ariaLabel={t("settings:language.title")}
+                  loading={loading}
+                  options={languageOptions}
+                  value={locale}
+                  onChange={(v) => handleChangeLanguage(v as AppSetting["locale"])}
+                />
+              </SettingRow>
+
+              <SettingRow
+                title={t("settings:font.ui.title")}
+                description={t("settings:font.ui.description")}
+              >
+                <FontCombobox
+                  ariaLabel={t("settings:font.ui.title")}
+                  value={fontUi}
+                  fonts={systemFonts}
+                  loading={loading || fontsQuery.isPending}
+                  placeholder={t("settings:font.placeholder")}
+                  defaultLabel={t("settings:font.default")}
+                  emptyLabel={t("settings:font.empty")}
+                  onSelect={handleChangeUiFont}
+                />
+              </SettingRow>
+
+              <SettingRow
+                title={t("settings:font.article.title")}
+                description={t("settings:font.article.description")}
+              >
+                <FontCombobox
+                  ariaLabel={t("settings:font.article.title")}
+                  value={fontArticle}
+                  fonts={systemFonts}
+                  loading={loading || fontsQuery.isPending}
+                  placeholder={t("settings:font.placeholder")}
+                  defaultLabel={t("settings:font.default")}
+                  emptyLabel={t("settings:font.empty")}
+                  onSelect={handleChangeArticleFont}
+                />
+              </SettingRow>
+            </section>
+
+            {/* ── Diagnostics ──────────────────────────────────────────── */}
+            <section className="flex flex-col gap-3 border-t border-border pt-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {t("settings:diagnostics.title")}
+              </p>
+
+              <div className="flex items-start justify-between gap-6">
+                <div className="flex flex-col gap-0.5">
+                  <p className="text-sm font-medium">
+                    {t("settings:diagnostics.verbosity.label")}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {t("settings:diagnostics.verbosity.help")}
+                  </p>
+                </div>
+                <Select
+                  value={verbosity}
+                  onValueChange={(v) => {
+                    if (typeof v === "string") {
+                      handleChangeVerbosity(v as VerbosityTier);
+                    }
+                  }}
                 >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectList>
-                    <SelectItem value="standard">
-                      <SelectItemText>
-                        {t("settings:diagnostics.verbosity.standard")}
-                      </SelectItemText>
-                      <SelectItemIndicator />
-                    </SelectItem>
-                    <SelectItem value="verbose">
-                      <SelectItemText>
-                        {t("settings:diagnostics.verbosity.verbose")}
-                      </SelectItemText>
-                      <SelectItemIndicator />
-                    </SelectItem>
-                    <SelectItem value="very_verbose">
-                      <SelectItemText>
-                        {t("settings:diagnostics.verbosity.veryVerbose")}
-                      </SelectItemText>
-                      <SelectItemIndicator />
-                    </SelectItem>
-                  </SelectList>
-                </SelectContent>
-              </Select>
-            </div>
+                  <SelectTrigger
+                    className="w-32 shrink-0"
+                    disabled={verbosityLoading}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectList>
+                      <SelectItem value="standard">
+                        <SelectItemText>
+                          {t("settings:diagnostics.verbosity.standard")}
+                        </SelectItemText>
+                        <SelectItemIndicator />
+                      </SelectItem>
+                      <SelectItem value="verbose">
+                        <SelectItemText>
+                          {t("settings:diagnostics.verbosity.verbose")}
+                        </SelectItemText>
+                        <SelectItemIndicator />
+                      </SelectItem>
+                      <SelectItem value="very_verbose">
+                        <SelectItemText>
+                          {t("settings:diagnostics.verbosity.veryVerbose")}
+                        </SelectItemText>
+                        <SelectItemIndicator />
+                      </SelectItem>
+                    </SelectList>
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <div className="flex flex-col gap-2">
-              <Button
-                variant="outline"
-                onClick={handleOpenFolder}
-                className="justify-start"
-              >
-                {t("settings:diagnostics.openFolder")}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={handleOpenExport}
-                className="justify-start"
-              >
-                {t("settings:diagnostics.export.button")}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => setClearOpen(true)}
-                className="justify-start text-destructive hover:text-destructive"
-              >
-                {t("settings:diagnostics.clear.button")}
-              </Button>
-            </div>
-          </section>
+              <div className="flex flex-col gap-2">
+                <Button
+                  variant="outline"
+                  onClick={handleOpenFolder}
+                  className="justify-start"
+                >
+                  {t("settings:diagnostics.openFolder")}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleOpenExport}
+                  className="justify-start"
+                >
+                  {t("settings:diagnostics.export.button")}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setClearOpen(true)}
+                  className="justify-start text-destructive hover:text-destructive"
+                >
+                  {t("settings:diagnostics.clear.button")}
+                </Button>
+              </div>
+            </section>
+          </div>
 
-          <DialogFooter className="mt-4">
+          <DialogFooter className="mt-4 shrink-0">
             <DialogClose render={<Button variant="outline" type="button" />}>
               {t("common:actions.done")}
             </DialogClose>
