@@ -100,11 +100,14 @@ export function AgentConfigModelPicker({
   const skillMut = useSetSkillEnabled(spaceId);
   const [localPrompt, setLocalPrompt] = useState(agentConfig.systemPrompt);
 
-  // ADR-0040 — the "namer" agent drives a single one-shot naming call.
-  // Tool execution / context compaction / system prompt override are
-  // meaningless for it, so its dialog shows the model binding only.
-  // Explorer/writer cards are unaffected (byte-identical rendering).
-  const isNamer = agentConfig.name === "namer";
+  // ADR-0040 — the "namer" agent drives a single one-shot naming call;
+  // the "vision" agent likewise backs a single one-shot image-description
+  // call (the look_at tool). Tool execution / context compaction / system
+  // prompt override are meaningless for such one-shot roles, so their
+  // dialogs show the model binding only. Explorer/writer cards are
+  // unaffected (byte-identical rendering).
+  const isOneShot =
+    agentConfig.name === "namer" || agentConfig.name === "vision";
 
   // ADR-0042 — the shell tool is registered on the explorer and writer
   // roles (each gated by that role's `shellToolEnabled` flag), so its
@@ -115,8 +118,8 @@ export function AgentConfigModelPicker({
   // ADR-0043 — skill enablement per AgentConfig. The enabled set comes
   // from the agent's INSTALLED (on-disk) copies — the runtime truth — so
   // the Switch reflects exactly what a new conversation would load. The
-  // namer never receives skills, so its query stays dormant.
-  const enabledSkillsQ = useEnabledSkills(spaceId, agentConfig.name, !isNamer);
+  // one-shot roles never receive skills, so their query stays dormant.
+  const enabledSkillsQ = useEnabledSkills(spaceId, agentConfig.name, !isOneShot);
   const enabledSkillIds = useMemo(
     () => new Set<SkillId>((enabledSkillsQ.data ?? []).map((s) => s.id)),
     [enabledSkillsQ.data],
@@ -395,8 +398,10 @@ export function AgentConfigModelPicker({
             {t(`ai:agentConfigs.name.${agentConfig.name}`, { defaultValue: agentConfig.name })}
           </DialogTitle>
           <DialogDescription>
-            {isNamer
-              ? t("ai:agentConfigs.roleDescription.namer")
+            {isOneShot
+              ? t(`ai:agentConfigs.roleDescription.${agentConfig.name}`, {
+                  defaultValue: "",
+                })
               : t("ai:agentConfigs.dialog.description")}
           </DialogDescription>
         </DialogHeader>
@@ -418,8 +423,8 @@ export function AgentConfigModelPicker({
             />
           </div>
 
-          {/* Auto-execute — namer runs no tools (ADR-0040), so hidden for it */}
-          {!isNamer && (
+          {/* Auto-execute — one-shot roles run no tools (ADR-0040), so hidden for them */}
+          {!isOneShot && (
           <div className="flex items-center justify-between gap-6">
             <div className="flex flex-col gap-0.5">
               <span className="text-xs font-medium text-muted-foreground">
@@ -490,8 +495,8 @@ export function AgentConfigModelPicker({
             </>
           )}
 
-          {/* Context compaction — meaningless for a one-shot naming call */}
-          {!isNamer && (
+          {/* Context compaction — meaningless for a one-shot call */}
+          {!isOneShot && (
           <div className="flex items-center justify-between gap-6">
             <div className="flex flex-col gap-0.5">
               <span className="text-xs font-medium text-muted-foreground">
@@ -508,7 +513,7 @@ export function AgentConfigModelPicker({
             />
           </div>
           )}
-          {!isNamer && agentConfig.contextCompaction.enabled && (
+          {!isOneShot && agentConfig.contextCompaction.enabled && (
             <div className="flex items-center justify-between gap-6">
               <div className="flex flex-col gap-0.5">
                 <span className="text-xs font-medium text-muted-foreground">
@@ -547,9 +552,9 @@ export function AgentConfigModelPicker({
           )}
 
           {/* Skills — per-AgentConfig enablement (ADR-0043). The catalog is
-              injected for explorer/writer only (never the namer), so the
-              whole section mirrors the shell-tool visibility gate. */}
-          {!isNamer && (
+              injected for explorer/writer only (never one-shot roles), so
+              the whole section mirrors the shell-tool visibility gate. */}
+          {!isOneShot && (
           <div className="flex flex-col gap-2">
             <div className="flex flex-col gap-0.5">
               <span className="text-xs font-medium text-muted-foreground">
@@ -604,9 +609,10 @@ export function AgentConfigModelPicker({
           </div>
           )}
 
-          {/* System prompt override — the namer's prompt is fixed in code
-              (src/lib/ai/auto-title.ts), so the editor is hidden for it */}
-          {!isNamer && (
+          {/* System prompt override — one-shot roles' prompts are fixed in
+              code (namer: src/lib/ai/auto-title.ts), so the editor is
+              hidden for them */}
+          {!isOneShot && (
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-4">
               <div className="flex flex-col gap-0.5">
