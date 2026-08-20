@@ -826,7 +826,7 @@ mod tests {
     // ─── agent_config seed (proves do_create_space wires the seed correctly) ─
 
     #[test]
-    fn list_agent_configs_returns_seed_explorer_writer_and_namer() {
+    fn list_agent_configs_returns_seed_explorer_writer_namer_and_vision() {
         let (_tmp, mgr) = make_manager();
         let sid = make_space(&mgr, "S");
 
@@ -838,10 +838,11 @@ mod tests {
         );
         assert!(names.contains(&"writer"), "writer seed missing: {names:?}");
         assert!(names.contains(&"namer"), "namer seed missing: {names:?}");
+        assert!(names.contains(&"vision"), "vision seed missing: {names:?}");
         assert_eq!(
             agent_configs.len(),
-            3,
-            "exactly three seed agent configs expected"
+            4,
+            "exactly four seed agent configs expected"
         );
         // Seeds are created with model_id = NULL.
         for a in &agent_configs {

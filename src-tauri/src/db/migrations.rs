@@ -218,6 +218,40 @@ const SPACE_MIGRATION_009: &str = r#"
     );
 "#;
 
+/// Migration 10 for `space.db`: seed the `vision` agent config (the
+/// non-conversational role backing the `look_at` tool — a one-shot image
+/// description for chat agents whose bound model lacks a vision modality;
+/// configured = enabled, unconfigured = the tool is not registered at all).
+/// Spaces created before this role existed already carry `explorer` +
+/// `writer` + `namer` — this INSERT OR IGNORE adds `vision` with the exact
+/// seed defaults `do_create_space` uses (model_id NULL, auto-execute off,
+/// compaction disabled with turn_age 3, empty system prompt). OR IGNORE is
+/// required because `name` is UNIQUE: brand-new Spaces get the row from
+/// SPACE_MIGRATION_010 itself (migrations run at connection open, BEFORE
+/// `do_create_space`'s seed loop — see commands/space.rs step 4), and any
+/// Space where the row already exists must not fail. Fixed literal
+/// id/timestamps keep the migration deterministic across every Space's
+/// `space.db`; the id is a valid UUID v7 literal (time-sortable, matching
+/// `new_id()`'s format, stamped just after `namer`'s) and the timestamps
+/// match `now_iso()`'s ISO 8601 ms format. `created_at` is a deliberate
+/// FAR-FUTURE literal: `do_list_agent_configs` sorts `ORDER BY created_at`,
+/// and the seed loop stamps explorer/writer with the Space's real creation
+/// time — a realistic past literal would float `vision` ABOVE the two
+/// primary roles for every Space created after this migration ships. 9999
+/// keeps the auxiliary role last regardless of when the Space is created.
+/// Added as a separate migration so existing `space.db` files get the row
+/// via `rusqlite_migration`'s incremental migration tracking — modifying
+/// `SPACE_MIGRATION_002` would NOT re-run for already-migrated databases.
+const SPACE_MIGRATION_010: &str = r#"
+    INSERT OR IGNORE INTO agent_configs
+        (id, name, model_id, auto_execute_dangerous_tools,
+         context_compaction_enabled, context_compaction_turn_age,
+         system_prompt, created_at, updated_at)
+    VALUES
+        ('01a00a6e-36c0-7521-9a3f-3e7c2d9b4f60', 'vision', NULL, 0, 0, 3, '',
+         '9999-12-31T23:59:59.999Z', '9999-12-31T23:59:59.999Z');
+"#;
+
 // ─── world DB schema ────────────────────────────────────────────────────────
 // Tier 3 of the three-database design (ADR-0007). One file per World at
 // `spaces/{spaceId}/worlds/{worldId}.db`. Schema is byte-for-byte identical
@@ -382,6 +416,7 @@ const SPACE_SLICE: &[M] = &[
     M::up(SPACE_MIGRATION_007),
     M::up(SPACE_MIGRATION_008),
     M::up(SPACE_MIGRATION_009),
+    M::up(SPACE_MIGRATION_010),
 ];
 pub const SPACE_MIGRATIONS: Migrations = Migrations::from_slice(SPACE_SLICE);
 
@@ -753,7 +788,7 @@ mod schema_tests {
         );
     }
 
-    /// space.db fresh install: nine migrations → user_version 9, exactly the
+    /// space.db fresh install: ten migrations → user_version 10, exactly the
     /// {worlds, space_config, provider_credentials, agent_configs, skills,
     /// agent_config_skills} table set, and a single named index idx_worlds_name
     /// (the UNIQUE constraints on agent_configs.name / provider_credentials.
@@ -764,7 +799,7 @@ mod schema_tests {
         let mut conn = Connection::open_in_memory().expect("open in-memory space db");
         SPACE_MIGRATIONS.to_latest(&mut conn).expect("space to_latest");
 
-        assert_eq!(user_version(&conn), 9, "space user_version after to_latest");
+        assert_eq!(user_version(&conn), 10, "space user_version after to_latest");
         assert_eq!(
             table_names(&conn),
             [
@@ -775,12 +810,12 @@ mod schema_tests {
                 "space_config",
                 "worlds",
             ],
-            "space table set at v9"
+            "space table set at v10"
         );
         assert_eq!(
             named_indexes(&conn),
             ["idx_worlds_name"],
-            "space named index set at v9"
+            "space named index set at v10"
         );
     }
 
@@ -1018,13 +1053,13 @@ mod schema_tests {
         }
     }
 
-    /// space.db upgrade path: step 0→9 on ONE connection, asserting
+    /// space.db upgrade path: step 0→10 on ONE connection, asserting
     /// user_version and the per-step schema facts (tables and columns added,
-    /// namer row seeded at v7).
+    /// namer row seeded at v7, vision row seeded at v10).
     #[test]
     fn space_upgrade_path_step_by_step() {
         let mut conn = Connection::open_in_memory().expect("open in-memory space db");
-        for v in 0..=9 {
+        for v in 0..=10 {
             SPACE_MIGRATIONS
                 .to_version(&mut conn, v)
                 .unwrap_or_else(|e| panic!("space to_version({v}): {e}"));
@@ -1114,10 +1149,21 @@ mod schema_tests {
                     assert_eq!(
                         tables.len(),
                         6,
-                        "final space schema has 6 tables"
+                        "space schema has 6 tables at v9 (v10 adds no tables)"
                     );
                 }
-                _ => unreachable!("loop is bounded to 0..=9"),
+                10 => {
+                    // Data migration: the vision seed row lands exactly once.
+                    let count: i64 = conn
+                        .query_row(
+                            "SELECT COUNT(*) FROM agent_configs WHERE name = 'vision'",
+                            [],
+                            |row| row.get(0),
+                        )
+                        .expect("count vision rows at v10");
+                    assert_eq!(count, 1, "v10 seeds exactly one vision row");
+                }
+                _ => unreachable!("loop is bounded to 0..=10"),
             }
         }
     }
@@ -1236,13 +1282,64 @@ mod schema_tests {
         assert_eq!(count, 1, "re-running to_latest must not duplicate the namer row");
     }
 
+    /// SPACE v10 data migration: the `vision` agent config row is seeded with
+    /// the exact fixed literals from SPACE_MIGRATION_010, and re-running
+    /// to_latest never duplicates it (INSERT OR IGNORE on UNIQUE name).
+    #[test]
+    fn space_v10_seeds_vision_row_and_stays_unique() {
+        let mut conn = Connection::open_in_memory().expect("open in-memory space db");
+        SPACE_MIGRATIONS.to_latest(&mut conn).expect("space to_latest");
+
+        let (name, model_id, created_at, updated_at, system_prompt): (
+            String,
+            Option<String>,
+            String,
+            String,
+            String,
+        ) = conn
+            .query_row(
+                "SELECT name, model_id, created_at, updated_at, system_prompt
+                 FROM agent_configs
+                 WHERE id = '01a00a6e-36c0-7521-9a3f-3e7c2d9b4f60'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .expect("vision row exists with the fixed literal id");
+        assert_eq!(name, "vision");
+        assert!(model_id.is_none(), "vision model_id is NULL");
+        assert_eq!(created_at, "9999-12-31T23:59:59.999Z", "fixed far-future literal");
+        assert_eq!(updated_at, "9999-12-31T23:59:59.999Z", "fixed far-future literal");
+        assert_eq!(system_prompt, "", "vision system_prompt is the empty default");
+
+        // Idempotency: a second to_latest pass must not duplicate the seed row.
+        SPACE_MIGRATIONS
+            .to_latest(&mut conn)
+            .expect("space to_latest re-run");
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM agent_configs WHERE name = 'vision'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count vision rows after re-run");
+        assert_eq!(count, 1, "re-running to_latest must not duplicate the vision row");
+    }
+
     /// to_latest is idempotent for all three database kinds: a second run
     /// neither errors nor moves user_version.
     #[test]
     fn to_latest_twice_is_idempotent_for_all_kinds() {
         let cases: [(&str, &Migrations, i64); 3] = [
             ("meta", &META_MIGRATIONS, 1),
-            ("space", &SPACE_MIGRATIONS, 9),
+            ("space", &SPACE_MIGRATIONS, 10),
             ("world", &WORLD_MIGRATIONS, 13),
         ];
         for (name, migrations, latest) in cases {
