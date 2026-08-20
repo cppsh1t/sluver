@@ -18,7 +18,7 @@ The obvious fix, "bind a vision-capable chat model", is not a fix for everyone: 
 A fourth AgentConfig named `"vision"`, seeded exactly like `namer` (ADR-0040): `SPACE_MIGRATION_010` `INSERT OR IGNORE` for pre-existing Spaces (fixed UUID v7 literal; far-future `created_at` so `do_list_agent_configs`' `ORDER BY created_at` keeps the auxiliary role after the primary ones regardless of Space age), plus the same defaults in `do_create_space`'s seed loop (`model_id NULL`). Key properties, all inherited from the `namer` precedent:
 
 - **Not a chat role.** Never added to `ROLE_BEHAVIOR`, never in the conversation role picker. It binds to no conversation and carries no behavior bundle.
-- **Configured = enabled.** Its Settings card shows the model binding only (auto-execute, compaction, and system-prompt override are meaningless for a one-shot call and hidden for this role). `model_id NULL` means `look_at` is not registered at all, silently. Configuring a model is the opt-in gate; there is no separate enable flag.
+- **Configured = enabled.** Its Settings card shows the model binding only (auto-execute, compaction, and system-prompt override are meaningless for a one-shot call and hidden for this role). `model_id NULL` means `look_at` is not registered at all, silently. Configuring a model is the opt-in gate; there is no separate enable flag. The role's model picker hides models the catalog *knows* lack image input — tri-state per ADR-0044 §D9, so entries with unknown capability (e.g. self-hosted OpenAI-compatible vision setups) stay selectable — and providers left with no selectable model are hidden from the provider dropdown.
 
 ### 2. The `look_at` tool
 
