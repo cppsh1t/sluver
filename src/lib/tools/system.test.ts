@@ -39,6 +39,8 @@ function makeToolContext(
     },
     skills: [],
     activatedSkills: new Set(),
+    visionConfig: null,
+    attachmentLookup: { findByFilename: vi.fn(() => null) },
   };
 }
 

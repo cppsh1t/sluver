@@ -101,6 +101,8 @@ function makeStubCtx(overrides: Partial<ToolContext> = {}): ToolContext {
     threadLookup: { findToolPair: vi.fn() },
     skills: [],
     activatedSkills: new Set(),
+    visionConfig: null,
+    attachmentLookup: { findByFilename: vi.fn(() => null) },
     ...overrides,
   };
 }

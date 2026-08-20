@@ -143,6 +143,14 @@ export function ConversationRuntimeProvider({
   // the "not configured" gate: auto-titling silently does nothing. The
   // namer never carries skills (ADR-0043 §3) — no query for it.
   const namerConfig = useResolvedModelConfig(spaceId, "namer");
+  // The dedicated vision agent (ADR-0045) — one-shot `generateText` behind
+  // the `look_at` tool, shared by both roles (Space-scoped, not per-role).
+  // Same "configured = enabled, silent when unconfigured" gate as the
+  // namer: `config ?? null` rides the model resolver into the ToolContext;
+  // unbound → the tool is simply not registered. Shares every underlying
+  // react-query with the resolvers above (no extra IPC); never carries
+  // skills — no query for it.
+  const visionConfig = useResolvedModelConfig(spaceId, "vision");
   // Per-role enabled Agent Skills (ADR-0043 §3) — feed the `<available_skills>`
   // catalog + skill tool registration at Agent-construction time, with the
   // same live-resolution lifecycle as the model config above. Only `data` /
@@ -185,6 +193,11 @@ export function ConversationRuntimeProvider({
           contextCompaction: cfg.contextCompaction,
           systemPrompt: cfg.systemPrompt,
           skills: skillsData ?? [],
+          // ADR-0045 — Space-scoped vision agent config for `look_at`.
+          // `null` (unbound / still loading) → tool not registered. The
+          // vision query shares its react-query keys with the role config
+          // above, so by the time the role is "ready" this has settled too.
+          visionConfig: visionConfig.config ?? null,
         };
       } catch (e) {
         // Provider package not installed / factory mismatch — surface as
@@ -199,6 +212,7 @@ export function ConversationRuntimeProvider({
   }, [
     explorerConfig,
     writerConfig,
+    visionConfig,
     explorerSkillsData,
     explorerSkillsLoading,
     writerSkillsData,

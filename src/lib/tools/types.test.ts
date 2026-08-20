@@ -42,6 +42,8 @@ function makeToolContext(
     threadLookup: { findToolPair: vi.fn(() => undefined) },
     skills: [],
     activatedSkills: new Set(),
+    visionConfig: null,
+    attachmentLookup: { findByFilename: vi.fn(() => null) },
   };
 }
 

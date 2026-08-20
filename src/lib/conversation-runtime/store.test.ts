@@ -110,6 +110,7 @@ const readyResolver: ModelResolver = () => ({
   contextCompaction: { enabled: false, turnAge: 3 },
   systemPrompt: "",
   skills: [],
+  visionConfig: null,
 });
 
 /** A loading resolver — seeds the slot WITHOUT constructing an Agent. */

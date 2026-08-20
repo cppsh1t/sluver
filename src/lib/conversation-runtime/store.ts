@@ -38,6 +38,7 @@ import {
   type LanguageModel,
   type LanguageModelUsage,
   type ModelMessage,
+  type ResolvedModelConfig,
   type SessionMessage,
 } from "@/lib/ai";
 import { loadMessages as loadMessagesIpc } from "@/api/conversation";
@@ -95,6 +96,15 @@ export type ResolvedModel =
        * takes effect for new conversations (ADR-0024 agent cache).
        */
       readonly skills: EnabledSkill[];
+      /**
+       * The Space's dedicated `"vision"` agent model config (ADR-0045),
+       * resolved live by the Provider (Space-scoped, shared by both roles —
+       * unlike the fields above it is NOT per-role). `null` = unbound → the
+       * `look_at` tool is not registered. Takes effect for new
+       * conversations (ADR-0024 agent cache — same lifecycle as
+       * `shellToolEnabled`).
+       */
+      readonly visionConfig: ResolvedModelConfig | null;
     }
   | { readonly status: "loading" }
   | { readonly status: "unconfigured" };
@@ -691,6 +701,22 @@ function buildAvailableSkillsBlock(skills: readonly EnabledSkill[]): string {
 }
 
 /**
+ * The `<image_access>` block appended to the effective system prompt at
+ * Agent construction when the `look_at` tool is registered (ADR-0045) —
+ * the prompt must never advertise a tool that cannot run, so the teaching
+ * rides the SAME registration-time gate as the tool itself
+ * (`visionConfig != null`), exactly like the `<available_skills>` catalog
+ * below. Hedged wording ("may not reach you as pixels") stays accurate
+ * when the bound chat model is itself vision-capable — the downgrade
+ * markers simply never appear in that configuration.
+ */
+const LOOK_AT_PROMPT_BLOCK = [
+  "<image_access>",
+  'Images the user attaches may not reach you as pixels: they can arrive as `[image attachment: "..." — image content NOT delivered...]` markers carrying only a filename, and image URLs in text cannot be viewed directly. When you see such a marker, or the user references an image by URL, call the look_at tool with the EXACT filename from the marker (or the image\'s URL) to get a description from a separate vision model. Pass question to focus on what you need to know. Use the description before answering questions about the image\'s content.',
+  "</image_access>",
+].join("\n");
+
+/**
  * Construct a stateful {@link Agent} for a conversation. Resolves the role
  * behavior, builds a `TauriSessionStore` + `AgentLoop`, and loads history via
  * the async `Agent.open` factory. Throws if the role is unknown or the store
@@ -708,6 +734,7 @@ async function constructAgent(
   contextCompaction: ContextCompaction,
   systemPromptOverride: string,
   skills: EnabledSkill[],
+  visionConfig: ResolvedModelConfig | null,
 ): Promise<Agent> {
   const roleBehavior = getRoleBehavior(conversation.agentConfigName);
   if (!roleBehavior) {
@@ -775,6 +802,43 @@ async function constructAgent(
     // (one fresh Set per Agent — ADR-0024 conversation cache).
     skills,
     activatedSkills: new Set(),
+    // `look_at` (ADR-0045): the Space's dedicated one-shot vision agent
+    // config. `null` = the seeded `vision` AgentConfig is unbound → the
+    // role builders skip registering the tool entirely (registration-time
+    // gate, same idea as `shellToolEnabled` above).
+    visionConfig,
+    // `look_at` (ADR-0045): resolves an in-conversation image attachment by
+    // filename from the Persisted Thread — the reverse channel for the
+    // downgrade markers (ADR-0044 D9). Same agentRef chicken-and-egg
+    // pattern as `threadLookup` above (read-only; null when not found).
+    // Hydrated data-URL FileParts already live in `Agent.messages`
+    // (ADR-0044 D3 hydration) — zero IPC. Newest message wins so a
+    // re-uploaded image is described, not a stale namesake.
+    attachmentLookup: {
+      findByFilename: (filename) => {
+        const messages = agentRef.current?.getMessages() ?? [];
+        for (let i = messages.length - 1; i >= 0; i--) {
+          const message = messages[i];
+          if (message.role !== "user") continue;
+          const { content } = message;
+          if (typeof content === "string" || !Array.isArray(content)) continue;
+          for (const part of content) {
+            if (
+              part.type === "file" &&
+              part.mediaType.startsWith("image/") &&
+              typeof part.data === "string" &&
+              part.data.startsWith("data:") &&
+              part.filename !== undefined &&
+              (part.filename === filename ||
+                part.filename.toLowerCase() === filename.toLowerCase())
+            ) {
+              return { dataUrl: part.data, mediaType: part.mediaType };
+            }
+          }
+        }
+        return null;
+      },
+    },
   };
 
   const tools = roleBehavior.buildTools(ctx);
@@ -782,14 +846,19 @@ async function constructAgent(
   // default from ROLE_BEHAVIOR. This lets users customize per-role prompts
   // from the Space config page without code changes.
   const baseSystemPrompt = systemPromptOverride.trim() || roleBehavior.systemPrompt;
+  // ADR-0045 — the look_at teaching is appended ONLY when the tool is
+  // registered (`visionConfig` bound): additive machinery like the skills
+  // catalog below, so a systemPrompt override still receives it. Absent
+  // otherwise — the prompt never advertises a tool that cannot run.
   // ADR-0043 §3 catalog — appended AFTER the role/override prompt. It is
   // additive machinery, not user content: a systemPrompt override still
   // receives the catalog (the skill tools reference it by name). Skipped
   // entirely when the role has no enabled skills.
-  const effectiveSystemPrompt =
-    skills.length > 0
-      ? `${baseSystemPrompt}\n\n${buildAvailableSkillsBlock(skills)}`
-      : baseSystemPrompt;
+  const effectiveSystemPrompt = [
+    baseSystemPrompt,
+    ...(visionConfig ? [LOOK_AT_PROMPT_BLOCK] : []),
+    ...(skills.length > 0 ? [buildAvailableSkillsBlock(skills)] : []),
+  ].join("\n\n");
   const loop = new AgentLoop({
     model,
     systemPrompt: effectiveSystemPrompt,
@@ -964,7 +1033,7 @@ export function createConversationRuntimeStore(
         return null;
       }
 
-      const { model, autoExecuteDangerousTools, shellToolEnabled, contextCompaction, systemPrompt, skills } = resolved;
+      const { model, autoExecuteDangerousTools, shellToolEnabled, contextCompaction, systemPrompt, skills, visionConfig } = resolved;
       const gate = createGate(worldId, conversationId);
       patchData(worldId, conversationId, (d) => ({ ...d, agentLoading: true }));
       try {
@@ -980,6 +1049,7 @@ export function createConversationRuntimeStore(
           contextCompaction,
           systemPrompt,
           skills,
+          visionConfig,
         );
         // ADR-0030 read path — pull the persisted Message rows (with usage
         // columns) STRAIGHT from the IPC, bypassing TauriSessionStore

@@ -23,7 +23,7 @@
 import type { FlexibleSchema, ToolCallPart, ToolResultPart } from "ai";
 
 import type { Plan } from "@/lib/ai/session/plan";
-import { defineTool, type ToolSet } from "@/lib/ai";
+import { defineTool, type ToolSet, type ResolvedModelConfig } from "@/lib/ai";
 import type { EnabledSkill, SpaceId, WorldId } from "@/types";
 
 // ─── Consent levels ───────────────────────────────────────────────────────
@@ -188,6 +188,36 @@ export interface ThreadLookup {
   } | undefined;
 }
 
+// ─── Attachment lookup (look_at — ADR-0045) ─────────────────────────────────
+
+/**
+ * In-conversation image attachment resolution for the `look_at` tool
+ * (ADR-0045).
+ *
+ * The downgrade pipeline (`pipeline/downgrade-image-parts.ts`) replaces
+ * image FileParts with `[image attachment: "filename" — image content NOT
+ * delivered…]` markers for non-vision chat models. This interface is the
+ * reserved reverse channel: given the marker's filename, return the
+ * hydrated image bytes from the Persisted Thread.
+ *
+ * ## Purity
+ *
+ * The interface is pure (no React/IPC/store dependencies). The concrete
+ * implementation lives in the conversation-runtime layer, where it closes
+ * over the live `Agent` via the same agentRef chicken-and-egg pattern used
+ * by {@link ThreadLookup} (ADR-0029 §Negative). The hydrated data-URL
+ * FileParts already live in `Agent.messages` (ADR-0044 D3 hydration) — the
+ * lookup performs ZERO IPC.
+ */
+export interface AttachmentLookup {
+  /**
+   * Find an image attachment by filename within the live conversation
+   * thread (newest match wins). Returns the hydrated data URL + media
+   * type, or `null` when no such attachment exists.
+   */
+  findByFilename(filename: string): { dataUrl: string; mediaType: string } | null;
+}
+
 // ─── Tool context ─────────────────────────────────────────────────────────
 
 /**
@@ -196,8 +226,9 @@ export interface ThreadLookup {
  * approval gate, the agent's consent configuration, access to the Agent's
  * working Plan state (Plan mode — ADR-0029 Phase 1), reverse-channel
  * access to the Persisted Thread for stub expansion (Context mode — ADR-0031
- * Phase 1), and the enabled Agent Skills with their activation dedup state
- * (ADR-0043).
+ * Phase 1), the enabled Agent Skills with their activation dedup state
+ * (ADR-0043), and the vision agent config + attachment lookup powering the
+ * `look_at` tool (ADR-0045).
  *
  * Constructed per-conversation in the conversation-runtime store and passed
  * to `RoleBehavior.buildTools(ctx)`.
@@ -243,6 +274,21 @@ export interface ToolContext {
    * alongside the Agent cache — ADR-0024).
    */
   readonly activatedSkills: Set<string>;
+  /**
+   * The Space's dedicated `"vision"` agent model config, resolved live by
+   * the Provider at Agent-construction time (ADR-0045 — same lifecycle as
+   * the bound model, ADR-0023/0024). `null` = the seeded `vision`
+   * AgentConfig is unbound → the `look_at` tool is not registered at all
+   * ("configured = enabled", mirroring the `shellToolEnabled`
+   * registration-time gate).
+   */
+  readonly visionConfig: ResolvedModelConfig | null;
+  /**
+   * In-conversation image attachment resolution for the `look_at` tool
+   * (ADR-0045): resolves the filename printed in a downgrade marker back to
+   * the hydrated image bytes from the Persisted Thread.
+   */
+  readonly attachmentLookup: AttachmentLookup;
 }
 
 // ─── Per-call options ──────────────────────────────────────────────────────
