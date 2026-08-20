@@ -3,7 +3,7 @@
 //! Compiled only under `cfg(test)` (declared in `lib.rs` as
 //! `#[cfg(test)] mod testutil;`) — never ships in release builds.
 //!
-//! Follows the bootstrap pattern from `db/manager.rs::stress_tests`:
+//! Follows the bootstrap pattern from `db/tests/manager.rs::stress_tests`:
 //! `space.db` + world DB files are created directly (bypassing Tauri
 //! commands) so tests never construct `State<'_, DbManager>` or
 //! `AppHandle` — this crate has no mock runtime by convention (see
