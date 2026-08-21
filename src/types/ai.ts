@@ -194,3 +194,32 @@ export const modelsDevCatalogSchema = z.object({
 });
 
 export type ModelsDevCatalog = z.infer<typeof modelsDevCatalogSchema>;
+
+// ─── Custom providers (ADR-0046) ────────────────────────────────────────────
+
+/**
+ * A per-provider schema violation found while validating the user-authored
+ * custom-providers JSON. Violating entries are skipped at catalog-merge time
+ * (the rest still works), so they surface as warnings, not failures.
+ */
+export const customProviderEntryErrorSchema = z.object({
+  providerId: z.string(),
+  message: z.string(),
+});
+
+export type CustomProviderEntryError = z.infer<typeof customProviderEntryErrorSchema>;
+
+/**
+ * Report returned by `set_custom_providers`. A non-null `syntaxError` means
+ * the JSON didn't parse and NOTHING was stored; `stored` marks the value as
+ * written; `validProviderIds` are the ids that will appear in the merged
+ * catalog; `entryErrors` are tolerated per-provider violations.
+ */
+export const customProvidersReportSchema = z.object({
+  syntaxError: z.string().nullable(),
+  stored: z.boolean(),
+  validProviderIds: z.array(z.string()),
+  entryErrors: z.array(customProviderEntryErrorSchema),
+});
+
+export type CustomProvidersReport = z.infer<typeof customProvidersReportSchema>;

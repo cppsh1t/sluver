@@ -12,6 +12,7 @@
 import type {
   AgentConfig,
   ContextCompaction,
+  CustomProvidersReport,
   ModelsDevCatalog,
   ProviderCredential,
 } from "@/types";
@@ -147,4 +148,23 @@ export function getModelsDevCatalog(): Promise<ModelsDevCatalog> {
 /** Force-refresh the catalog, bypassing the TTL. Same failure behavior as get. */
 export function refreshModelsDevCatalog(): Promise<ModelsDevCatalog> {
   return call<ModelsDevCatalog>("refresh_models_dev_catalog");
+}
+
+// ─── Custom providers (global, ADR-0046) ────────────────────────────────────
+
+/**
+ * Raw stored custom-providers JSON (models.dev format), `""` when unset.
+ * The backend owns validation; the frontend just round-trips the text.
+ */
+export function getCustomProviders(): Promise<string> {
+  return call<string>("get_custom_providers");
+}
+
+/**
+ * Store (or clear, when `json` is empty) the custom-providers JSON. The
+ * report distinguishes a syntax error (nothing stored) from tolerated
+ * per-provider schema violations (stored, skipped at catalog-merge time).
+ */
+export function setCustomProviders(json: string): Promise<CustomProvidersReport> {
+  return call<CustomProvidersReport>("set_custom_providers", { json });
 }

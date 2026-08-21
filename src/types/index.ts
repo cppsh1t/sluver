@@ -50,6 +50,10 @@ export {
   type CatalogProvider,
   modelsDevCatalogSchema,
   type ModelsDevCatalog,
+  customProviderEntryErrorSchema,
+  type CustomProviderEntryError,
+  customProvidersReportSchema,
+  type CustomProvidersReport,
 } from './ai';
 
 // ─── World elements ───────────────────────────────────────────────────────
