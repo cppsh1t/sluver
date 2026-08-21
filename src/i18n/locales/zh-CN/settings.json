@@ -45,6 +45,15 @@
       "loadFailed": "加载设置失败",
     "saveFailed": "保存失败"
   },
+  "customProviders": {
+    "title": "自定义模型 Provider",
+    "description": "以 models.dev 相同的 JSON 格式定义自定义 LLM Provider，与内置目录合并，同名 provider 以此处为准。留空保存即可清除。",
+    "saved": "已保存 {{count}} 个自定义 provider",
+    "entryWarnings": "{{count}} 个条目格式无效，加载时将被跳过：{{ids}}",
+    "syntaxError": "JSON 格式错误，未保存",
+    "saveFailed": "保存自定义 provider 失败",
+    "loadFailed": "加载自定义 provider 失败"
+  },
   "diagnostics": {
     "title": "诊断",
     "verbosity": {

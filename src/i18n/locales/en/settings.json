@@ -45,6 +45,15 @@
     "loadFailed": "Failed to load settings",
     "saveFailed": "Failed to save"
   },
+  "customProviders": {
+    "title": "Custom model providers",
+    "description": "Define custom LLM providers in the same JSON format as models.dev. Merged into the built-in catalog; entries here win on id collision. Save empty to clear.",
+    "saved": "Saved {{count}} custom provider(s)",
+    "entryWarnings": "{{count}} invalid entries will be skipped at load: {{ids}}",
+    "syntaxError": "Invalid JSON — not saved",
+    "saveFailed": "Failed to save custom providers",
+    "loadFailed": "Failed to load custom providers"
+  },
   "diagnostics": {
     "title": "Diagnostics",
     "verbosity": {
