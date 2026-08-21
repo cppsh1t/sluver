@@ -145,8 +145,7 @@ pub fn run() {
                         }
                         let app_for_thread = app_handle.clone();
                         let _ = app_handle.run_on_main_thread(move || {
-                            let _ =
-                                window_manager::ensure_space_window(&app_for_thread, &space_id);
+                            let _ = window_manager::ensure_space_window(&app_for_thread, &space_id);
                         });
                     }
                     None => {
@@ -312,6 +311,8 @@ pub fn run() {
             commands::ai::update_agent_config_shell_tool,
             commands::ai::get_models_dev_catalog,
             commands::ai::refresh_models_dev_catalog,
+            commands::ai::get_custom_providers,
+            commands::ai::set_custom_providers,
             // Agent Skills (storage-center install model — ADR-0043)
             commands::skill::list_skills,
             commands::skill::upload_skill,
@@ -485,10 +486,7 @@ fn determine_startup_space(db: &db::DbManager) -> Option<String> {
 /// Uses [`logging::tier_to_filter`] so the tier→filter mapping is shared with
 /// `commands::diagnostics::set_log_level` (the runtime-change path). The two
 /// paths cannot drift.
-fn reapply_persisted_log_level(
-    logging_state: &logging::LoggingState,
-    db_manager: &db::DbManager,
-) {
+fn reapply_persisted_log_level(logging_state: &logging::LoggingState, db_manager: &db::DbManager) {
     // Read the persisted tier. `query_row` errors (most commonly
     // `QueryReturnedNoRows` on a fresh install) collapse to `None` via
     // `.ok()` so the match below treats any read failure as "no tier" —

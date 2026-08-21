@@ -13,12 +13,18 @@
 //      `models-dev.meta.json` recording the fetch time; a 24h TTL gates
 //      refresh. On fetch failure the last good copy is returned with
 //      `is_stale: true`; only when no copy exists does the command surface
-//      `CatalogFetchFailed`.
+//      `CatalogFetchFailed`. User-authored custom providers (ADR-0046),
+//      stored as a raw JSON string in the meta.db `settings` table under
+//      `ai.customProviders`, are parsed and merged into every read (custom
+//      wins on provider-id collision). `get_custom_providers` /
+//      `set_custom_providers` manage that setting, with save-time
+//      validation reported through `CustomProvidersReport`.
 //
 // All command bodies are thin wrappers over `do_*` helpers that take
 // `&DbManager` (sync) or `&Path` (async) — this split makes the helpers
 // unit-testable without spinning up the Tauri runtime.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use rusqlite::params;
@@ -26,7 +32,10 @@ use tauri::State;
 
 use crate::db::{DbError, DbManager};
 use crate::models::agent_config::{AgentConfig, ContextCompaction};
-use crate::models::catalog::{CatalogMeta, CatalogModel, CatalogProvider, ModelsDevCatalog, RawCatalog, RawModel, RawProvider};
+use crate::models::catalog::{
+    CatalogMeta, CatalogModel, CatalogProvider, CustomProviderEntryError, CustomProvidersReport,
+    ModelsDevCatalog, RawCatalog, RawModel, RawProvider,
+};
 use crate::models::provider_credential::{ProviderCredential, SetProviderCredentialInput};
 use crate::util::{new_id, now_iso};
 
@@ -273,9 +282,7 @@ pub(crate) fn do_update_agent_config_model(
             row_to_agent_config,
         )
         .map_err(|e| match e {
-            rusqlite::Error::QueryReturnedNoRows => {
-                DbError::AgentConfigNotFound(id.to_string())
-            }
+            rusqlite::Error::QueryReturnedNoRows => DbError::AgentConfigNotFound(id.to_string()),
             other => DbError::Sqlite(other),
         })
     })
@@ -361,7 +368,12 @@ pub(crate) fn do_update_agent_config_context_compaction(
                  context_compaction_turn_age = ?2,
                  updated_at = ?3
              WHERE id = ?4",
-            params![context_compaction.enabled, context_compaction.turn_age, now, id],
+            params![
+                context_compaction.enabled,
+                context_compaction.turn_age,
+                now,
+                id
+            ],
         )?;
         if affected == 0 {
             return Err(DbError::AgentConfigNotFound(id.to_string()));
@@ -376,9 +388,7 @@ pub(crate) fn do_update_agent_config_context_compaction(
             row_to_agent_config,
         )
         .map_err(|e| match e {
-            rusqlite::Error::QueryReturnedNoRows => {
-                DbError::AgentConfigNotFound(id.to_string())
-            }
+            rusqlite::Error::QueryReturnedNoRows => DbError::AgentConfigNotFound(id.to_string()),
             other => DbError::Sqlite(other),
         })
     })
@@ -420,9 +430,7 @@ pub(crate) fn do_update_agent_config_system_prompt(
             row_to_agent_config,
         )
         .map_err(|e| match e {
-            rusqlite::Error::QueryReturnedNoRows => {
-                DbError::AgentConfigNotFound(id.to_string())
-            }
+            rusqlite::Error::QueryReturnedNoRows => DbError::AgentConfigNotFound(id.to_string()),
             other => DbError::Sqlite(other),
         })
     })
@@ -464,11 +472,130 @@ pub(crate) fn do_update_agent_config_shell_tool(
             row_to_agent_config,
         )
         .map_err(|e| match e {
-            rusqlite::Error::QueryReturnedNoRows => {
-                DbError::AgentConfigNotFound(id.to_string())
-            }
+            rusqlite::Error::QueryReturnedNoRows => DbError::AgentConfigNotFound(id.to_string()),
             other => DbError::Sqlite(other),
         })
+    })
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// custom providers (meta.db settings key `ai.customProviders` — ADR-0046)
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[tracing::instrument(skip(state))]
+#[tauri::command]
+pub fn get_custom_providers(state: State<'_, DbManager>) -> Result<String, DbError> {
+    do_get_custom_providers(&state)
+}
+
+pub(crate) fn do_get_custom_providers(mgr: &DbManager) -> Result<String, DbError> {
+    read_custom_providers_setting(mgr)
+}
+
+#[tracing::instrument(skip(state, json))]
+#[tauri::command]
+pub fn set_custom_providers(
+    json: String,
+    state: State<'_, DbManager>,
+) -> Result<CustomProvidersReport, DbError> {
+    do_set_custom_providers(&state, &json)
+}
+
+/// Validate + store the custom-providers JSON. Never fails on user-input
+/// problems — those flow through the returned [`CustomProvidersReport`]:
+/// a syntax error blocks the store entirely (`stored: false`, previous
+/// value untouched); per-entry schema errors are reported but tolerated
+/// (the valid entries are stored; the catalog loader skips the bad ones
+/// identically at read time). The stored value is always the trimmed
+/// input.
+pub(crate) fn do_set_custom_providers(
+    mgr: &DbManager,
+    json: &str,
+) -> Result<CustomProvidersReport, DbError> {
+    let trimmed = json.trim();
+    if trimmed.is_empty() {
+        // Empty (or whitespace-only) input = clear the setting. "" parses
+        // as "no custom providers" at load time.
+        write_custom_providers_setting(mgr, "")?;
+        tracing::info!(provider_count = 0, "catalog.custom.saved");
+        return Ok(CustomProvidersReport {
+            syntax_error: None,
+            stored: true,
+            valid_provider_ids: Vec::new(),
+            entry_errors: Vec::new(),
+        });
+    }
+
+    // Syntax gate: the whole input must parse as a JSON object map before
+    // anything is stored — a syntax error never clobbers the previous value.
+    let map: HashMap<String, serde_json::Value> = match serde_json::from_str(trimmed) {
+        Ok(map) => map,
+        Err(e) => {
+            return Ok(CustomProvidersReport {
+                syntax_error: Some(e.to_string()),
+                stored: false,
+                valid_provider_ids: Vec::new(),
+                entry_errors: Vec::new(),
+            });
+        }
+    };
+
+    // Per-entry validation: the same schema the catalog loader applies, so
+    // the save-time report never disagrees with what a subsequent load
+    // skips. Per the redaction policy this logs provider ids and serde
+    // error descriptions only — never names or JSON content.
+    let mut valid_provider_ids = Vec::new();
+    let mut entry_errors = Vec::new();
+    for (pid, value) in map {
+        match serde_json::from_value::<RawProvider>(value) {
+            Ok(_raw) => valid_provider_ids.push(pid),
+            Err(e) => entry_errors.push(CustomProviderEntryError {
+                provider_id: pid,
+                message: e.to_string(),
+            }),
+        }
+    }
+    valid_provider_ids.sort();
+    entry_errors.sort_by(|a, b| a.provider_id.cmp(&b.provider_id));
+
+    write_custom_providers_setting(mgr, trimmed)?;
+    tracing::info!(
+        provider_count = valid_provider_ids.len(),
+        "catalog.custom.saved"
+    );
+    Ok(CustomProvidersReport {
+        syntax_error: None,
+        stored: true,
+        valid_provider_ids,
+        entry_errors,
+    })
+}
+
+/// Read the raw `ai.customProviders` setting string. Missing key (the
+/// normal unset case) → `""`. Short `with_meta` closure — the meta lock
+/// is never held across any IO.
+fn read_custom_providers_setting(mgr: &DbManager) -> Result<String, DbError> {
+    mgr.with_meta(|conn| {
+        Ok(conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'ai.customProviders'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap_or_default())
+    })
+}
+
+/// UPSERT the `ai.customProviders` setting (same statement shape as
+/// `commands/setting.rs`).
+fn write_custom_providers_setting(mgr: &DbManager, value: &str) -> Result<(), DbError> {
+    mgr.with_meta(|conn| {
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('ai.customProviders', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![value],
+        )?;
+        Ok(())
     })
 }
 
@@ -481,22 +608,26 @@ pub(crate) fn do_update_agent_config_shell_tool(
 pub async fn get_models_dev_catalog(
     state: State<'_, DbManager>,
 ) -> Result<ModelsDevCatalog, DbError> {
+    // Read the custom-providers setting BEFORE any fetch/file IO so the
+    // merged view is consistent for the whole call — and so the meta lock
+    // is released long before the first await.
+    let custom_json = read_custom_providers_setting(&state)?;
     // Clone the PathBuf out of State BEFORE any .await so the State borrow
     // ends promptly (State itself is Send but the contained Mutex guard
     // would not be — we never hold one across an await anyway).
     let data_dir = state.data_dir().clone();
-    do_get_models_dev_catalog(&data_dir).await
+    do_get_models_dev_catalog(&data_dir, &custom_json).await
 }
 
 pub(crate) async fn do_get_models_dev_catalog(
     data_dir: &Path,
+    custom_json: &str,
 ) -> Result<ModelsDevCatalog, DbError> {
     let (cat_path, meta_path) = catalog_paths(data_dir);
 
     // TTL check: refresh iff meta missing/corrupt/unparseable OR age > 24h
     // OR catalog file itself is absent.
-    let fresh = cat_path.exists()
-        && matches!(read_meta(&meta_path), Some(m) if !is_stale(&m));
+    let fresh = cat_path.exists() && matches!(read_meta(&meta_path), Some(m) if !is_stale(&m));
 
     if !fresh {
         if let Err(_fetch_err) = fetch_catalog(&cat_path, &meta_path).await {
@@ -504,13 +635,13 @@ pub(crate) async fn do_get_models_dev_catalog(
             // stale so the UI can warn. No copy → contract says return
             // CatalogFetchFailed.
             if cat_path.exists() {
-                return load_catalog_from_disk(&cat_path, &meta_path, true);
+                return load_catalog_from_disk(data_dir, Some(custom_json), true);
             }
             return Err(DbError::CatalogFetchFailed);
         }
     }
 
-    load_catalog_from_disk(&cat_path, &meta_path, false)
+    load_catalog_from_disk(data_dir, Some(custom_json), false)
 }
 
 #[tracing::instrument(skip(state))]
@@ -518,22 +649,24 @@ pub(crate) async fn do_get_models_dev_catalog(
 pub async fn refresh_models_dev_catalog(
     state: State<'_, DbManager>,
 ) -> Result<ModelsDevCatalog, DbError> {
+    let custom_json = read_custom_providers_setting(&state)?;
     let data_dir = state.data_dir().clone();
-    do_refresh_models_dev_catalog(&data_dir).await
+    do_refresh_models_dev_catalog(&data_dir, &custom_json).await
 }
 
 pub(crate) async fn do_refresh_models_dev_catalog(
     data_dir: &Path,
+    custom_json: &str,
 ) -> Result<ModelsDevCatalog, DbError> {
     let (cat_path, meta_path) = catalog_paths(data_dir);
     // Force-refresh: bypass TTL. Same fallback semantics as get.
     if let Err(_fetch_err) = fetch_catalog(&cat_path, &meta_path).await {
         if cat_path.exists() {
-            return load_catalog_from_disk(&cat_path, &meta_path, true);
+            return load_catalog_from_disk(data_dir, Some(custom_json), true);
         }
         return Err(DbError::CatalogFetchFailed);
     }
-    load_catalog_from_disk(&cat_path, &meta_path, false)
+    load_catalog_from_disk(data_dir, Some(custom_json), false)
 }
 
 // ─── catalog helpers ────────────────────────────────────────────────────────
@@ -607,20 +740,140 @@ async fn fetch_catalog(cat_path: &Path, meta_path: &Path) -> Result<(), DbError>
     Ok(())
 }
 
-/// Load + parse the cached catalog file. `is_stale` is set as given by the
-/// caller (`true` when this is a fallback after a failed fetch).
+/// Load + parse the cached catalog file from `data_dir`, merging the
+/// user-authored custom providers parsed from `custom_json` (the raw
+/// `ai.customProviders` setting string). `is_stale` is set as given by
+/// the caller (`true` when this is a fallback after a failed fetch).
 fn load_catalog_from_disk(
-    cat_path: &Path,
-    meta_path: &Path,
+    data_dir: &Path,
+    custom_json: Option<&str>,
     is_stale: bool,
 ) -> Result<ModelsDevCatalog, DbError> {
+    let (cat_path, meta_path) = catalog_paths(data_dir);
     let text = std::fs::read_to_string(cat_path)?;
     let mut catalog = parse_catalog(&text)?;
-    catalog.fetched_at = read_meta(meta_path)
+    let custom = parse_custom_providers(custom_json.unwrap_or(""));
+    let custom_count = custom.len();
+    merge_custom_providers(&mut catalog, custom);
+    if custom_count > 0 {
+        tracing::info!(
+            custom_provider_count = custom_count,
+            "catalog.custom.loaded"
+        );
+    }
+    catalog.fetched_at = read_meta(&meta_path)
         .map(|m| m.fetched_at)
         .unwrap_or_else(now_iso);
     catalog.is_stale = is_stale;
     Ok(catalog)
+}
+
+/// Parse the custom-providers JSON (models.dev api.json shape:
+/// `{ "<providerId>": { ... } }`). Identical tolerant semantics to the
+/// catalog loader: empty/whitespace input (the normal unset case) →
+/// empty vec silently; a syntax error or non-object root → empty vec
+/// with a WARN; an individually invalid entry is skipped so one bad row
+/// never hides the valid ones. Per the redaction policy this never logs
+/// JSON content or provider names — only provider ids and the error
+/// description.
+fn parse_custom_providers(json: &str) -> Vec<CatalogProvider> {
+    if json.trim().is_empty() {
+        return Vec::new();
+    }
+    let map: HashMap<String, serde_json::Value> = match serde_json::from_str(json) {
+        Ok(map) => map,
+        Err(e) => {
+            tracing::warn!(error = %e, "catalog.custom.parse_failed");
+            return Vec::new();
+        }
+    };
+    map.into_iter()
+        .filter_map(
+            |(pid, value)| match serde_json::from_value::<RawProvider>(value) {
+                Ok(raw) => {
+                    // Zero-model providers are almost certainly a user typo,
+                    // but an intentional "shell" provider is plausible — warn,
+                    // still include it.
+                    if raw.models.is_empty() {
+                        tracing::warn!(provider_id = %pid, "catalog.custom.no_models");
+                    }
+                    Some(raw_provider_to_catalog(pid, raw))
+                }
+                Err(e) => {
+                    tracing::warn!(provider_id = %pid, error = %e, "catalog.custom.entry_skipped");
+                    None
+                }
+            },
+        )
+        .collect()
+}
+
+/// Merge custom providers into a parsed catalog. On provider-id collision
+/// the custom entry FULLY replaces the catalog's — a user overriding
+/// `openai` wants their definition, not a blend of both. The merged vec
+/// is re-sorted by id to preserve the deterministic ordering contract
+/// established by `parse_catalog`.
+fn merge_custom_providers(catalog: &mut ModelsDevCatalog, custom: Vec<CatalogProvider>) {
+    let custom_ids: Vec<String> = custom.iter().map(|p| p.id.clone()).collect();
+    catalog.providers.retain(|p| !custom_ids.contains(&p.id));
+    catalog.providers.extend(custom);
+    catalog.providers.sort_by(|a, b| a.id.cmp(&b.id));
+}
+
+/// Map one raw upstream provider row (plus its map key as the id) to the
+/// slimmed-down `CatalogProvider`. Shared by the models.dev parse and the
+/// custom-providers setting so both go through the identical projection
+/// (name fallback to key, `limit.context` → `context_window`,
+/// `modalities.input` → `input_modalities`, per-model id sort).
+fn raw_provider_to_catalog(pid: String, p: RawProvider) -> CatalogProvider {
+    let RawProvider {
+        name,
+        npm,
+        api,
+        icon_url,
+        models,
+    } = p;
+    let mut models: Vec<CatalogModel> = models
+        .into_iter()
+        .map(|(mid, m)| {
+            let RawModel {
+                name,
+                limit,
+                modalities,
+            } = m;
+            CatalogModel {
+                id: mid.clone(),
+                name: name.unwrap_or(mid),
+                // Surface the upstream `limit.context` as the
+                // semantic `context_window` (renamed to
+                // `contextWindow` in the JSON payload by serde
+                // `rename_all`). `limit` is an object
+                // `{ context, output }` upstream; we keep only the
+                // context half.
+                context_window: limit.and_then(|l| l.context),
+                // Surface the upstream `modalities.input` as
+                // `input_modalities` (`inputModalities` in the
+                // JSON payload). `unwrap_or_default` + the
+                // non-empty filter make `None` mean "upstream
+                // omitted it / unknown" — never "known empty" —
+                // so the vision check (input.includes("image"))
+                // and the pass-through rule for unknown models
+                // (ADR-0044 §D9) both key off the same Option.
+                input_modalities: modalities
+                    .map(|md| md.input.unwrap_or_default())
+                    .filter(|v| !v.is_empty()),
+            }
+        })
+        .collect();
+    models.sort_by(|a, b| a.id.cmp(&b.id));
+    CatalogProvider {
+        id: pid.clone(),
+        name: name.unwrap_or(pid),
+        npm,
+        api_base_url: api,
+        icon_url,
+        models,
+    }
 }
 
 /// Parse the upstream models.dev JSON into our slimmed-down catalog. Unknown
@@ -637,56 +890,7 @@ fn parse_catalog(json: &str) -> Result<ModelsDevCatalog, DbError> {
 
     let mut providers: Vec<CatalogProvider> = map
         .into_iter()
-        .map(|(pid, p)| {
-            let RawProvider {
-                name,
-                npm,
-                api,
-                icon_url,
-                models,
-            } = p;
-            let mut models: Vec<CatalogModel> = models
-                .into_iter()
-                .map(|(mid, m)| {
-                    let RawModel {
-                        name,
-                        limit,
-                        modalities,
-                    } = m;
-                    CatalogModel {
-                        id: mid.clone(),
-                        name: name.unwrap_or(mid),
-                        // Surface the upstream `limit.context` as the
-                        // semantic `context_window` (renamed to
-                        // `contextWindow` in the JSON payload by serde
-                        // `rename_all`). `limit` is an object
-                        // `{ context, output }` upstream; we keep only the
-                        // context half.
-                        context_window: limit.and_then(|l| l.context),
-                        // Surface the upstream `modalities.input` as
-                        // `input_modalities` (`inputModalities` in the
-                        // JSON payload). `unwrap_or_default` + the
-                        // non-empty filter make `None` mean "upstream
-                        // omitted it / unknown" — never "known empty" —
-                        // so the vision check (input.includes("image"))
-                        // and the pass-through rule for unknown models
-                        // (ADR-0044 §D9) both key off the same Option.
-                        input_modalities: modalities
-                            .map(|md| md.input.unwrap_or_default())
-                            .filter(|v| !v.is_empty()),
-                    }
-                })
-                .collect();
-            models.sort_by(|a, b| a.id.cmp(&b.id));
-            CatalogProvider {
-                id: pid.clone(),
-                name: name.unwrap_or(pid),
-                npm,
-                api_base_url: api,
-                icon_url,
-                models,
-            }
-        })
+        .map(|(pid, p)| raw_provider_to_catalog(pid, p))
         .collect();
     providers.sort_by(|a, b| a.id.cmp(&b.id));
 

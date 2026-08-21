@@ -61,6 +61,35 @@ pub struct CatalogModel {
     pub input_modalities: Option<Vec<String>>,
 }
 
+/// One per-entry schema violation from custom-providers validation.
+/// `provider_id` is the offending top-level object key; `message` is the
+/// serde error description (contains field name + position, never content).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomProviderEntryError {
+    pub provider_id: String,
+    pub message: String,
+}
+
+/// Save-time validation report for `set_custom_providers`. The command never
+/// fails on user-input problems — syntax errors land in `syntax_error` with
+/// `stored: false`; entry-level errors land in `entry_errors` and the rest is
+/// still stored (the catalog loader skips bad entries identically).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomProvidersReport {
+    /// `Some(msg)` when the input failed to parse as a JSON object map —
+    /// nothing was stored in that case.
+    pub syntax_error: Option<String>,
+    /// Whether the setting was written. `false` only on syntax error.
+    pub stored: bool,
+    /// Top-level keys that passed `RawProvider` schema validation, sorted.
+    pub valid_provider_ids: Vec<String>,
+    /// Per-entry schema violations (invalid entries were skipped but the
+    /// valid ones were still stored).
+    pub entry_errors: Vec<CustomProviderEntryError>,
+}
+
 // ─── intermediate parsing structs (private) ─────────────────────────────────
 //
 // The upstream `https://models.dev/api.json` shape is:
