@@ -93,6 +93,7 @@
   "catalog": {
     "loading": "正在加载模型目录…",
     "error": "无法加载模型目录",
+    "reload": "重新加载模型目录",
     "staleBanner": "模型目录更新失败，使用上次版本（{{fetchedAt}}）。",
     "refresh": "刷新",
     "refreshing": "刷新中…",

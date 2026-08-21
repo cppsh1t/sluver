@@ -93,6 +93,7 @@
   "catalog": {
     "loading": "Loading model catalog…",
     "error": "Could not load model catalog",
+    "reload": "Reload model catalog",
     "staleBanner": "Model catalog update failed, using last known version ({{fetchedAt}}).",
     "refresh": "Refresh",
     "refreshing": "Refreshing…",
