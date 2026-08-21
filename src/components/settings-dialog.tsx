@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useRouterState } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { locale as detectOsLocale } from "@tauri-apps/plugin-os";
 import { openPath } from "@tauri-apps/plugin-opener";
@@ -18,9 +18,11 @@ import {
   dateRange,
   exportLogs,
   getAppSetting,
+  getCustomProviders,
   getLogLevel,
   getLogsDir,
   listSystemFonts,
+  setCustomProviders,
   setLogLevel,
   setTrayLocale,
   updateAppSetting,
@@ -28,6 +30,7 @@ import {
   type VerbosityTier,
 } from "@/api";
 import { toErrorPayload } from "@/api/client";
+import { aiConfigKeys } from "@/hooks/use-ai-config";
 import { setDayjsLocale } from "@/lib/format";
 import { logger, setLevel, type LogLevel } from "@/lib/logger";
 import {
@@ -87,6 +90,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { Textarea } from "@/components/ui/textarea";
 
 interface SettingsDialogProps {
   open: boolean;
@@ -130,6 +134,22 @@ function useCurrentSpaceId(): string | null {
   );
 }
 
+/** Valid-format placeholder — doubles as the format documentation. */
+const CUSTOM_PROVIDERS_PLACEHOLDER = `{
+  "my-provider": {
+    "name": "My Provider",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://api.example.com/v1",
+    "models": {
+      "my-model": {
+        "name": "My Model",
+        "limit": { "context": 128000 },
+        "modalities": { "input": ["text", "image"] }
+      }
+    }
+  }
+}`;
+
 /**
  * Global application settings (CONTEXT.md `Setting`) as a modal.
  *
@@ -145,6 +165,7 @@ function useCurrentSpaceId(): string | null {
  */
 function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { t } = useTranslation(["settings", "common"]);
+  const qc = useQueryClient();
   const [theme, setTheme] = useState<ThemeMode>("system");
   const [colorTheme, setColorTheme] = useState<ColorTheme>("neutral");
   const [locale, setLocale] = useState<AppSetting["locale"]>("auto");
@@ -189,6 +210,15 @@ function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   // Clear-logs confirm dialog state.
   const [clearOpen, setClearOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
+
+  // ── Custom providers state (ADR-0046) ────────────────────────────────
+  // `customProvidersLoadedJson` mirrors the last value fetched from (or
+  // persisted to) the backend — the save button stays disabled while the
+  // textarea content equals it.
+  const [customProvidersJson, setCustomProvidersJson] = useState("");
+  const [customProvidersLoadedJson, setCustomProvidersLoadedJson] = useState("");
+  const [customProvidersLoading, setCustomProvidersLoading] = useState(false);
+  const [customProvidersSaving, setCustomProvidersSaving] = useState(false);
 
   const themeOptions: { value: ThemeMode; label: string }[] = [
     { value: "light", label: t("settings:theme.options.light") },
@@ -246,6 +276,34 @@ function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       })
       .finally(() => setVerbosityLoading(false));
   }, []);
+
+  // Load the raw custom-providers JSON each time the dialog opens. The
+  // backend owns validation (ADR-0046), so the frontend just round-trips
+  // the stored text. `cancelled` guards against a stale response landing
+  // after a quick close→reopen cycle.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setCustomProvidersLoading(true);
+    getCustomProviders()
+      .then((json) => {
+        if (cancelled) return;
+        setCustomProvidersJson(json);
+        setCustomProvidersLoadedJson(json);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        toast.error(i18n.t("settings:customProviders.loadFailed"), {
+          description: toErrorPayload(e).message,
+        });
+      })
+      .finally(() => {
+        if (!cancelled) setCustomProvidersLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   async function persist(next: {
     theme?: ThemeMode;
@@ -485,6 +543,51 @@ function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     }
   }
 
+  // ── Custom providers handlers (ADR-0046) ─────────────────────────────
+
+  async function handleSaveCustomProviders() {
+    setCustomProvidersSaving(true);
+    try {
+      const report = await setCustomProviders(customProvidersJson);
+      if (report.syntaxError) {
+        toast.error(i18n.t("settings:customProviders.syntaxError"), {
+          description: report.syntaxError,
+        });
+        return; // not stored; keep the text for fixing
+      }
+      if (report.entryErrors.length > 0) {
+        const ids = report.entryErrors.map((e) => e.providerId).join(", ");
+        toast.warning(
+          i18n.t("settings:customProviders.entryWarnings", {
+            count: report.entryErrors.length,
+            ids,
+          }),
+          {
+            description: report.entryErrors
+              .map((e) => `${e.providerId}: ${e.message}`)
+              .join("\n"),
+          },
+        );
+      } else {
+        toast.success(
+          i18n.t("settings:customProviders.saved", {
+            count: report.validProviderIds.length,
+          }),
+        );
+      }
+      // Saved (possibly with tolerated entry errors) → mark the current
+      // text as persisted and refetch the merged catalog now.
+      setCustomProvidersLoadedJson(customProvidersJson);
+      qc.invalidateQueries({ queryKey: aiConfigKeys.catalog() });
+    } catch (e) {
+      toast.error(i18n.t("settings:customProviders.saveFailed"), {
+        description: toErrorPayload(e).message,
+      });
+    } finally {
+      setCustomProvidersSaving(false);
+    }
+  }
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -578,6 +681,41 @@ function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   onSelect={handleChangeArticleFont}
                 />
               </SettingRow>
+            </section>
+
+            {/* ── Custom LLM providers (ADR-0046) ────────────────────── */}
+            <section className="flex flex-col gap-3 border-t border-border pt-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {t("settings:customProviders.title")}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t("settings:customProviders.description")}
+              </p>
+              <Textarea
+                aria-label={t("settings:customProviders.title")}
+                className="font-mono text-xs"
+                rows={10}
+                spellCheck={false}
+                placeholder={CUSTOM_PROVIDERS_PLACEHOLDER}
+                value={customProvidersJson}
+                onChange={(e) => setCustomProvidersJson(e.target.value)}
+                disabled={customProvidersLoading}
+              />
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  onClick={handleSaveCustomProviders}
+                  disabled={
+                    customProvidersLoading ||
+                    customProvidersSaving ||
+                    customProvidersJson === customProvidersLoadedJson
+                  }
+                >
+                  {customProvidersSaving
+                    ? t("common:actions.saving")
+                    : t("common:actions.save")}
+                </Button>
+              </div>
             </section>
 
             {/* ── Diagnostics ──────────────────────────────────────────── */}
