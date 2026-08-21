@@ -51,6 +51,7 @@ Tauri v2 desktop app for **worldbuilding & novel writing**. React 19 + TypeScrip
   - [ADR-0043](./docs/adr/0043-agent-skills-install-model.md) — Agent Skills: storage-center install model (Anthropic zip upload, per-AgentConfig enable, disk-installed copy as runtime truth, progressive disclosure, ADR-0031 compaction exemption, no tool gating)
   - [ADR-0044](./docs/adr/0044-chat-file-attachments.md) — Chat file attachments: sidecar blob table with hydration at the session-store boundary
   - [ADR-0045](./docs/adr/0045-look-at-tool-vision-agent.md) — `look_at` tool backed by a dedicated seeded `vision` agent (one-shot `generateText` on the AgentConfig-resolved model; filename-or-URL input; `consentLevel: "auto"`; configured = enabled like `namer`)
+  - [ADR-0046](./docs/adr/0046-custom-llm-providers.md) — Custom LLM providers via JSON in global Settings (models.dev-compatible, stored in meta.db, merged Rust-side into catalog; custom wins on id collision)
 
 ## Git commit style
 
