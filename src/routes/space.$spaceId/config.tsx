@@ -1,9 +1,14 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { createRoute, useParams } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Delete02Icon, LockKeyIcon } from "@hugeicons/core-free-icons";
+import {
+  Delete02Icon,
+  LockKeyIcon,
+  Refresh01Icon,
+} from "@hugeicons/core-free-icons";
 
 import { spaceLayoutRoute } from "./_space";
 import i18n from "@/i18n";
@@ -28,6 +33,9 @@ import {
   useSpaces,
   useUpdateSpace,
 } from "@/hooks";
+// Deep import: the barrel re-exports the hooks but not the key factory
+// (`aiConfigKeys`), and adding it there is out of scope for this change.
+import { aiConfigKeys } from "@/hooks/use-ai-config";
 import type { SpaceId } from "@/types";
 
 // Stable error code from the Rust backend (db/error.rs `to_payload`).
@@ -53,6 +61,7 @@ function SpaceConfigPage() {
 
   // AI config data (ADR-0012: Space-scoped). The catalog is global — the
   // same query is shared across Spaces and pre-warmed at bootstrap.
+  const qc = useQueryClient();
   const catalogQ = useModelsDevCatalog();
   const providersQ = useProviderCredentials(spaceId as SpaceId);
   const agentConfigsQ = useAgentConfigs(spaceId as SpaceId);
@@ -211,12 +220,37 @@ function SpaceConfigPage() {
                   {t("ai:providers.description")}
                 </p>
               </div>
-              <ProviderCombobox
-                spaceId={spaceId as SpaceId}
-                catalogProviders={catalogProviders}
-                existingProviderIds={existingProviderIds}
-                disabled={!catalogReady}
-              />
+              {/* Network-free catalog reload: invalidating the query refetches
+                  the cached `get_models_dev_catalog`, re-running the Rust-side
+                  merge so newly saved custom providers (global Settings
+                  dialog, other Space windows) appear here. Deliberately NOT
+                  `refreshModelsDevCatalog`, which forces a network fetch and
+                  would flip the catalog to the stale banner when offline. */}
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  type="button"
+                  aria-label={t("ai:catalog.reload")}
+                  title={t("ai:catalog.reload")}
+                  disabled={catalogQ.isFetching}
+                  onClick={() =>
+                    qc.invalidateQueries({ queryKey: aiConfigKeys.catalog() })
+                  }
+                >
+                  <HugeiconsIcon
+                    icon={Refresh01Icon}
+                    strokeWidth={2}
+                    className={catalogQ.isFetching ? "animate-spin" : undefined}
+                  />
+                </Button>
+                <ProviderCombobox
+                  spaceId={spaceId as SpaceId}
+                  catalogProviders={catalogProviders}
+                  existingProviderIds={existingProviderIds}
+                  disabled={!catalogReady}
+                />
+              </div>
             </div>
 
             {/* Stale catalog warning — only when the last fetch failed and
