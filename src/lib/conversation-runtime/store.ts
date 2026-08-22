@@ -41,12 +41,17 @@ import {
   type ResolvedModelConfig,
   type SessionMessage,
 } from "@/lib/ai";
-import { loadMessages as loadMessagesIpc } from "@/api/conversation";
+import {
+  deleteMessages as deleteMessagesIpc,
+  loadMessages as loadMessagesIpc,
+  updateMessage as updateMessageIpc,
+} from "@/api/conversation";
 import { createAgentEventLogger } from "@/lib/ai/agent-logging";
 import { getRoleBehavior } from "@/lib/ai-roles";
 import { TauriSessionStore } from "@/lib/ai-store";
 import { logger } from "@/lib/logger";
 import { notifyToolConsentRequested } from "@/lib/notify";
+import { expandDeleteIds, replaceMessageText } from "./message-mutations";
 import type { ToolContext, ApprovalGate, ConsentLevel } from "@/lib/tools/types";
 import type {
   Conversation,
@@ -419,6 +424,55 @@ export interface ConversationRuntimeState {
      */
     imageInputSupportedResolver: ImageInputSupportedResolver,
   ) => Promise<void>;
+
+  /**
+   * User-initiated single-message delete (ADR-0047). Pair-aware via
+   * `expandDeleteIds`: deleting an assistant message takes its immediately
+   * answering tool messages; deleting a tool message takes its parent
+   * assistant + ALL sibling tool messages — the surviving thread never
+   * carries a dangling half of a tool pair.
+   *
+   * Durable-first: the DB rows are deleted BEFORE the in-memory thread. On
+   * IPC failure NOTHING is mutated and the error RETHROWS (the hook caller
+   * toasts). No-op (warn) when the runtime is missing or a run is in
+   * flight. `pendingTurn` page-level echo is intentionally left alone (the
+   * page owns the optimistic echo).
+   */
+  deleteMessage: (
+    worldId: string,
+    conversationId: string,
+    messageId: string,
+  ) => Promise<void>;
+
+  /**
+   * In-place message body edit (ADR-0047): replaces the target message's
+   * text content — both `user` and `assistant` messages — WITHOUT
+   * re-running anything. `partIndex` targets one text part within an
+   * assistant message's content array (block id `${msg.id}#text-${n}`, n =
+   * index within the parts array); `null` for string content and user
+   * messages (whole-message edit).
+   *
+   * Durable-first with raw-body surgery: the persisted row's `body`
+   * carries `attachment://` refs the hydrated in-memory copy no longer
+   * has, so the replacement body is computed against the RAW persisted
+   * row (via `load_messages` + `replaceMessageText`) and written via
+   * `update_message` BEFORE memory moves. Usage columns are preserved by
+   * the Rust command; `messageUsages` / `lastTurnUsage` stay untouched
+   * (content edits don't change token accounting).
+   *
+   * Resolution contract: resolves `true` once the edit is committed
+   * durably AND in the in-memory thread. Resolves `false` when a guard
+   * rejected the edit (runtime missing, run in flight, target not found
+   * or not editable — already logged). Rejects on persistence failure,
+   * with memory untouched (durable-first; the hook caller toasts).
+   */
+  editMessage: (
+    worldId: string,
+    conversationId: string,
+    messageId: string,
+    partIndex: number | null,
+    newText: string,
+  ) => Promise<boolean>;
 
   abort: (worldId: string, conversationId: string) => void;
   setDraft: (worldId: string, conversationId: string, text: string) => void;
@@ -1089,6 +1143,112 @@ export function createConversationRuntimeStore(
       }
     };
 
+    // ── User-initiated message mutations (ADR-0047) ───────────────
+    // Shared guards for deleteMessage / editMessage. Returns the live
+    // runtime data + Agent, or null (already logged). Mutations are
+    // rejected while a run is in flight — mutating a thread the loop is
+    // actively appending to would corrupt the Persisted Thread.
+    const resolveMutableRuntime = (
+      worldId: string,
+      conversationId: string,
+    ): { data: ConversationRuntimeData; agent: Agent } | null => {
+      const data = getData(get(), worldId, conversationId);
+      if (!data) {
+        logger.warn("chat.message_mutation.no_runtime", {
+          conversation_id: conversationId,
+          world_id: worldId,
+        });
+        return null;
+      }
+      if (data.view.isRunning || data.runHandle !== null) {
+        logger.warn("chat.message_mutation.rejected", {
+          reason: "running",
+          conversation_id: conversationId,
+        });
+        return null;
+      }
+      if (!data.agent) {
+        logger.warn("chat.message_mutation.no_agent", {
+          conversation_id: conversationId,
+          world_id: worldId,
+        });
+        return null;
+      }
+      return { data, agent: data.agent };
+    };
+
+    // Post-await re-check for the mutation TOCTOU window: a `send` may
+    // have flipped the runtime to running while deleteMessage/editMessage
+    // were awaiting IPC. True ⇒ the caller must NOT touch the Agent
+    // thread mid-run (ADR-0047 §7 — runs append, user mutations, strictly
+    // serial).
+    const runStartedMeanwhile = (
+      worldId: string,
+      conversationId: string,
+    ): boolean => {
+      const data = getData(get(), worldId, conversationId);
+      return !!data && (data.view.isRunning || data.runHandle !== null);
+    };
+
+    /**
+     * Shared post-durable removal patch for deleteMessage. Called ONLY
+     * after the DB delete resolved — the in-memory thread
+     * (`agent.removeMessages`) and the reactive view (fresh `messages`
+     * array via `agent.getMessages()`, usage entries for deleted ids
+     * dropped, `lastTurnUsage` + `lastStepInputTokens` invalidated only
+     * when the deletion touches the last turn) move together. `draft` /
+     * `draftAttachments` / `stream` (null while idle) / `stopReason` are
+     * intentionally untouched.
+     */
+    const applyMemoryRemoval = (
+      worldId: string,
+      conversationId: string,
+      agent: Agent,
+      ids: readonly string[],
+    ): void => {
+      agent.removeMessages(new Set(ids));
+      patchData(worldId, conversationId, (d) => {
+        const messageUsages: Record<string, MessageUsage> = {
+          ...d.view.messageUsages,
+        };
+        for (const id of ids) delete messageUsages[id];
+
+        // Scope the lastTurnUsage invalidation: the annotation describes
+        // the MOST RECENT turn — the tail starting at the thread's last
+        // user message. A deletion strictly BEFORE that boundary leaves
+        // the annotation accurate, so it is preserved; with no user
+        // message in the thread there is no boundary and any deletion
+        // counts as touching.
+        const oldMessages = d.view.messages;
+        let lastUserIndex = -1;
+        for (let i = oldMessages.length - 1; i >= 0; i--) {
+          if (oldMessages[i]?.role === "user") {
+            lastUserIndex = i;
+            break;
+          }
+        }
+        const deleted = new Set(ids);
+        const touchesLastTurn =
+          lastUserIndex === -1 ||
+          oldMessages.some((m, i) => i >= lastUserIndex && deleted.has(m.id));
+
+        return {
+          ...d,
+          view: {
+            ...d.view,
+            messages: [...agent.getMessages()],
+            messageUsages,
+            lastTurnUsage: touchesLastTurn
+              ? undefined
+              : d.view.lastTurnUsage,
+            lastStepInputTokens: touchesLastTurn
+              ? undefined
+              : d.view.lastStepInputTokens,
+          },
+        };
+      });
+    };
+
     return {
       worlds: new Map(),
 
@@ -1654,6 +1814,182 @@ export function createConversationRuntimeStore(
               },
             }));
           });
+      },
+
+      // ── deleteMessage (ADR-0047) ──
+      deleteMessage: async (worldId, conversationId, messageId) => {
+        const resolved = resolveMutableRuntime(worldId, conversationId);
+        if (!resolved) return;
+        const { data, agent } = resolved;
+
+        const ids = expandDeleteIds(data.view.messages, messageId);
+        if (ids === null) {
+          logger.warn("chat.message_mutation.target_not_found", {
+            conversation_id: conversationId,
+            message_id: messageId,
+          });
+          return;
+        }
+
+        // Durable-first (ADR-0047): the DB rows go BEFORE the in-memory
+        // thread. On throw, memory is NOT mutated — the error propagates so
+        // the hook caller can toast.
+        await deleteMessagesIpc(spaceId, worldId as WorldId, {
+          conversationId: conversationId as ConversationId,
+          ids,
+        });
+
+        // TOCTOU re-check: a `send` may have started inside the IPC
+        // window. The durable delete stands, but the in-memory removal
+        // is skipped — never mutate the Agent thread mid-run (ADR-0047
+        // §7). Memory converges with the DB on the next runtime resolve.
+        if (runStartedMeanwhile(worldId, conversationId)) {
+          logger.warn("chat.message_mutation.memory_skip", {
+            reason: "run_started_mid_delete",
+            conversation_id: conversationId,
+            count: ids.length,
+          });
+          return;
+        }
+
+        applyMemoryRemoval(worldId, conversationId, agent, ids);
+        logger.info("chat.message_mutation.deleted", {
+          conversation_id: conversationId,
+          count: ids.length,
+        });
+      },
+
+      // ── editMessage (ADR-0047 — in-place edit, nothing is re-run) ──
+      editMessage: async (
+        worldId,
+        conversationId,
+        messageId,
+        partIndex,
+        newText,
+      ): Promise<boolean> => {
+        const resolved = resolveMutableRuntime(worldId, conversationId);
+        if (!resolved) return false;
+        const { data, agent } = resolved;
+
+        const original = data.view.messages.find((m) => m.id === messageId);
+        if (!original) {
+          logger.warn("chat.message_mutation.target_not_found", {
+            conversation_id: conversationId,
+            message_id: messageId,
+          });
+          return false;
+        }
+
+        // In-memory replacement (hydrated shape — data-URL file parts).
+        const nextInMemory = replaceMessageText(original, partIndex, newText);
+        if (!nextInMemory) {
+          logger.warn("chat.message_mutation.target_not_found", {
+            reason: "not_editable",
+            conversation_id: conversationId,
+            message_id: messageId,
+          });
+          return false;
+        }
+
+        // Durable-first RAW-BODY surgery. The persisted row's `body`
+        // carries `attachment://` refs the hydrated in-memory copy no
+        // longer has (ADR-0044 sidecar hydration), so the body to persist
+        // is computed against the RAW row: same pure function, same
+        // targeting, opaque file-part data passes through untouched.
+        const rawRows = await loadMessagesIpc(
+          spaceId,
+          worldId as WorldId,
+          conversationId as ConversationId,
+        );
+        // TOCTOU re-check (pre-write): a `send` that started during the
+        // read makes the whole edit a clean no-op — nothing durable has
+        // happened yet, so bail before writing.
+        if (runStartedMeanwhile(worldId, conversationId)) {
+          logger.warn("chat.message_mutation.rejected", {
+            reason: "run_started_mid_edit",
+            conversation_id: conversationId,
+          });
+          return false;
+        }
+        const rawRow = rawRows.find((row) => row.id === messageId);
+        if (!rawRow) {
+          // Memory/DB drift — the view has the message but the DB does
+          // not. Never write memory ahead of a missing durable row.
+          logger.warn("chat.message_mutation.target_not_found", {
+            reason: "raw_row_missing",
+            conversation_id: conversationId,
+            message_id: messageId,
+          });
+          return false;
+        }
+        // Boundary cast: `body` is the persisted ModelMessage JSON, typed
+        // `unknown` at the types layer (same justification as the
+        // TauriSessionStore boundary cast — the runtime layer owns the
+        // narrowing).
+        const rawPseudo: SessionMessage = {
+          ...(rawRow.body as ModelMessage),
+          id: rawRow.id,
+          sessionId: conversationId,
+          createdAt: rawRow.createdAt,
+        };
+        const nextRaw = replaceMessageText(rawPseudo, partIndex, newText);
+        if (!nextRaw) {
+          logger.warn("chat.message_mutation.target_not_found", {
+            reason: "not_editable",
+            conversation_id: conversationId,
+            message_id: messageId,
+          });
+          return false;
+        }
+
+        // On throw: memory untouched, rethrow (the hook caller toasts).
+        // The pseudo session envelope is stripped — only `{role, content}`
+        // is the persisted body.
+        await updateMessageIpc(spaceId, worldId as WorldId, {
+          conversationId: conversationId as ConversationId,
+          id: messageId,
+          body: { role: nextRaw.role, content: nextRaw.content },
+        });
+
+        // TOCTOU re-check (post-write): the durable edit is committed.
+        // If a run slipped into the write window, skip the in-memory
+        // swap — never mutate the Agent thread mid-run (ADR-0047 §7).
+        // Memory converges with the DB on the next runtime resolve.
+        if (runStartedMeanwhile(worldId, conversationId)) {
+          logger.warn("chat.message_mutation.memory_skip", {
+            reason: "run_started_mid_edit",
+            conversation_id: conversationId,
+          });
+          return true;
+        }
+
+        // The id existed in step 2, so this must succeed; a false means
+        // view/agent drift (defensive — logged, nothing else to undo: the
+        // durable edit is already committed).
+        if (!agent.replaceMessage(messageId, nextInMemory)) {
+          logger.warn("chat.message_mutation.target_not_found", {
+            reason: "agent_thread_drift",
+            conversation_id: conversationId,
+            message_id: messageId,
+          });
+          return false;
+        }
+
+        // Content edits don't change token accounting: `messageUsages` is
+        // untouched (usage columns preserved by the Rust command) and
+        // `lastTurnUsage` too.
+        patchData(worldId, conversationId, (d) => ({
+          ...d,
+          view: {
+            ...d.view,
+            messages: [...agent.getMessages()],
+          },
+        }));
+        logger.info("chat.message_mutation.edited", {
+          conversation_id: conversationId,
+          entity_id: messageId,
+        });
+        return true;
       },
 
       // ── abort ──
