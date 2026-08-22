@@ -96,6 +96,15 @@ export interface TokenFooterBlock {
 /**
  * The discriminated union of renderable blocks. `id` is stable per block so
  * React can key a list without index fallbacks.
+ *
+ * Id scheme for assistant part blocks: text is `${msg.id}#text-${i}` and
+ * reasoning `${msg.id}#reasoning-${i}`, where `i` is the part's index WITHIN
+ * the message's content array (NOT the running block count) — the edit UI
+ * splits the id back into message id + part index to target the exact
+ * content part. Tool cards use `${msg.id}#tool-${toolCallId}`, token
+ * footers `${msg.id}#usage`. String-content assistant messages emit a single
+ * text block with the bare `msg.id` (no suffix — whole-message text,
+ * `partIndex` null). Live-stream blocks use synthetic `__…__` ids.
  */
 export type RenderBlock =
   | {
@@ -318,13 +327,19 @@ function blocksForMessages(
             });
           }
         } else {
-          for (const part of asParts(msg.content)) {
+          // Indexed loop: text/reasoning block ids carry the part's index
+          // WITHIN this message's content array (see the id-scheme note on
+          // `RenderBlock`) so the edit UI can map `${msg.id}#text-${i}`
+          // back to the exact content part.
+          const parts = asParts(msg.content);
+          for (let i = 0; i < parts.length; i++) {
+            const part = parts[i];
             if (part.type === "text") {
               const tp = part as TextPartLike;
               if (tp.text.length > 0) {
                 blocks.push({
                   kind: "assistant-text",
-                  id: `${msg.id}#text-${blocks.length}`,
+                  id: `${msg.id}#text-${i}`,
                   text: tp.text,
                   streaming: false,
                 });
@@ -334,7 +349,7 @@ function blocksForMessages(
               if (rp.text.length > 0) {
                 blocks.push({
                   kind: "reasoning",
-                  id: `${msg.id}#reasoning-${blocks.length}`,
+                  id: `${msg.id}#reasoning-${i}`,
                   text: rp.text,
                   live: false,
                 });

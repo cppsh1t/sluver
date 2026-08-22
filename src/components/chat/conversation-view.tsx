@@ -19,21 +19,11 @@ import { useTranslation } from "react-i18next";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Brain02Icon, SparklesIcon } from "@hugeicons/core-free-icons";
 
-import {
-  useAbort,
-  useConversationView,
-  useEnsureRuntime,
-} from "@/lib/conversation-runtime";
-import { cn } from "@/lib/utils";
+import { useAbort, useConversationView, useEnsureRuntime } from "@/lib/conversation-runtime";
 import type { Conversation, WorldId } from "@/types";
 
-import { AttachmentStrip } from "./attachment-strip";
-import { Markdown } from "./markdown";
-import {
-  buildBlocks,
-  type PendingTurn,
-  type RenderBlock,
-} from "./message-render";
+import { AssistantTextBlock, UserMessageBlock } from "./message-actions";
+import { buildBlocks, type PendingTurn, type RenderBlock } from "./message-render";
 import { MessageTokenFooter } from "./message-token-footer";
 import { ToolCard } from "./tool-card";
 
@@ -53,24 +43,8 @@ interface ConversationViewProps {
   readonly imageDeliveryDisabled: boolean;
 }
 
-/** Blinking block cursor appended to streaming assistant text. */
-function StreamingCursor() {
-  return (
-    <span
-      aria-hidden
-      className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[0.15em] animate-pulse rounded-full bg-foreground align-baseline"
-    />
-  );
-}
-
 /** Collapsible reasoning ("thinking") block. */
-function ReasoningBlock({
-  text,
-  live,
-}: {
-  readonly text: string;
-  readonly live: boolean;
-}) {
+function ReasoningBlock({ text, live }: { readonly text: string; readonly live: boolean }) {
   const { t } = useTranslation("chat");
   const [open, setOpen] = useState(live);
   return (
@@ -128,44 +102,62 @@ function renderBlock(
   worldId: WorldId,
   conversationId: Conversation["id"],
   imageDeliveryDisabled: boolean,
+  isRunning: boolean,
 ): ReactNode {
   switch (block.kind) {
     case "user":
       return (
-        <div key={block.id} className="flex justify-end">
-          <div
-            className={cn(
-              "flex max-w-[85%] flex-col items-end gap-1",
-              block.optimistic && "opacity-90",
-            )}
-          >
-            {block.attachments && block.attachments.length > 0 && (
-              <AttachmentStrip
-                attachments={block.attachments}
-                imageDeliveryDisabled={imageDeliveryDisabled}
-              />
-            )}
-            {block.text.length > 0 && (
-              <div className="whitespace-pre-wrap rounded-2xl rounded-br-sm bg-primary px-3 py-1.5 text-sm text-primary-foreground">
-                {block.text}
-              </div>
-            )}
-          </div>
-        </div>
+        <UserMessageBlock
+          key={block.id}
+          worldId={worldId}
+          conversationId={conversationId}
+          messageId={block.id}
+          text={block.text}
+          attachments={block.attachments}
+          optimistic={block.optimistic === true}
+          isRunning={isRunning}
+          imageDeliveryDisabled={imageDeliveryDisabled}
+        />
       );
-    case "assistant-text":
+    case "assistant-text": {
+      // Derive edit targeting from the block id: persisted parts-array
+      // blocks are `${msg.id}#text-${i}` (i = index within the message's
+      // content array); string-content assistant messages use the bare
+      // `msg.id` (partIndex null — the whole text). Synthetic live-stream
+      // ids (`__live_text_N__`) are NOT persisted ids — in the brief
+      // post-abort window (isRunning false, stream not yet cleared) they
+      // must not act against a fake id and silently no-op.
+      const sep = block.id.indexOf("#");
+      const messageId = sep === -1 ? block.id : block.id.slice(0, sep);
+      const partIndex =
+        sep !== -1 && block.id.startsWith("#text-", sep)
+          ? Number(block.id.slice(sep + "#text-".length))
+          : null;
       return (
-        <div key={block.id} className="flex flex-col gap-1">
-          <Markdown content={block.text} />
-          {block.streaming && <StreamingCursor />}
-        </div>
+        <AssistantTextBlock
+          key={block.id}
+          worldId={worldId}
+          conversationId={conversationId}
+          messageId={messageId}
+          partIndex={partIndex}
+          text={block.text}
+          streaming={block.streaming}
+          isRunning={isRunning}
+          synthetic={block.id.startsWith("__")}
+        />
       );
+    }
     case "reasoning":
-      return (
-        <ReasoningBlock key={block.id} text={block.text} live={block.live} />
-      );
+      return <ReasoningBlock key={block.id} text={block.text} live={block.live} />;
     case "tool":
-      return <ToolCard key={block.id} tool={block.tool} worldId={worldId} conversationId={conversationId} />;
+      return (
+        <ToolCard
+          key={block.id}
+          tool={block.tool}
+          worldId={worldId}
+          conversationId={conversationId}
+        />
+      );
     case "token-footer":
       return (
         <MessageTokenFooter
@@ -225,9 +217,7 @@ export function ConversationView({
       return;
     }
     if (baselineUserCountRef.current === null) {
-      baselineUserCountRef.current = view.messages.filter(
-        (m) => m.role === "user",
-      ).length;
+      baselineUserCountRef.current = view.messages.filter((m) => m.role === "user").length;
       return; // Captured this turn — count can't have grown yet.
     }
     const currentCount = view.messages.filter((m) => m.role === "user").length;
@@ -253,8 +243,7 @@ export function ConversationView({
     view.lastTurnUsage,
   );
 
-  const isEmpty =
-    blocks.length === 0 && !agentLoading && view.error === null;
+  const isEmpty = blocks.length === 0 && !agentLoading && view.error === null;
   const errorMessage = view.error
     ? view.error.code === "MODEL_NOT_CONFIGURED"
       ? t("chat:error.modelNotConfigured")
@@ -263,11 +252,7 @@ export function ConversationView({
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      <div
-        ref={scrollRef}
-        onScroll={onScroll}
-        className="min-h-0 flex-1 overflow-y-auto"
-      >
+      <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 py-6">
           {agentLoading && blocks.length === 0 ? (
             <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
@@ -279,13 +264,17 @@ export function ConversationView({
               <span className="flex size-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
                 <HugeiconsIcon icon={SparklesIcon} strokeWidth={2} className="size-5" />
               </span>
-              <p className="max-w-xs text-sm text-muted-foreground">
-                {t("chat:view.empty")}
-              </p>
+              <p className="max-w-xs text-sm text-muted-foreground">{t("chat:view.empty")}</p>
             </div>
           ) : (
             blocks.map((b) =>
-              renderBlock(b, worldId, conversation.id, imageDeliveryDisabled),
+              renderBlock(
+                b,
+                worldId,
+                conversation.id,
+                imageDeliveryDisabled,
+                view.isRunning,
+              ),
             )
           )}
 

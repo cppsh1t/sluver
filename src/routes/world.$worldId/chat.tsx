@@ -65,8 +65,7 @@ function ChatPage() {
   const selectedRole = selected?.agentConfigName;
   const imageDeliveryDisabled = useMemo(() => {
     if (!selectedRole) return false;
-    const modelId =
-      agentConfigsData?.find((a) => a.name === selectedRole)?.modelId ?? null;
+    const modelId = agentConfigsData?.find((a) => a.name === selectedRole)?.modelId ?? null;
     return imageInputSupportedForModel(catalogData, modelId) === false;
   }, [agentConfigsData, catalogData, selectedRole]);
 
@@ -74,9 +73,7 @@ function ChatPage() {
   useEffect(() => {
     if (selectedId !== null) return;
     if (conversations.length === 0) return;
-    const newest = [...conversations].sort((a, b) =>
-      b.updatedAt.localeCompare(a.updatedAt),
-    )[0];
+    const newest = [...conversations].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
     if (newest) setSelectedId(newest.id);
   }, [conversations, selectedId]);
 
@@ -149,9 +146,7 @@ function ChatPage() {
           </>
         ) : (
           <div className="flex flex-1 items-center justify-center px-6 text-center">
-            <p className="max-w-xs text-sm text-muted-foreground">
-              {t("chat:list.empty")}
-            </p>
+            <p className="max-w-xs text-sm text-muted-foreground">{t("chat:list.empty")}</p>
           </div>
         )}
       </section>
