@@ -105,3 +105,28 @@ pub struct AppendMessagesInput {
     pub conversation_id: String,
     pub messages: Vec<MessageInput>,
 }
+
+/// Input for `delete_messages` — a batch of client-minted message ids
+/// (UUID v4, same as `MessageInput.id`) to delete from the target
+/// conversation. Deletion is idempotent: ids that don't exist (or were
+/// already deleted) are silently skipped, NOT an error.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteMessagesInput {
+    pub conversation_id: String,
+    pub ids: Vec<String>,
+}
+
+/// Input for `update_message` — a full-replacement `body` update for a
+/// single message row (ADR-0047 user-initiated message mutations). Only
+/// `body` changes: `created_at` and the usage columns are intentionally
+/// preserved server-side (an edit changes content, not provenance or token
+/// accounting), so no other fields exist on this input.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateMessageInput {
+    pub conversation_id: String,
+    pub id: String,
+    /// Full ModelMessage JSON replacement — stored verbatim.
+    pub body: serde_json::Value,
+}

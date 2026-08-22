@@ -288,6 +288,8 @@ pub fn run() {
             commands::conversation::delete_conversation,
             commands::conversation::load_messages,
             commands::conversation::append_messages,
+            commands::conversation::delete_messages,
+            commands::conversation::update_message,
             commands::conversation::update_conversation_plan,
             commands::conversation::update_conversation_title,
             // Chat message attachments (read paths — writes ride

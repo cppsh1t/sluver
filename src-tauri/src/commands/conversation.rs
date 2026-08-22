@@ -16,7 +16,8 @@ use tauri::State;
 
 use crate::db::{DbError, DbManager};
 use crate::models::conversation::{
-    AppendMessagesInput, Conversation, CreateConversationInput, Message,
+    AppendMessagesInput, Conversation, CreateConversationInput, DeleteMessagesInput, Message,
+    UpdateMessageInput,
 };
 use crate::util::{decode_and_validate_attachment, new_id, now_iso};
 
@@ -267,6 +268,139 @@ pub(crate) fn do_append_messages(
                     "attachment stored"
                 );
             }
+        }
+
+        // Bump the conversation's updated_at so list_conversations reorders.
+        tx.execute(
+            "UPDATE conversations SET updated_at = ?1 WHERE id = ?2",
+            params![now, &conversation_id],
+        )?;
+
+        tx.commit()?;
+        Ok(())
+    })
+}
+
+/// Delete a batch of messages by explicit id list from a conversation, in a
+/// single transaction. NOT part of the SessionStore mirror above — a
+/// client-driven history edit (e.g. trimming a trailing turn), not a store
+/// primitive.
+///
+/// Idempotent per id: deleting unknown / already-gone message ids is NOT an
+/// error (no NotFound for zero rows affected) — only a missing CONVERSATION
+/// is rejected. Attachment blobs need no manual cleanup:
+/// `message_attachments.message_id` carries ON DELETE CASCADE (WORLD
+/// MIGRATION 013). The conversation's `updated_at` is bumped afterwards so
+/// `list_conversations` reorders, mirroring `append_messages`.
+#[tracing::instrument(skip(state, input), fields(conversation_id = %input.conversation_id, message_count = input.ids.len()))]
+#[tauri::command]
+pub fn delete_messages(
+    space_id: String,
+    world_id: String,
+    input: DeleteMessagesInput,
+    state: State<'_, DbManager>,
+) -> Result<(), DbError> {
+    do_delete_messages(&state, &space_id, &world_id, &input)
+}
+
+/// `delete_messages` implementation over a bare `&DbManager` — the `do_*`
+/// split per the crate's no-mock-runtime test convention (see
+/// `commands/space.rs`). The command wrapper above only adds tracing.
+// `input` is skipped: message ids and bodies never enter log fields — only
+// the count does (metadata tier; redaction policy, ADR-0016).
+pub(crate) fn do_delete_messages(
+    mgr: &DbManager,
+    space_id: &str,
+    world_id: &str,
+    input: &DeleteMessagesInput,
+) -> Result<(), DbError> {
+    let now = now_iso();
+    let conversation_id = input.conversation_id.clone();
+
+    mgr.with_world(space_id, world_id, |conn| {
+        let tx = conn.transaction()?;
+
+        // The conversation must exist — a missing one is a client bug worth
+        // surfacing (unlike a missing message id, see below).
+        let found = tx
+            .query_row(
+                "SELECT 1 FROM conversations WHERE id = ?1",
+                params![&conversation_id],
+                |_| Ok(()),
+            )
+            .is_ok();
+        if !found {
+            return Err(DbError::NotFound("Conversation", conversation_id));
+        }
+
+        // Per-id DELETE inside the txn (the reorder_* commands' per-item
+        // loop precedent — never dynamic IN(...) strings). Zero rows
+        // affected is fine: idempotent by design.
+        for id in &input.ids {
+            tx.execute(
+                "DELETE FROM messages WHERE conversation_id = ?1 AND id = ?2",
+                params![&conversation_id, id],
+            )?;
+        }
+
+        // Bump the conversation's updated_at so list_conversations reorders.
+        tx.execute(
+            "UPDATE conversations SET updated_at = ?1 WHERE id = ?2",
+            params![now, &conversation_id],
+        )?;
+
+        tx.commit()?;
+        Ok(())
+    })
+}
+
+/// Full-replacement body update for a single message row (ADR-0047
+/// user-initiated message mutations — the edit-and-resend path rewrites the
+/// message content in place).
+///
+/// The UPDATE touches ONLY `body`: `created_at` (provenance) and
+/// `usage_input_tokens` / `usage_output_tokens` (token accounting, ADR-0030)
+/// are intentionally preserved — an edit changes content, not when the
+/// message arrived or what it cost. The conversation's `updated_at` is
+/// bumped so `list_conversations` reorders, mirroring `append_messages` /
+/// `delete_messages`.
+#[tracing::instrument(skip(state, input), fields(conversation_id = %input.conversation_id, entity_id = %input.id))]
+#[tauri::command]
+pub fn update_message(
+    space_id: String,
+    world_id: String,
+    input: UpdateMessageInput,
+    state: State<'_, DbManager>,
+) -> Result<(), DbError> {
+    do_update_message(&state, &space_id, &world_id, &input)
+}
+
+/// `update_message` implementation over a bare `&DbManager` — the `do_*`
+/// split per the crate's no-mock-runtime test convention (see
+/// `commands/space.rs`). The command wrapper above only adds tracing.
+// `input` is skipped: the body is user creative content (redaction policy,
+// ADR-0016) and NEVER enters log fields — only the conversation/message ids
+// do (metadata tier). Mirrors `do_delete_messages` above.
+pub(crate) fn do_update_message(
+    mgr: &DbManager,
+    space_id: &str,
+    world_id: &str,
+    input: &UpdateMessageInput,
+) -> Result<(), DbError> {
+    let now = now_iso();
+    let conversation_id = input.conversation_id.clone();
+    let id = input.id.clone();
+
+    mgr.with_world(space_id, world_id, |conn| {
+        let tx = conn.transaction()?;
+
+        let body_str = serde_json::to_string(&input.body)?;
+        let affected = tx.execute(
+            "UPDATE messages SET body = ?1 WHERE conversation_id = ?2 AND id = ?3",
+            params![body_str, &conversation_id, &id],
+        )?;
+        if affected == 0 {
+            return Err(DbError::NotFound("Message", id));
         }
 
         // Bump the conversation's updated_at so list_conversations reorders.
