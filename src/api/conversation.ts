@@ -81,3 +81,35 @@ export function appendMessages(
 ): Promise<void> {
   return call<void>('append_messages', { spaceId, worldId, input });
 }
+
+/**
+ * Delete messages by id (user-initiated delete, ADR-0047). Pair expansion
+ * happens caller-side (`expandDeleteIds` in
+ * `@/lib/conversation-runtime/message-mutations`) — this sends exactly the
+ * ids it is given. Durable-first: callers await this BEFORE mutating memory.
+ */
+export function deleteMessages(
+  spaceId: string,
+  worldId: WorldId,
+  input: { conversationId: ConversationId; ids: string[] },
+): Promise<void> {
+  return call<void>('delete_messages', { spaceId, worldId, input });
+}
+
+/**
+ * Replace one message's body in place (user-initiated in-place edit,
+ * ADR-0047 — nothing is re-run). `input.body` is the full replacement
+ * ModelMessage JSON (`{ role, content }`), computed caller-side against the
+ * RAW persisted row (`replaceMessageText` in
+ * `@/lib/conversation-runtime/message-mutations`) so `attachment://` refs
+ * the hydrated in-memory copy no longer carries survive. The command
+ * preserves the row's usage columns. Durable-first: callers await this
+ * BEFORE mutating memory.
+ */
+export function updateMessage(
+  spaceId: string,
+  worldId: WorldId,
+  input: { conversationId: ConversationId; id: string; body: Message['body'] },
+): Promise<void> {
+  return call<void>('update_message', { spaceId, worldId, input });
+}
