@@ -52,6 +52,7 @@ Tauri v2 desktop app for **worldbuilding & novel writing**. React 19 + TypeScrip
   - [ADR-0044](./docs/adr/0044-chat-file-attachments.md) — Chat file attachments: sidecar blob table with hydration at the session-store boundary
   - [ADR-0045](./docs/adr/0045-look-at-tool-vision-agent.md) — `look_at` tool backed by a dedicated seeded `vision` agent (one-shot `generateText` on the AgentConfig-resolved model; filename-or-URL input; `consentLevel: "auto"`; configured = enabled like `namer`)
   - [ADR-0046](./docs/adr/0046-custom-llm-providers.md) — Custom LLM providers via JSON in global Settings (models.dev-compatible, stored in meta.db, merged Rust-side into catalog; custom wins on id collision)
+  - [ADR-0047](./docs/adr/0047-user-initiated-message-mutations.md) — User-initiated message mutations (pair-aware delete, in-place body edit for user + assistant messages; durable-first relaxation of ADR-0028 append-only)
 
 ## Git commit style
 
