@@ -433,6 +433,66 @@ export function useSend(
 }
 
 /**
+ * Returns a delete driver bound to the store's `deleteMessage` action
+ * (ADR-0047). Pair-aware — deleting an assistant message removes its
+ * answering tool messages too; deleting a tool message removes its parent
+ * assistant + siblings. Durable-first: the returned function RETHROWS on
+ * IPC failure (callers toast); it resolves without effect when the runtime
+ * is missing, a run is in flight, or the target id is unknown.
+ */
+export function useDeleteMessage(
+  worldId: string,
+): (conversationId: ConversationId, messageId: string) => Promise<void> {
+  const { store } = useRuntimeContext();
+  return useCallback(
+    async (conversationId: ConversationId, messageId: string) => {
+      await store
+        .getState()
+        .deleteMessage(worldId, conversationId, messageId);
+    },
+    [store, worldId],
+  );
+}
+
+/**
+ * Returns an edit driver bound to the store's `editMessage` action
+ * (ADR-0047): in-place message body edit for both user and assistant
+ * messages — the edit persists and NOTHING is re-run. `partIndex` targets
+ * one text part within an assistant message's content array (block id
+ * `${msg.id}#text-${n}`), or `null` for string content / user messages
+ * (whole-message edit).
+ *
+ * Resolution contract (mirrors the store action): resolves `true` once the
+ * edit is committed durably AND in memory. Resolves `false` when a guard
+ * rejected the edit (runtime missing, run in flight, target not found or
+ * not editable — already logged). RETHROWS on persistence failure (callers
+ * toast); memory is untouched in that case (durable-first).
+ */
+export function useEditMessage(
+  worldId: string,
+): (
+  conversationId: ConversationId,
+  messageId: string,
+  partIndex: number | null,
+  newText: string,
+) => Promise<boolean> {
+  const { store } = useRuntimeContext();
+  return useCallback(
+    async (
+      conversationId: ConversationId,
+      messageId: string,
+      partIndex: number | null,
+      newText: string,
+    ) => {
+      return store
+        .getState()
+        .editMessage(worldId, conversationId, messageId, partIndex, newText);
+    },
+    [store, worldId],
+  );
+}
+
+/**
  * Returns an abort driver bound to the store's `abort` action.
  */
 export function useAbort(
