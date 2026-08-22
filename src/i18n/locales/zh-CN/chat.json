@@ -14,7 +14,18 @@
   },
   "toast": {
     "renameSuccess": "已重命名对话",
-    "renameFailed": "重命名对话失败"
+    "renameFailed": "重命名对话失败",
+    "copyFailed": "复制失败",
+    "editFailed": "修改失败",
+    "deleteFailed": "删除失败"
+  },
+  "message": {
+    "copy": "复制",
+    "edit": "编辑",
+    "delete": "删除",
+    "save": "保存",
+    "deleteTitle": "删除消息",
+    "deleteDesc": "确定要删除这条消息吗？此操作无法撤销。"
   },
   "composer": {
     "placeholder": "输入消息…",

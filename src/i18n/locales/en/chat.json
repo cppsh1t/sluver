@@ -14,7 +14,18 @@
   },
   "toast": {
     "renameSuccess": "Conversation renamed",
-    "renameFailed": "Failed to rename conversation"
+    "renameFailed": "Failed to rename conversation",
+    "copyFailed": "Copy failed",
+    "editFailed": "Edit failed",
+    "deleteFailed": "Delete failed"
+  },
+  "message": {
+    "copy": "Copy",
+    "edit": "Edit",
+    "delete": "Delete",
+    "save": "Save",
+    "deleteTitle": "Delete message",
+    "deleteDesc": "Are you sure you want to delete this message? This cannot be undone."
   },
   "composer": {
     "placeholder": "Type a message…",
