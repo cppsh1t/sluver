@@ -162,6 +162,34 @@ export class Agent {
   }
 
   /**
+   * Removes messages from the in-memory thread. Durability is the app layer's
+   * responsibility (DB delete happens BEFORE this call — durable-first, see
+   * ADR-0047).
+   *
+   * Purely in-memory: no SessionStore call, no error path. Ids not present in
+   * the thread are ignored, so callers can pass a superset (e.g. ids computed
+   * against a view snapshot).
+   */
+  removeMessages(ids: ReadonlySet<string>): void {
+    this.messages = this.messages.filter((m) => !ids.has(m.id));
+  }
+
+  /**
+   * Replaces one message in the in-memory thread by id. In-memory only —
+   * durability is the app layer's responsibility (DB update happens BEFORE
+   * this call; durable-first, ADR-0047). Returns false when the id is absent.
+   *
+   * Immutable: rebuilds `this.messages` with the replacement at the SAME
+   * index (order preserved). No store calls — the app layer owns persistence.
+   */
+  replaceMessage(id: string, next: SessionMessage): boolean {
+    const index = this.messages.findIndex((m) => m.id === id);
+    if (index === -1) return false;
+    this.messages = this.messages.map((m, i) => (i === index ? next : m));
+    return true;
+  }
+
+  /**
    * The current Plan for this session, or `null` if none is set. Returns the
    * live in-memory value (updated synchronously by {@link setPlan}). Used by
    * the `plan` tool via `PlanAccess.get()` (ADR-0029 Phase 1) to compute

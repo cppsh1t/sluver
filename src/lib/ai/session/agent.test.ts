@@ -160,6 +160,109 @@ describe("Agent.open", () => {
   });
 });
 
+// ─── removeMessages (ADR-0047 — in-memory only, app owns durability) ──────
+
+describe("Agent.removeMessages", () => {
+  it("filters the in-memory thread by id, leaving the store untouched", async () => {
+    const preloaded = [
+      sess({ role: "user", content: "q1" }, 1),
+      sess({ role: "assistant", content: [{ type: "text", text: "a1" }] }, 2),
+      sess({ role: "user", content: "q2" }, 3),
+    ];
+    const { store, appendCalls, state } = createStore({ messages: preloaded });
+    const agent = await makeAgent(replyModel("ok"), store);
+
+    agent.removeMessages(new Set(["msg-2", "msg-3"]));
+
+    // In-memory thread filtered; getMessages still returns a fresh array.
+    const thread = agent.getMessages();
+    expect(thread.map((m) => m.id)).toEqual(["msg-1"]);
+    expect(thread).not.toBe(agent.getMessages());
+
+    // Purely in-memory — zero persistence side effects.
+    expect(appendCalls).toHaveLength(0);
+    expect(state.messages.map((m) => m.id)).toEqual([
+      "msg-1",
+      "msg-2",
+      "msg-3",
+    ]);
+  });
+
+  it("ignores unknown ids and keeps order", async () => {
+    const preloaded = [
+      sess({ role: "user", content: "q1" }, 1),
+      sess({ role: "assistant", content: [{ type: "text", text: "a1" }] }, 2),
+    ];
+    const { store } = createStore({ messages: preloaded });
+    const agent = await makeAgent(replyModel("ok"), store);
+
+    agent.removeMessages(new Set(["nope"]));
+
+    expect(agent.getMessages().map((m) => m.id)).toEqual(["msg-1", "msg-2"]);
+  });
+});
+
+// ─── replaceMessage (ADR-0047 — in-place edit, app owns durability) ────────
+
+describe("Agent.replaceMessage", () => {
+  it("replaces a mid-thread message by id at the same index, preserving order", async () => {
+    const preloaded = [
+      sess({ role: "user", content: "q1" }, 1),
+      sess({ role: "assistant", content: [{ type: "text", text: "a1" }] }, 2),
+      sess({ role: "user", content: "q2" }, 3),
+    ];
+    const { store } = createStore({ messages: preloaded });
+    const agent = await makeAgent(replyModel("ok"), store);
+
+    const replacement = sess(
+      { role: "assistant", content: [{ type: "text", text: "EDITED" }] },
+      2,
+    );
+    expect(agent.replaceMessage("msg-2", replacement)).toBe(true);
+
+    const thread = agent.getMessages();
+    expect(thread.map((m) => m.id)).toEqual(["msg-1", "msg-2", "msg-3"]);
+    expect(thread[1]).toMatchObject({
+      id: "msg-2",
+      role: "assistant",
+      content: [{ type: "text", text: "EDITED" }],
+    });
+  });
+
+  it("returns false for an unknown id and leaves the thread unchanged", async () => {
+    const preloaded = [
+      sess({ role: "user", content: "q1" }, 1),
+      sess({ role: "assistant", content: [{ type: "text", text: "a1" }] }, 2),
+    ];
+    const { store } = createStore({ messages: preloaded });
+    const agent = await makeAgent(replyModel("ok"), store);
+
+    const replacement = sess({ role: "user", content: "x" }, 9);
+    expect(agent.replaceMessage("nope", replacement)).toBe(false);
+    expect(agent.getMessages().map((m) => m.id)).toEqual(["msg-1", "msg-2"]);
+  });
+
+  it("is purely in-memory — zero persistence side effects", async () => {
+    const preloaded = [
+      sess({ role: "user", content: "q1" }, 1),
+      sess({ role: "assistant", content: [{ type: "text", text: "a1" }] }, 2),
+    ];
+    const { store, appendCalls, state } = createStore({ messages: preloaded });
+    const agent = await makeAgent(replyModel("ok"), store);
+
+    agent.replaceMessage(
+      "msg-2",
+      sess({ role: "assistant", content: [{ type: "text", text: "EDITED" }] }, 2),
+    );
+
+    expect(appendCalls).toHaveLength(0);
+    // The store's copy keeps the ORIGINAL body — durability is the caller's
+    // job (durable-first: the DB update happens BEFORE replaceMessage).
+    expect(JSON.stringify(state.messages)).toContain("a1");
+    expect(JSON.stringify(state.messages)).not.toContain("EDITED");
+  });
+});
+
 // ─── run(): persistence, delta slicing, usage forwarding ─────────────────
 
 describe("Agent.run persistence (ADR-0020 / ADR-0030)", () => {
