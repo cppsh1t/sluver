@@ -46,13 +46,36 @@ import {
   loadMessages as loadMessagesIpc,
   updateMessage as updateMessageIpc,
 } from "@/api/conversation";
+import {
+  getCharacterImage,
+  getEventImage,
+  getItemImage,
+  getLocationImage,
+  getLoreImage,
+  getNovelImage,
+  getPhaseImage,
+  getWorldImage,
+} from "@/api/image";
+import { getSceneImage } from "@/api/scene-image";
 import { createAgentEventLogger } from "@/lib/ai/agent-logging";
 import { getRoleBehavior } from "@/lib/ai-roles";
 import { TauriSessionStore } from "@/lib/ai-store";
+import { base64Encode, sniffImageMime } from "@/lib/image-bytes";
 import { logger } from "@/lib/logger";
 import { notifyToolConsentRequested } from "@/lib/notify";
 import { expandDeleteIds, replaceMessageText } from "./message-mutations";
-import type { ToolContext, ApprovalGate, ConsentLevel } from "@/lib/tools/types";
+import type { ToolContext, ApprovalGate, ConsentLevel, EntityImageKind } from "@/lib/tools/types";
+import {
+  characterIdSchema,
+  eventIdSchema,
+  itemIdSchema,
+  locationIdSchema,
+  loreIdSchema,
+  novelIdSchema,
+  phaseIdSchema,
+  sceneImageIdSchema,
+  worldIdSchema,
+} from "@/types";
 import type {
   Conversation,
   ContextCompaction,
@@ -744,6 +767,47 @@ function buildAvailableSkillsBlock(skills: readonly EnabledSkill[]): string {
 }
 
 /**
+ * Read one stored entity image's raw bytes for the `look_at` entity source
+ * (ADR-0048) — the IPC half of `entityImageLookup` below.
+ *
+ * Kind → getter mapping follows `api/image.ts`'s conventions exactly: World
+ * is keyed by its own id (no `worldId` arg — World IS the entity), every
+ * other kind scopes to the conversation's world, and `scene_image` reads a
+ * single gallery row by its own image id via `api/scene-image.ts`. The zod
+ * brandings are applied HERE so the API layer's branded signatures stay
+ * satisfied without `as never` casts at the call sites.
+ */
+function fetchEntityImageBytes(
+  spaceId: SpaceId,
+  worldId: WorldId,
+  kind: EntityImageKind,
+  id: string,
+): Promise<ArrayBuffer | null> {
+  switch (kind) {
+    case "world":
+      // World lives in space.db and is addressed by its own id (no worldId).
+      return getWorldImage(spaceId, worldIdSchema.parse(id));
+    case "character":
+      return getCharacterImage(spaceId, worldId, characterIdSchema.parse(id));
+    case "phase":
+      return getPhaseImage(spaceId, worldId, phaseIdSchema.parse(id));
+    case "location":
+      return getLocationImage(spaceId, worldId, locationIdSchema.parse(id));
+    case "item":
+      return getItemImage(spaceId, worldId, itemIdSchema.parse(id));
+    case "lore":
+      return getLoreImage(spaceId, worldId, loreIdSchema.parse(id));
+    case "event":
+      return getEventImage(spaceId, worldId, eventIdSchema.parse(id));
+    case "novel":
+      return getNovelImage(spaceId, worldId, novelIdSchema.parse(id));
+    case "scene_image":
+      // A gallery row, addressed by its own id — NOT the scene's id.
+      return getSceneImage(spaceId, worldId, sceneImageIdSchema.parse(id));
+  }
+}
+
+/**
  * The `<image_access>` block appended to the effective system prompt at
  * Agent construction when the `look_at` tool is registered (ADR-0045) —
  * the prompt must never advertise a tool that cannot run, so the teaching
@@ -755,7 +819,9 @@ function buildAvailableSkillsBlock(skills: readonly EnabledSkill[]): string {
  */
 const LOOK_AT_PROMPT_BLOCK = [
   "<image_access>",
-  'Images the user attaches may not reach you as pixels: they can arrive as `[image attachment: "..." — image content NOT delivered...]` markers carrying only a filename, and image URLs in text cannot be viewed directly. When you see such a marker, or the user references an image by URL, call the look_at tool with the EXACT filename from the marker (or the image\'s URL) to get a description from a separate vision model. Pass question to focus on what you need to know. Use the description before answering questions about the image\'s content.',
+  'Images the user attaches may not reach you as pixels: they can arrive as `[image attachment: "..." — image content NOT delivered...]` markers carrying only a filename, and image URLs in text cannot be viewed directly. When you see such a marker, or the user references an image by URL, call the look_at tool with the EXACT filename from the marker (or the image\'s URL) to get a description from a separate vision model.',
+  'Entity images you or the user have stored CAN also be examined: call look_at with entityKind + entityId to describe a character/novel/event/element image (works for any entity whose hasImage is true — get_/list_ tools report it), entityKind "scene_image" with an image id from list_scene_images for a scene gallery image, or entityKind "world" ALONE (no id) for the current world\'s cover. This is how you verify a portrait or cover actually shows what it should.',
+  "Pass question to focus on what you need to know. Use the description before answering questions about the image's content.",
   "</image_access>",
 ].join("\n");
 
@@ -880,6 +946,27 @@ async function constructAgent(
           }
         }
         return null;
+      },
+    },
+    // `look_at` entity source (ADR-0048): reads a stored entity image back
+    // from its `image_blob` column as a data URL. Unlike attachmentLookup
+    // above this IS IPC-backed (entity columns are not mirrored into the
+    // thread) — one `get<Entity>Image` read per call, hence async. Unlike
+    // planAccess/threadLookup it needs NO agentRef: it closes over the
+    // per-conversation spaceId/worldId only. A `null` (no image set)
+    // travels back as a structured `entity_image_not_found` tool result.
+    entityImageLookup: {
+      findByEntity: async (kind, id) => {
+        const bytes = await fetchEntityImageBytes(spaceId, ctx.worldId, kind, id);
+        if (!bytes) return null;
+        // Sniff the real format from the bytes rather than trusting any
+        // stored mime metadata — the write paths all emit WebP, but the
+        // sniffer is O(1) defense-in-depth (see image-bytes.ts).
+        const mediaType = sniffImageMime(bytes);
+        return {
+          dataUrl: `data:${mediaType};base64,${base64Encode(new Uint8Array(bytes))}`,
+          mediaType,
+        };
       },
     },
   };
