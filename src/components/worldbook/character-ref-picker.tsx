@@ -217,6 +217,7 @@ function CharacterRefPicker({
                 tags={c.tags}
                 phases={c.phases}
                 updatedAt={c.updatedAt}
+                variant="compact"
                 selectable
                 focused={c.id === focusedCharacterId}
                 onSelect={() => setFocusedCharacterId(c.id)}

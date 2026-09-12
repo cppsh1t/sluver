@@ -164,6 +164,14 @@ interface CharacterCardProps {
   onSelect?: () => void;
   onFocus?: () => void;
   onRemove?: () => void;
+  /**
+   * Layout variant. `"full"` (default) = catalog card with phase stepper,
+   * tags, timestamp, and edit/delete dropdown (characters page).
+   * `"compact"` = lean picker row (avatar + name + aliases + description
+   * only) for CharacterRefPicker's grid — phase selection belongs to the
+   * picker's right panel, not the card.
+   */
+  variant?: "full" | "compact";
 }
 
 function CharacterCard({
@@ -184,6 +192,7 @@ function CharacterCard({
   onSelect,
   onFocus,
   onRemove,
+  variant = "full",
 }: CharacterCardProps) {
   const { t } = useTranslation(["character", "common"]);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -231,6 +240,62 @@ function CharacterCard({
       e.preventDefault();
       handleCardClick();
     }
+  }
+
+  // Compact variant: lean picker row. No phase stepper, tags, timestamp,
+  // dropdown, or delete dialog — identical click/keyboard semantics and
+  // focused-ring treatment as the full card's selectable mode.
+  if (variant === "compact") {
+    return (
+      <Card
+        role="button"
+        tabIndex={0}
+        onClick={handleCardClick}
+        onKeyDown={handleCardKeyDown}
+        className={cn(
+          "p-4",
+          selectable && "cursor-pointer",
+          focused && "ring-2 ring-primary/50",
+        )}
+      >
+        {/* Image + content wrapped in ONE child div so the Card's banner
+            auto-rules (has-[>img:first-child]:pt-0, *:[img:first-child]:
+            rounded-t-lg) never fire on the avatar <img> — those would zero the
+            top padding (misaligning it from the bottom) and override the top
+            corners. items-center vertically centers the shorter side and does
+            NOT stretch, so the cropper-fixed 3:4 ratio stays locked (no crop). */}
+        <div className="flex items-center gap-4">
+          <EntityAvatar
+            kind="character"
+            spaceId={spaceId as SpaceId}
+            worldId={worldId}
+            id={characterId}
+            alt={name}
+            fallbackIcon={
+              <HugeiconsIcon
+                icon={UserMultiple02Icon}
+                strokeWidth={2}
+                className="size-8 text-muted-foreground"
+              />
+            }
+            className="w-16 shrink-0 rounded-md"
+          />
+
+          {/* Content column */}
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <CardTitle className="truncate">{name}</CardTitle>
+            {aliases.length > 0 && (
+              <p className="min-w-0 truncate text-xs text-muted-foreground">
+                {t("character:card.aliasesLabel")}: {aliases.join(", ")}
+              </p>
+            )}
+            <p className="line-clamp-2 min-h-8 text-sm text-muted-foreground">
+              {description}
+            </p>
+          </div>
+        </div>
+      </Card>
+    );
   }
 
   return (

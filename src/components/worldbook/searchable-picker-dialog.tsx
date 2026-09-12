@@ -83,7 +83,7 @@ function SearchablePickerDialog({
           <div className="flex flex-1 gap-2 overflow-hidden px-4">
             <div className="min-w-0 flex-1 overflow-y-auto p-1">{children}</div>
             {sidePanel ? (
-              <div className="w-64 shrink-0 overflow-y-auto border-l pl-2">
+              <div className="w-80 shrink-0 overflow-y-auto border-l pl-2">
                 {sidePanel}
               </div>
             ) : null}
