@@ -13,11 +13,11 @@
  * - No tools, no `AgentLoop`, no session — a single `generateText` round trip.
  * - The image rides as an AI SDK v7 `FilePart` (`ImagePart` is deprecated):
  *   `{ type: "file", mediaType, data }` where `data` is either a full
- *   `data:` URL string (in-conversation attachment) or an https URL string
- *   (remote image). Both are valid `DataContent` values — the SDK splits
- *   data URLs into inline base64 and leaves http(s) URLs for provider-side
- *   passthrough (see {@link mediaTypeForImageUrl} for why the URL variant
- *   MUST carry a full `type/subtype` media type).
+ *   `data:` URL string (in-conversation attachment or stored entity image)
+ *   or an https URL string (remote image). Both are valid `DataContent`
+ *   values — the SDK splits data URLs into inline base64 and leaves http(s)
+ *   URLs for provider-side passthrough (see {@link mediaTypeForImageUrl}
+ *   for why the URL variant MUST carry a full `type/subtype` media type).
  * - Low temperature (~0.2) — this is observation, not creative prose.
  * - `abortSignal` is forwarded so a user Stop cancels the vision call.
  * - Post-processing (trim, collapse >2 blank lines) NEVER returns an empty
@@ -28,7 +28,8 @@
  *
  * Related: ADR-0017 (manual step loop — deliberately NOT used here),
  * ADR-0023 (model resolved live from AgentConfig), ADR-0044 D9 (the
- * downgrade markers this module compensates for), ADR-0045 (look_at tool).
+ * downgrade markers this module compensates for), ADR-0045 (look_at tool),
+ * ADR-0048 (the `entity` source variant over stored entity images).
  */
 
 import { generateText, type FilePart } from "ai";
@@ -54,12 +55,38 @@ const LOOK_AT_SYSTEM_PROMPT = [
 // ─── Image sources ────────────────────────────────────────────────────────
 
 /**
+ * The kinds of stored entity images the `look_at` tool can examine.
+ *
+ * Defined HERE (the pure AI layer) rather than in `@/lib/tools/types` because
+ * the `entity` {@link ImageSource} variant needs it — and `lib/ai` must never
+ * import from the tools layer (ADR-0019 import direction: tools → ai, never
+ * ai → tools). The tools layer re-exports it as `EntityImageKind`.
+ *
+ * `"scene_image"` addresses a single row of a Scene's 1:N gallery by its own
+ * image id (not the scene's id) — see `src/api/scene-image.ts`.
+ */
+export type LookAtEntityKind =
+  | "world"
+  | "character"
+  | "phase"
+  | "location"
+  | "item"
+  | "lore"
+  | "event"
+  | "novel"
+  | "scene_image";
+
+/**
  * Where the image to describe comes from.
  *
  * - `"attachment"` — an image attached earlier in the conversation, resolved
  *   by filename from the Persisted Thread (hydrated `data:` URL + media
  *   type, ADR-0044 D3).
  * - `"url"` — a direct https URL of an image file.
+ * - `"entity"` — an image already stored ON a worldbook entity (portrait,
+ *   cover, illustration, or scene-gallery row), resolved by kind + id
+ *   through the app layer's `EntityImageLookup` (IPC read of the
+ *   `image_blob` column — ADR-0048).
  */
 export type ImageSource =
   | {
@@ -72,6 +99,14 @@ export type ImageSource =
   | {
       readonly kind: "url";
       readonly url: string;
+    }
+  | {
+      readonly kind: "entity";
+      readonly entityKind: LookAtEntityKind;
+      readonly entityId: string;
+      /** Full `data:{mime};base64,…` URL built from the stored bytes. */
+      readonly dataUrl: string;
+      readonly mediaType: string;
     };
 
 // ─── URL media type derivation ────────────────────────────────────────────
@@ -154,21 +189,24 @@ export async function describeImage(
 ): Promise<string> {
   const model = createLanguageModel(config);
 
-  // AI SDK v7 FilePart (`ImagePart` is deprecated). Both a full data-URL
-  // string and an https URL string are valid `data` values — the SDK splits
+  // AI SDK v7 FilePart (`ImagePart` is deprecated). A full data-URL string
+  // and an https URL string are both valid `data` values — the SDK splits
   // data URLs into inline base64 (keeping the URL's own media type) and
-  // passes http(s) URLs through when the provider declares support.
+  // passes http(s) URLs through when the provider declares support. The
+  // attachment and entity variants both arrive as data URLs with an explicit
+  // media type, so they share the same branch; only the URL variant derives
+  // its media type from the file extension.
   const filePart: FilePart =
-    image.kind === "attachment"
+    image.kind === "url"
       ? {
-          type: "file",
-          mediaType: image.mediaType,
-          data: image.dataUrl,
-        }
-      : {
           type: "file",
           mediaType: mediaTypeForImageUrl(image.url),
           data: image.url,
+        }
+      : {
+          type: "file",
+          mediaType: image.mediaType,
+          data: image.dataUrl,
         };
 
   const trimmedQuestion = question?.trim();
