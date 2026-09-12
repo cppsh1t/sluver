@@ -1,22 +1,30 @@
 /**
  * Worldbook tool barrel — composes domain tools into role-specific ToolSets.
  *
- * Explorer gets full worldbook CRUD + novel/chapter/scene query-only tools.
- * Writer gets full novel/chapter/scene CRUD + worldbook query-only tools.
- * Both get system tools (time), all 8 search_* tools, grep (match-centric
- * full-corpus retrieval — ADR-0035), and the six prompt-gated note tools
- * (ADR-0037 — shared section, never behind `queryOnly`).
+ * Explorer gets full worldbook CRUD (incl. every set/clear entity-image
+ * tool) + novel/chapter/scene query-only tools (list_scene_images survives
+ * — read-only). Writer gets full novel/chapter/scene CRUD (incl. the novel
+ * cover set/clear + the scene-gallery tools) + worldbook query-only tools.
+ * Both get the world cover tools, system tools (time), all 8 search_*
+ * tools, grep (match-centric full-corpus retrieval — ADR-0035), and the
+ * six prompt-gated note tools (ADR-0037 — shared section, never behind
+ * `queryOnly`).
  *
  * The `queryOnly` helper filters a domain's tools down to read operations
- * (list / get / count / search) by tool-name prefix, so domain files export
+ * by tool-name prefix (list / get / count / search), so domain files export
  * ONE set of tools and the role builders select subsets declaratively.
+ * This is what keeps the mutation split declarative for the ADR-0048 image
+ * tools too: `set_*_image_from_*` / `clear_*_image` / `add_scene_image_*`
+ * / `delete_scene_image` all carry mutation prefixes and thus only ride
+ * their primary domain's role, while `list_scene_images` rides both.
  *
  * Shell execution (`run_shell_command`, ADR-0041/0042) is registered on
  * both explorer and writer, each gated by that role's AgentConfig
  * `shellToolEnabled` flag. The namer role never carries it.
  *
- * The `look_at` vision tool (ADR-0045) is registered on both roles, gated
- * by the Space's dedicated seeded `vision` AgentConfig being bound
+ * The `look_at` vision tool (ADR-0045, extended by ADR-0048 with the
+ * entity-image source) is registered on both roles, gated by the Space's
+ * dedicated seeded `vision` AgentConfig being bound
  * (`ctx.visionConfig != null` — same conditional-spread idea as the shell
  * gate). The namer role never carries it either.
  *
@@ -69,12 +77,13 @@ function queryOnly(tools: Record<string, ToolDef>): Record<string, ToolDef> {
 
 /**
  * Explorer toolset: full worldbook CRUD + novel/chapter/scene query + system.
- * 61 tools (51 + 8 search + shell + look_at). The Explorer surveys and builds
+ * 83 tools (75 + 8 search + shell + look_at). The Explorer surveys and builds
  * the world (characters, locations, items, lore, events) and can read (but
- * not modify) the novel structure. It also carries the shell execution tool
+ * not modify) the novel structure — `list_scene_images` included, the other
+ * gallery tools not. It also carries the shell execution tool
  * (ADR-0041/0042) — registered only when `shellToolEnabled` is on (then
- * auto-executing) — and the `look_at` vision tool (ADR-0045), registered
- * only when the Space's `vision` agent config is bound.
+ * auto-executing) — and the `look_at` vision tool (ADR-0045/0048),
+ * registered only when the Space's `vision` agent config is bound.
  */
 export function buildExplorerTools(ctx: ToolContext): ToolSet {
   return buildToolSet(
@@ -122,12 +131,13 @@ export function buildExplorerTools(ctx: ToolContext): ToolSet {
 
 /**
  * Writer toolset: full novel/chapter/scene CRUD + worldbook query + system.
- * 53 tools (43 + 8 search + shell + look_at). The Writer drafts and refines
- * prose (novels, chapters, scenes) and can read (but not modify) the
- * worldbook for reference. It also carries the shell execution tool
+ * 63 tools (55 + 8 search + shell + look_at). The Writer drafts and refines
+ * prose (novels, chapters, scenes — including the novel cover set/clear and
+ * the scene-gallery add/delete/list tools) and can read (but not modify)
+ * the worldbook for reference. It also carries the shell execution tool
  * (ADR-0041/0042) — registered only when `shellToolEnabled` is on (then
- * auto-executing) — and the `look_at` vision tool (ADR-0045), registered
- * only when the Space's `vision` agent config is bound.
+ * auto-executing) — and the `look_at` vision tool (ADR-0045/0048),
+ * registered only when the Space's `vision` agent config is bound.
  */
 export function buildWriterTools(ctx: ToolContext): ToolSet {
   return buildToolSet(

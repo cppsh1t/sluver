@@ -28,11 +28,12 @@ function makeStubCtx(overrides: Partial<ToolContext> = {}): ToolContext {
     activatedSkills: new Set(),
     visionConfig: null,
     attachmentLookup: { findByFilename: vi.fn(() => null) },
+    entityImageLookup: { findByEntity: vi.fn(async () => null) },
     ...overrides,
   };
 }
 
-const MUTATING_PREFIX = /^(create_|update_|delete_|reorder_|add_|set_)/;
+const MUTATING_PREFIX = /^(create_|update_|delete_|reorder_|add_|set_|clear_)/;
 
 /** Mutating worldbook (character/location/item/lore/event) tool names. */
 const WORLDBOOK_MUTATIONS = [
@@ -44,23 +45,35 @@ const WORLDBOOK_MUTATIONS = [
   "delete_phase",
   "reorder_phases",
   "set_character_image_from_url",
+  "set_character_image_from_attachment",
+  "clear_character_image",
   "set_phase_image_from_url",
+  "set_phase_image_from_attachment",
+  "clear_phase_image",
   "create_location",
   "update_location",
   "delete_location",
   "set_location_image_from_url",
+  "set_location_image_from_attachment",
+  "clear_location_image",
   "create_item",
   "update_item",
   "delete_item",
   "set_item_image_from_url",
+  "set_item_image_from_attachment",
+  "clear_item_image",
   "create_lore",
   "update_lore",
   "delete_lore",
   "set_lore_image_from_url",
+  "set_lore_image_from_attachment",
+  "clear_lore_image",
   "create_event",
   "update_event",
   "delete_event",
   "set_event_image_from_url",
+  "set_event_image_from_attachment",
+  "clear_event_image",
 ];
 
 /** Mutating novel/chapter/scene tool names. */
@@ -69,6 +82,8 @@ const NOVEL_DOMAIN_MUTATIONS = [
   "update_novel",
   "delete_novel",
   "set_novel_image_from_url",
+  "set_novel_image_from_attachment",
+  "clear_novel_image",
   "create_chapter",
   "update_chapter",
   "delete_chapter",
@@ -77,12 +92,17 @@ const NOVEL_DOMAIN_MUTATIONS = [
   "update_scene",
   "delete_scene",
   "reorder_scenes",
+  "add_scene_image_from_url",
+  "add_scene_image_from_attachment",
+  "delete_scene_image",
 ];
 
 /** Mutating keys both roles legitimately carry (shared surfaces). */
 const SHARED_MUTATIONS = [
   ...NOVEL_DOMAIN_MUTATIONS,
   "set_world_image_from_url",
+  "set_world_image_from_attachment",
+  "clear_world_image",
   "create_note",
   "update_note",
   "delete_note",
@@ -101,7 +121,7 @@ describe("buildExplorerTools", () => {
     }
   });
 
-  it("keeps the novel/chapter/scene query tools", () => {
+  it("keeps the novel/chapter/scene query tools (incl. list_scene_images)", () => {
     for (const name of [
       "list_novels",
       "search_novels",
@@ -113,6 +133,7 @@ describe("buildExplorerTools", () => {
       "list_scenes",
       "search_scenes",
       "get_scene",
+      "list_scene_images",
     ]) {
       expect(keys).toContain(name);
     }
@@ -140,6 +161,8 @@ describe("buildExplorerTools", () => {
     const allowed = new Set([
       ...WORLDBOOK_MUTATIONS,
       "set_world_image_from_url",
+      "set_world_image_from_attachment",
+      "clear_world_image",
       "create_note",
       "update_note",
       "delete_note",
@@ -183,7 +206,7 @@ describe("buildWriterTools", () => {
     }
   });
 
-  it("carries full novel/chapter/scene CRUD", () => {
+  it("carries full novel/chapter/scene CRUD (incl. cover + gallery tools)", () => {
     for (const name of NOVEL_DOMAIN_MUTATIONS) {
       expect(keys).toContain(name);
     }
@@ -192,6 +215,7 @@ describe("buildWriterTools", () => {
       "search_novels",
       "get_novel",
       "get_chapter_overview",
+      "list_scene_images",
     ]) {
       expect(keys).toContain(name);
     }
@@ -206,7 +230,7 @@ describe("buildWriterTools", () => {
 });
 
 describe("shared surfaces (both roles)", () => {
-  it("include notes, system, web, grep, timeline, and the world cover tool", () => {
+  it("include notes, system, web, grep, timeline, the world cover tools, and list_scene_images", () => {
     for (const build of [buildExplorerTools, buildWriterTools]) {
       const keys = Object.keys(build(makeStubCtx()));
       for (const name of [
@@ -229,8 +253,12 @@ describe("shared surfaces (both roles)", () => {
         // Match-centric retrieval + timeline
         "grep",
         "timeline_lookup",
-        // World cover image (configurable on both roles)
+        // World cover images (configurable/always on both roles — ADR-0048)
         "set_world_image_from_url",
+        "set_world_image_from_attachment",
+        "clear_world_image",
+        // Scene gallery read surface (list_ survives queryOnly — ADR-0048)
+        "list_scene_images",
       ]) {
         expect(keys).toContain(name);
       }
