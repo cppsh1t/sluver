@@ -16,7 +16,16 @@ import {
   updateNovel,
   updateScene,
 } from "@/api/novel";
-import { updateNovelImage } from "@/api/image";
+import {
+  addSceneImage,
+  deleteSceneImage,
+  listSceneImageIds,
+} from "@/api/scene-image";
+import {
+  clearNovelImage,
+  prepareImage,
+  updateNovelImage,
+} from "@/api/image";
 import { fetchAndPrepareImage } from "@/api/search";
 import {
   chapterIdSchema,
@@ -28,11 +37,13 @@ import {
   novelIdSchema,
   phaseIdSchema,
   sceneIdSchema,
+  sceneImageIdSchema,
   spaceIdSchema,
   worldIdSchema,
   type CharacterRef,
   type Novel,
   type Scene,
+  type SceneImageMeta,
 } from "@/types";
 import type { ToolContext } from "../types";
 import { chapterTools, novelTools, sceneTools } from "./novel";
@@ -62,7 +73,17 @@ vi.mock("@/api/novel", () => ({
 }));
 
 vi.mock("@/api/image", () => ({
+  clearNovelImage: vi.fn(),
+  prepareImage: vi.fn(async () => new Uint8Array([2]).buffer),
   updateNovelImage: vi.fn(),
+}));
+
+vi.mock("@/api/scene-image", () => ({
+  addSceneImage: vi.fn(),
+  deleteSceneImage: vi.fn(),
+  getSceneImage: vi.fn(),
+  listSceneImageIds: vi.fn(),
+  reorderSceneImages: vi.fn(),
 }));
 
 vi.mock("@/api/search", () => ({
@@ -103,6 +124,7 @@ function makeStubCtx(overrides: Partial<ToolContext> = {}): ToolContext {
     activatedSkills: new Set(),
     visionConfig: null,
     attachmentLookup: { findByFilename: vi.fn(() => null) },
+    entityImageLookup: { findByEntity: vi.fn(async () => null) },
     ...overrides,
   };
 }
@@ -301,6 +323,184 @@ describe("set_novel_image_from_url", () => {
       "image/webp",
     );
     expect(result).toEqual({ updated: true });
+  });
+});
+
+describe("set_novel_image_from_attachment", () => {
+  it("resolves the attachment, compresses to the 2:3 320×480 cover spec, and writes WebP bytes", async () => {
+    const ctxWithAttachment = makeStubCtx({
+      attachmentLookup: {
+        findByFilename: vi.fn(() => ({
+          dataUrl: "data:image/png;base64,iVBORw0KGgo=",
+          mediaType: "image/png",
+        })),
+      },
+    });
+
+    const result = await novelTools().set_novel_image_from_attachment.execute(
+      { id: "nv-1", filename: "cover.png" },
+      ctxWithAttachment,
+      call,
+    );
+
+    expect(prepareImage).toHaveBeenCalledWith({
+      dataBase64: "iVBORw0KGgo=",
+      width: 320,
+      height: 480,
+    });
+    expect(updateNovelImage).toHaveBeenCalledWith(
+      spaceId,
+      worldId,
+      novelId,
+      new Uint8Array([2]),
+      "image/webp",
+    );
+    expect(result).toEqual({ updated: true });
+  });
+
+  it("returns a structured attachment_not_found error on a filename miss", async () => {
+    const result = await novelTools().set_novel_image_from_attachment.execute(
+      { id: "nv-1", filename: "missing.png" },
+      ctx, // default stub: findByFilename → null
+      call,
+    );
+
+    expect(result).toEqual({
+      error: "attachment_not_found",
+      filename: "missing.png",
+      message: expect.stringContaining("missing.png"),
+    });
+    expect(prepareImage).not.toHaveBeenCalled();
+  });
+});
+
+describe("clear_novel_image", () => {
+  it("echoes {cleared, id}", async () => {
+    const result = await novelTools().clear_novel_image.execute(
+      { id: "nv-1" },
+      ctx,
+      call,
+    );
+
+    expect(clearNovelImage).toHaveBeenCalledWith(spaceId, worldId, novelId);
+    expect(result).toEqual({ cleared: true, id: "nv-1" });
+  });
+});
+
+describe("scene gallery tools", () => {
+  const imageId = sceneImageIdSchema.parse("img-1");
+
+  function makeSceneImageMeta(
+    overrides: Partial<SceneImageMeta> = {},
+  ): SceneImageMeta {
+    return {
+      id: imageId,
+      sceneId,
+      position: 0,
+      createdAt: TIMESTAMP,
+      updatedAt: TIMESTAMP,
+      ...overrides,
+    };
+  }
+
+  it("add_scene_image_from_url downscales via maxDimension (no crop) and returns the meta", async () => {
+    const meta = makeSceneImageMeta();
+    vi.mocked(addSceneImage).mockResolvedValue(meta);
+
+    const result = await sceneTools().add_scene_image_from_url.execute(
+      { sceneId: "sc-1", imageUrl: "https://example.com/ref.jpg" },
+      ctx,
+      call,
+    );
+
+    expect(prepareImage).toHaveBeenCalledWith({
+      url: "https://example.com/ref.jpg",
+      maxDimension: 1600,
+    });
+    expect(addSceneImage).toHaveBeenCalledWith(
+      spaceId,
+      worldId,
+      sceneId,
+      new Uint8Array([2]),
+      "image/webp",
+    );
+    expect(result).toBe(meta);
+  });
+
+  it("add_scene_image_from_attachment resolves the attachment, downscales, and returns the meta", async () => {
+    const meta = makeSceneImageMeta({ position: 1 });
+    vi.mocked(addSceneImage).mockResolvedValue(meta);
+    const ctxWithAttachment = makeStubCtx({
+      attachmentLookup: {
+        findByFilename: vi.fn(() => ({
+          dataUrl: "data:image/jpeg;base64,/9j/4AAQ",
+          mediaType: "image/jpeg",
+        })),
+      },
+    });
+
+    const result = await sceneTools().add_scene_image_from_attachment.execute(
+      { sceneId: "sc-1", filename: "ref.jpg" },
+      ctxWithAttachment,
+      call,
+    );
+
+    expect(prepareImage).toHaveBeenCalledWith({
+      dataBase64: "/9j/4AAQ",
+      maxDimension: 1600,
+    });
+    expect(addSceneImage).toHaveBeenCalledWith(
+      spaceId,
+      worldId,
+      sceneId,
+      new Uint8Array([2]),
+      "image/webp",
+    );
+    expect(result).toBe(meta);
+  });
+
+  it("add_scene_image_from_attachment returns a structured error on a filename miss", async () => {
+    const result = await sceneTools().add_scene_image_from_attachment.execute(
+      { sceneId: "sc-1", filename: "missing.png" },
+      ctx,
+      call,
+    );
+
+    expect(result).toEqual({
+      error: "attachment_not_found",
+      filename: "missing.png",
+      message: expect.stringContaining("missing.png"),
+    });
+    expect(addSceneImage).not.toHaveBeenCalled();
+  });
+
+  it("delete_scene_image echoes {deleted, id}", async () => {
+    const result = await sceneTools().delete_scene_image.execute(
+      { imageId: "img-1" },
+      ctx,
+      call,
+    );
+
+    expect(deleteSceneImage).toHaveBeenCalledWith(
+      spaceId,
+      worldId,
+      imageId,
+    );
+    expect(result).toEqual({ deleted: true, id: "img-1" });
+  });
+
+  it("list_scene_images passes the sceneId through", async () => {
+    const metas = [makeSceneImageMeta()];
+    vi.mocked(listSceneImageIds).mockResolvedValue(metas);
+
+    const result = await sceneTools().list_scene_images.execute(
+      { sceneId: "sc-1" },
+      ctx,
+      call,
+    );
+
+    expect(listSceneImageIds).toHaveBeenCalledWith(spaceId, worldId, sceneId);
+    expect(result).toBe(metas);
   });
 });
 

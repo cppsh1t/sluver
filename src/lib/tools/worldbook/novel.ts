@@ -3,9 +3,13 @@
  *
  * Novel → Chapter → Scene tree. Chapters and Scenes are ordered within their
  * parent (reorderable). Scenes carry prose content and reference worldbook
- * entities (characters at phases, items, lore, events, location).
+ * entities (characters at phases, items, lore, events, location). Scenes also
+ * own a 1:N image gallery (`scene_images` sidecar table) with its own tool
+ * surface below.
  *
- * Consent levels: list/get → `auto`, create → `configurable`, update/delete/reorder → `always`.
+ * Consent levels: list/get → `auto`, create + set_*_image_from_* +
+ * add_scene_image_* → `configurable`, update/delete/reorder/clear_*_image →
+ * `always`.
  */
 
 import { z } from "zod";
@@ -33,8 +37,19 @@ import {
   updateNovel,
   updateScene,
 } from "@/api/novel";
-import { updateNovelImage } from "@/api/image";
+import {
+  addSceneImage,
+  deleteSceneImage,
+  listSceneImageIds,
+} from "@/api/scene-image";
+import { clearNovelImage, updateNovelImage } from "@/api/image";
 import type { ToolDef } from "../types";
+import {
+  executeAddSceneImageFromAttachment,
+  executeAddSceneImageFromUrl,
+  executeSetImageFromAttachment,
+  filenameSchema,
+} from "./image-from-attachment";
 import {
   ENTITY_IMAGE_CROP_SPEC,
   executeSetImageFromUrl,
@@ -154,6 +169,56 @@ export function novelTools(): Record<string, ToolDef> {
           (bytes, mime) =>
             updateNovelImage(ctx.spaceId, ctx.worldId, id as never, bytes, mime),
         );
+      },
+    },
+
+    // ── Image from attachment (configurable) ─────────────────────────────
+    //
+    // Same 2:3 → 320×480 → lossless WebP pipeline as the from-URL tool,
+    // but the source is an in-conversation attachment; `prepare_image`
+    // compresses it into the canonical cover form (ADR-0048).
+
+    set_novel_image_from_attachment: {
+      description:
+        "Set a novel's cover image from a file the user attached in this " +
+        "conversation — e.g. cover art they commissioned or scanned " +
+        "themselves. Pass the EXACT filename from the `[image attachment: " +
+        "\"...\"]` marker; the attachment is fetched from the thread, " +
+        "center-cropped to 2:3 portrait (the standard book-cover aspect), " +
+        "resized to 320×480, and re-encoded as lossless WebP (large images " +
+        "are compressed automatically). Any previous cover is overwritten. " +
+        "Use set_novel_image_from_url instead when the image lives at a link.",
+      inputSchema: z.object({
+        id: z.string().describe("The novel's UUID."),
+        filename: filenameSchema,
+      }),
+      consentLevel: "configurable",
+      execute: async (input, ctx) => {
+        const { id, filename } = input as { id: string; filename: string };
+        return executeSetImageFromAttachment(
+          ctx,
+          filename,
+          ENTITY_IMAGE_CROP_SPEC.novel,
+          (bytes, mime) =>
+            updateNovelImage(ctx.spaceId, ctx.worldId, id as never, bytes, mime),
+        );
+      },
+    },
+
+    // ── Clear image (always) ──────────────────────────────────────────────
+
+    clear_novel_image: {
+      description:
+        "Remove a novel's cover image. The novel, its chapters, and its " +
+        "scenes are untouched — only the stored cover bytes are discarded, " +
+        "and they cannot be recovered afterwards. Confirm with the user " +
+        "first if they did not explicitly ask for the removal.",
+      inputSchema: z.object({ id: z.string().describe("The novel's UUID.") }),
+      consentLevel: "always",
+      execute: async (input, ctx) => {
+        const { id } = input as { id: string };
+        await clearNovelImage(ctx.spaceId, ctx.worldId, id as never);
+        return { cleared: true, id };
       },
     },
   };
@@ -385,6 +450,93 @@ export function sceneTools(): Record<string, ToolDef> {
         const { chapterId, sceneIds } = input as { chapterId: string; sceneIds: string[] };
         await reorderScenes(ctx.spaceId, ctx.worldId, chapterId as never, sceneIds as never);
         return { reordered: true, chapterId, order: sceneIds };
+      },
+    },
+
+    // ── Scene gallery (mood-board images attached to a scene) ───────────
+    //
+    // Unlike entity portraits (fixed crop specs), gallery images keep their
+    // source aspect ratio: `prepare_image` runs in fit-within mode, scaling
+    // the longest edge down to ≤1600px and re-encoding as ≤1 MiB WebP
+    // (ADR-0048). The backend appends at the tail of the gallery and
+    // renumbers positions on delete.
+
+    add_scene_image_from_url: {
+      description:
+        "Append an image to a scene's gallery by downloading it from a URL " +
+        "— reference art, mood-board material, or location scouting found " +
+        "via `web_search`. The image is downscaled to fit within 1600×1600 " +
+        "(aspect ratio preserved — NO cropping), re-encoded as WebP under " +
+        "1 MiB, and appended at the end of the gallery. Returns the new " +
+        "image's id and position. Call list_scene_images to see the gallery " +
+        "first.",
+      inputSchema: z.object({
+        sceneId: z.string().describe("The scene's UUID."),
+        imageUrl: imageUrlSchema,
+      }),
+      consentLevel: "configurable",
+      execute: async (input, ctx) => {
+        const { sceneId, imageUrl } = input as { sceneId: string; imageUrl: string };
+        return executeAddSceneImageFromUrl(ctx, imageUrl, (bytes, mime) =>
+          addSceneImage(ctx.spaceId, ctx.worldId, sceneId as never, bytes, mime),
+        );
+      },
+    },
+
+    add_scene_image_from_attachment: {
+      description:
+        "Append an image to a scene's gallery from a file the user attached " +
+        "in this conversation. Pass the EXACT filename from the " +
+        '`[image attachment: "..."]` marker; the attachment is fetched from ' +
+        "the thread, downscaled to fit within 1600×1600 (aspect ratio " +
+        "preserved — NO cropping), re-encoded as WebP under 1 MiB, and " +
+        "appended at the end of the gallery. Returns the new image's id and " +
+        "position. Use add_scene_image_from_url instead when the image " +
+        "lives at a link.",
+      inputSchema: z.object({
+        sceneId: z.string().describe("The scene's UUID."),
+        filename: filenameSchema,
+      }),
+      consentLevel: "configurable",
+      execute: async (input, ctx) => {
+        const { sceneId, filename } = input as { sceneId: string; filename: string };
+        return executeAddSceneImageFromAttachment(ctx, filename, (bytes, mime) =>
+          addSceneImage(ctx.spaceId, ctx.worldId, sceneId as never, bytes, mime),
+        );
+      },
+    },
+
+    delete_scene_image: {
+      description:
+        "Delete one image from a scene's gallery by its image id (from " +
+        "list_scene_images). The remaining images keep their relative order " +
+        "(positions are renumbered automatically); the scene itself and its " +
+        "other images are untouched. The stored bytes cannot be recovered " +
+        "afterwards.",
+      inputSchema: z.object({
+        imageId: z.string().describe("The gallery image's own UUID (from list_scene_images — NOT the scene id)."),
+      }),
+      consentLevel: "always",
+      execute: async (input, ctx) => {
+        const { imageId } = input as { imageId: string };
+        await deleteSceneImage(ctx.spaceId, ctx.worldId, imageId as never);
+        return { deleted: true, id: imageId };
+      },
+    },
+
+    list_scene_images: {
+      description:
+        "List a scene's gallery images in display order — id and position " +
+        "per entry, metadata only (no pixels). Use look_at with " +
+        'entityKind "scene_image" and an image\'s id to learn what a given ' +
+        "image actually shows, and delete_scene_image to remove entries.",
+      inputSchema: z.object({
+        sceneId: z.string().describe("The scene's UUID."),
+      }),
+      consentLevel: "auto",
+      execute: async (input, ctx) => {
+        const { sceneId } = input as { sceneId: string };
+        return listSceneImageIds(ctx.spaceId, ctx.worldId, sceneId as never);
       },
     },
   };
