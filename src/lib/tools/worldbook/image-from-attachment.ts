@@ -50,14 +50,17 @@ import type { EntityImageCropSpec } from "./image-from-url";
  * Zod schema for the `filename` parameter shared by every
  * `set_<entity>_image_from_attachment` / `add_scene_image_from_attachment`
  * tool. Description is intentionally prescriptive — the model's only
- * reliable handle on the exact filename is the downgrade marker (or the
- * attachment strip), and a mis-copied filename is the #1 failure mode.
+ * reliable handle on the exact filename is the `[image attachment: ...]`
+ * marker riding next to the image in the user's message (a NOT-delivered
+ * downgrade marker when the bound model cannot see images, a delivered
+ * companion annotation when it can — the marker appears on both paths),
+ * and a mis-copied filename is the #1 failure mode.
  */
 export const filenameSchema = z
   .string()
   .min(1)
   .describe(
-    "EXACT filename of an image attached in this conversation, copied character-for-character from inside the `[image attachment: \"...\" — image content NOT delivered...]` marker in the user's message (or as shown in the conversation's attachment strip). Do not guess or shorten it.",
+    "EXACT filename of an image attached in this conversation, copied character-for-character from inside the `[image attachment: \"...\" — ...]` marker in the user's message (the marker appears whether the image reached you as pixels or not). Do not guess or shorten it.",
   );
 
 // ─── Results ───────────────────────────────────────────────────────────────
