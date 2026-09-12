@@ -1,13 +1,15 @@
 /**
  * Look-at tool — `look_at` (ADR-0045, extended by ADR-0048).
  *
- * Lets chat models WITHOUT image input learn what an image contains. The
- * downgrade pipeline (ADR-0044 D9) replaces image attachments with
- * `[image attachment: "filename" — image content NOT delivered…]` markers
- * for non-vision models; this tool resolves those markers (a remote image
- * URL, or an image stored ON a worldbook entity) into a textual description
- * produced by the Space's dedicated seeded `vision` agent — a one-shot
- * `generateText` call over a vision-capable model (`@/lib/ai/look-at`).
+ * Lets chat models learn what an image contains when they cannot see it
+ * themselves. Attached images always ride with an `[image attachment:
+ * "filename" — …]` marker in the user's message — a NOT-delivered
+ * downgrade marker for non-vision models (ADR-0044 D9), a delivered
+ * companion annotation for vision models (ADR-0048) — and this tool
+ * resolves a marker's filename (or a remote image URL, or an image stored
+ * ON a worldbook entity) into a textual description produced by the
+ * Space's dedicated seeded `vision` agent — a one-shot `generateText`
+ * call over a vision-capable model (`@/lib/ai/look-at`).
  *
  * Inputs resolve the image via EXACTLY ONE of:
  *   - `filename` — an in-conversation attachment, matched by the EXACT
@@ -79,7 +81,7 @@ const inputSchema = z
       .min(1)
       .optional()
       .describe(
-        "EXACT filename of an image attached in this conversation, copied character-for-character from inside the `[image attachment: \"...\" — image content NOT delivered...]` marker in the user's message. Do not guess or shorten it.",
+        "EXACT filename of an image attached in this conversation, copied character-for-character from inside the `[image attachment: \"...\" — ...]` marker in the user's message (the marker appears whether the image reached you as pixels or not). Do not guess or shorten it.",
       ),
     url: z
       .string()
@@ -187,14 +189,14 @@ export function lookAtTools(): Record<string, ToolDef> {
   return {
     look_at: {
       description:
-        "Find out what an image shows when you cannot see it yourself — you do NOT receive image content directly. " +
-        'Images the user attaches arrive as `[image attachment: "..." — image content NOT delivered...]` markers carrying only a filename, and image URLs are plain text. ' +
-        "Call this tool with the EXACT filename from the marker (in-conversation attachment), a direct image URL, " +
+        "Find out what an image shows when you cannot see it yourself. " +
+        'Images the user attaches arrive with an `[image attachment: "..." — ...]` marker: when the marker says image content NOT delivered you cannot see the image (call this tool with the EXACT filename from the marker); when it says image content delivered in this message the pixels are already in the message (no look_at needed — the filename is the handle for the image tools); image URLs are plain text you cannot view directly (call look_at with the URL). ' +
+        "Call this tool with the EXACT filename (in-conversation attachment), a direct image URL, " +
         "or entityKind + entityId for an image already stored on an entity (a character portrait, world/novel cover, or scene-gallery image — check hasImage / list_scene_images first; " +
         'entityKind "world" ALONE examines the current world\'s cover, no id needed), ' +
         "and it returns a description produced by a separate vision model. " +
         "Pass `question` to focus on what you need to know. " +
-        "Always use this BEFORE answering questions about an image's content.",
+        "Always use this BEFORE answering questions about an image you cannot see.",
       inputSchema,
       consentLevel: "auto",
       execute: async (input, ctx, call) => {
