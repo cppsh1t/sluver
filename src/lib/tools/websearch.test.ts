@@ -37,6 +37,7 @@ function makeToolContext(): ToolContext {
     activatedSkills: new Set(),
     visionConfig: null,
     attachmentLookup: { findByFilename: vi.fn(() => null) },
+    entityImageLookup: { findByEntity: vi.fn(async () => null) },
   };
 }
 

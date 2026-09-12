@@ -22,6 +22,7 @@
 
 import type { FlexibleSchema, ToolCallPart, ToolResultPart } from "ai";
 
+import type { LookAtEntityKind } from "@/lib/ai/look-at";
 import type { Plan } from "@/lib/ai/session/plan";
 import { defineTool, type ToolSet, type ResolvedModelConfig } from "@/lib/ai";
 import type { EnabledSkill, SpaceId, WorldId } from "@/types";
@@ -202,7 +203,7 @@ export interface ThreadLookup {
  *
  * ## Purity
  *
- * The interface is pure (no React/IPC/store dependencies). The concrete
+ * The interface is pure (no React / IPC / store dependencies). The concrete
  * implementation lives in the conversation-runtime layer, where it closes
  * over the live `Agent` via the same agentRef chicken-and-egg pattern used
  * by {@link ThreadLookup} (ADR-0029 §Negative). The hydrated data-URL
@@ -218,6 +219,53 @@ export interface AttachmentLookup {
   findByFilename(filename: string): { dataUrl: string; mediaType: string } | null;
 }
 
+// ─── Entity image lookup (look_at + ADR-0048) ───────────────────────────────
+
+/**
+ * Re-exported from the pure AI layer as the tools-layer name. The union
+ * lives in `@/lib/ai/look-at` because the `entity` `ImageSource` variant
+ * needs it and `lib/ai` must not import from the tools layer (ADR-0019
+ * import direction) — see its doc comment there for the full rationale.
+ */
+export type { LookAtEntityKind } from "@/lib/ai/look-at";
+
+/**
+ * The entity kinds {@link EntityImageLookup} can resolve. Alias of
+ * {@link import("@/lib/ai/look-at").LookAtEntityKind} — one spelling per
+ * layer, one source of truth.
+ */
+export type EntityImageKind = LookAtEntityKind;
+
+/**
+ * Stored-entity-image resolution for the `look_at` tool's `entity` source
+ * variant (ADR-0048).
+ *
+ * Closes the last blind spot of the audit: the agent could see attachments
+ * and URLs, but never the portraits/covers it had itself written onto
+ * entities. Given an {@link EntityImageKind} + entity id, this returns the
+ * stored `image_blob` bytes as a data URL the vision one-shot can consume.
+ *
+ * ## Purity
+ *
+ * The interface is pure (no React / IPC / store dependencies). The concrete
+ * implementation lives in the conversation-runtime layer — unlike
+ * {@link AttachmentLookup} it IS IPC-backed (one `get<Entity>Image` /
+ * `getSceneImage` read per call; the entity columns are not mirrored into
+ * the thread). `findByEntity` is therefore async.
+ */
+export interface EntityImageLookup {
+  /**
+   * Fetch an entity's stored image. Returns the image as a
+   * `data:{mime};base64,…` URL + sniffed media type, or `null` when the
+   * entity exists but has NO image set (the `hasImage` flag was false,
+   * stale, or the scene-image id was wrong).
+   */
+  findByEntity(
+    kind: EntityImageKind,
+    id: string,
+  ): Promise<{ dataUrl: string; mediaType: string } | null>;
+}
+
 // ─── Tool context ─────────────────────────────────────────────────────────
 
 /**
@@ -227,8 +275,8 @@ export interface AttachmentLookup {
  * working Plan state (Plan mode — ADR-0029 Phase 1), reverse-channel
  * access to the Persisted Thread for stub expansion (Context mode — ADR-0031
  * Phase 1), the enabled Agent Skills with their activation dedup state
- * (ADR-0043), and the vision agent config + attachment lookup powering the
- * `look_at` tool (ADR-0045).
+ * (ADR-0043), and the vision agent config + attachment/entity image
+ * lookups powering the `look_at` tool (ADR-0045/0048).
  *
  * Constructed per-conversation in the conversation-runtime store and passed
  * to `RoleBehavior.buildTools(ctx)`.
@@ -289,6 +337,14 @@ export interface ToolContext {
    * the hydrated image bytes from the Persisted Thread.
    */
   readonly attachmentLookup: AttachmentLookup;
+  /**
+   * Stored-entity-image resolution for the `look_at` tool's `entity` source
+   * variant (ADR-0048): reads an entity's `image_blob` column back as a
+   * data URL so the vision one-shot can describe portraits/covers the agent
+   * (or the user) previously stored. Unlike `attachmentLookup` this is
+   * IPC-backed — one `get<Entity>Image` read per call.
+   */
+  readonly entityImageLookup: EntityImageLookup;
 }
 
 // ─── Per-call options ──────────────────────────────────────────────────────
