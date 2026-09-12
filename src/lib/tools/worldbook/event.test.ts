@@ -8,7 +8,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { createEvent, deleteEvent, getEvent, updateEvent } from "@/api/event";
-import { updateEventImage } from "@/api/image";
+import {
+  clearEventImage,
+  prepareImage,
+  updateEventImage,
+} from "@/api/image";
 import { fetchAndPrepareImage } from "@/api/search";
 import {
   characterIdSchema,
@@ -33,6 +37,8 @@ vi.mock("@/api/event", () => ({
 }));
 
 vi.mock("@/api/image", () => ({
+  clearEventImage: vi.fn(),
+  prepareImage: vi.fn(async () => new Uint8Array([4, 4]).buffer),
   updateEventImage: vi.fn(),
 }));
 
@@ -67,6 +73,7 @@ function makeStubCtx(overrides: Partial<ToolContext> = {}): ToolContext {
     activatedSkills: new Set(),
     visionConfig: null,
     attachmentLookup: { findByFilename: vi.fn(() => null) },
+    entityImageLookup: { findByEntity: vi.fn(async () => null) },
     ...overrides,
   };
 }
@@ -234,6 +241,67 @@ describe("set_event_image_from_url", () => {
       "image/webp",
     );
     expect(result).toEqual({ updated: true });
+  });
+});
+
+describe("set_event_image_from_attachment", () => {
+  it("resolves the attachment, compresses to the 16:9 640×360 spec, and writes WebP bytes", async () => {
+    const ctxWithAttachment = makeStubCtx({
+      attachmentLookup: {
+        findByFilename: vi.fn(() => ({
+          dataUrl: "data:image/png;base64,iVBORw0KGgo=",
+          mediaType: "image/png",
+        })),
+      },
+    });
+
+    const result = await tools.set_event_image_from_attachment.execute(
+      { id: "ev-1", filename: "battle.png" },
+      ctxWithAttachment,
+      call,
+    );
+
+    expect(prepareImage).toHaveBeenCalledWith({
+      dataBase64: "iVBORw0KGgo=",
+      width: 640,
+      height: 360,
+    });
+    expect(updateEventImage).toHaveBeenCalledWith(
+      spaceId,
+      worldId,
+      eventId,
+      new Uint8Array([4, 4]),
+      "image/webp",
+    );
+    expect(result).toEqual({ updated: true });
+  });
+
+  it("returns a structured attachment_not_found error on a filename miss", async () => {
+    const result = await tools.set_event_image_from_attachment.execute(
+      { id: "ev-1", filename: "missing.png" },
+      ctx, // default stub: findByFilename → null
+      call,
+    );
+
+    expect(result).toEqual({
+      error: "attachment_not_found",
+      filename: "missing.png",
+      message: expect.stringContaining("missing.png"),
+    });
+    expect(prepareImage).not.toHaveBeenCalled();
+  });
+});
+
+describe("clear_event_image", () => {
+  it("echoes {cleared, id}", async () => {
+    const result = await tools.clear_event_image.execute(
+      { id: "ev-1" },
+      ctx,
+      call,
+    );
+
+    expect(clearEventImage).toHaveBeenCalledWith(spaceId, worldId, eventId);
+    expect(result).toEqual({ cleared: true, id: "ev-1" });
   });
 });
 

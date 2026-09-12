@@ -5,7 +5,8 @@
  * and an optional locationId. These junction fields are full-replacement on
  * update (delete-all + re-insert in a transaction on the backend).
  *
- * Consent levels: list/get → `auto`, create → `configurable`, update/delete → `always`.
+ * Consent levels: list/get → `auto`, create + set_*_image_from_* →
+ * `configurable`, update/delete/clear_*_image → `always`.
  */
 
 import { z } from "zod";
@@ -18,8 +19,12 @@ import {
   searchEvents,
   updateEvent,
 } from "@/api/event";
-import { updateEventImage } from "@/api/image";
+import { clearEventImage, updateEventImage } from "@/api/image";
 import type { ToolDef } from "../types";
+import {
+  executeSetImageFromAttachment,
+  filenameSchema,
+} from "./image-from-attachment";
 import {
   ENTITY_IMAGE_CROP_SPEC,
   executeSetImageFromUrl,
@@ -168,6 +173,56 @@ export function eventTools(): Record<string, ToolDef> {
           (bytes, mime) =>
             updateEventImage(ctx.spaceId, ctx.worldId, id as never, bytes, mime),
         );
+      },
+    },
+
+    // ── Image from attachment (configurable) ─────────────────────────────
+    //
+    // Same 16:9 → 640×360 → lossless WebP pipeline as the from-URL tool,
+    // but the source is an in-conversation attachment; `prepare_image`
+    // compresses it into the canonical form (ADR-0048).
+
+    set_event_image_from_attachment: {
+      description:
+        "Set an event's image from a file the user attached in this " +
+        "conversation — e.g. a scene illustration they supplied themselves. " +
+        "Pass the EXACT filename from the `[image attachment: \"...\"]` " +
+        "marker; the attachment is fetched from the thread, center-cropped " +
+        "to 16:9 landscape, resized to 640×360, and re-encoded as lossless " +
+        "WebP (large photos are compressed automatically). Any previous " +
+        "image is overwritten. Use set_event_image_from_url instead when " +
+        "the image lives at a link.",
+      inputSchema: z.object({
+        id: z.string().describe("The event's UUID."),
+        filename: filenameSchema,
+      }),
+      consentLevel: "configurable",
+      execute: async (input, ctx) => {
+        const { id, filename } = input as { id: string; filename: string };
+        return executeSetImageFromAttachment(
+          ctx,
+          filename,
+          ENTITY_IMAGE_CROP_SPEC.event,
+          (bytes, mime) =>
+            updateEventImage(ctx.spaceId, ctx.worldId, id as never, bytes, mime),
+        );
+      },
+    },
+
+    // ── Clear image (always) ──────────────────────────────────────────────
+
+    clear_event_image: {
+      description:
+        "Remove an event's image. The event, its participants, and all " +
+        "references are untouched — only the stored image bytes are " +
+        "discarded, and they cannot be recovered afterwards. Confirm with " +
+        "the user first if they did not explicitly ask for the removal.",
+      inputSchema: z.object({ id: z.string().describe("The event's UUID.") }),
+      consentLevel: "always",
+      execute: async (input, ctx) => {
+        const { id } = input as { id: string };
+        await clearEventImage(ctx.spaceId, ctx.worldId, id as never);
+        return { cleared: true, id };
       },
     },
   };
