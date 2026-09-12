@@ -19,7 +19,13 @@ import {
   updateCharacter,
   updatePhase,
 } from "@/api/character";
-import { updateCharacterImage } from "@/api/image";
+import {
+  clearCharacterImage,
+  clearPhaseImage,
+  prepareImage,
+  updateCharacterImage,
+  updatePhaseImage,
+} from "@/api/image";
 import { fetchAndPrepareImage } from "@/api/search";
 import {
   characterIdSchema,
@@ -51,6 +57,9 @@ vi.mock("@/api/character", () => ({
 }));
 
 vi.mock("@/api/image", () => ({
+  clearCharacterImage: vi.fn(),
+  clearPhaseImage: vi.fn(),
+  prepareImage: vi.fn(async () => new Uint8Array([8, 8]).buffer),
   updateCharacterImage: vi.fn(),
   updatePhaseImage: vi.fn(),
 }));
@@ -79,6 +88,7 @@ function makeStubCtx(overrides: Partial<ToolContext> = {}): ToolContext {
     activatedSkills: new Set(),
     visionConfig: null,
     attachmentLookup: { findByFilename: vi.fn(() => null) },
+    entityImageLookup: { findByEntity: vi.fn(async () => null) },
     ...overrides,
   };
 }
@@ -408,5 +418,115 @@ describe("set_character_image_from_url", () => {
       "image/webp",
     );
     expect(result).toEqual({ updated: true });
+  });
+});
+
+describe("set_character_image_from_attachment", () => {
+  const ATTACHMENT = {
+    dataUrl: "data:image/png;base64,iVBORw0KGgo=",
+    mediaType: "image/png",
+  };
+
+  it("resolves the attachment, compresses via prepareImage, and writes WebP bytes", async () => {
+    const ctxWithAttachment = makeStubCtx({
+      attachmentLookup: { findByFilename: vi.fn(() => ATTACHMENT) },
+    });
+
+    const result = await tools.set_character_image_from_attachment.execute(
+      { characterId: "ch-1", filename: "portrait.png" },
+      ctxWithAttachment,
+      call,
+    );
+
+    expect(prepareImage).toHaveBeenCalledWith({
+      dataBase64: "iVBORw0KGgo=",
+      width: 300,
+      height: 400,
+    });
+    expect(updateCharacterImage).toHaveBeenCalledWith(
+      spaceId,
+      worldId,
+      characterId,
+      new Uint8Array([8, 8]),
+      "image/webp",
+    );
+    expect(result).toEqual({ updated: true });
+  });
+
+  it("returns a structured attachment_not_found error (no throw) on a miss", async () => {
+    const result = await tools.set_character_image_from_attachment.execute(
+      { characterId: "ch-1", filename: "missing.png" },
+      ctx, // default stub: findByFilename → null
+      call,
+    );
+
+    expect(result).toEqual({
+      error: "attachment_not_found",
+      filename: "missing.png",
+      message: expect.stringContaining("missing.png"),
+    });
+    expect(prepareImage).not.toHaveBeenCalled();
+    expect(updateCharacterImage).not.toHaveBeenCalled();
+  });
+});
+
+describe("set_phase_image_from_attachment", () => {
+  it("crops to the 3:4 300×400 phase spec via prepareImage", async () => {
+    const ctxWithAttachment = makeStubCtx({
+      attachmentLookup: {
+        findByFilename: vi.fn(() => ({
+          dataUrl: "data:image/jpeg;base64,/9j/4AAQ",
+          mediaType: "image/jpeg",
+        })),
+      },
+    });
+
+    const result = await tools.set_phase_image_from_attachment.execute(
+      { phaseId: "ph-1", filename: "youth.jpg" },
+      ctxWithAttachment,
+      call,
+    );
+
+    expect(prepareImage).toHaveBeenCalledWith({
+      dataBase64: "/9j/4AAQ",
+      width: 300,
+      height: 400,
+    });
+    expect(updatePhaseImage).toHaveBeenCalledWith(
+      spaceId,
+      worldId,
+      phaseId,
+      new Uint8Array([8, 8]),
+      "image/webp",
+    );
+    expect(result).toEqual({ updated: true });
+  });
+});
+
+describe("clear image tools", () => {
+  it("clear_character_image echoes {cleared, id}", async () => {
+    const result = await tools.clear_character_image.execute(
+      { id: "ch-1" },
+      ctx,
+      call,
+    );
+
+    expect(clearCharacterImage).toHaveBeenCalledWith(
+      spaceId,
+      worldId,
+      characterId,
+    );
+    expect(result).toEqual({ cleared: true, id: "ch-1" });
+  });
+
+  it("clear_phase_image echoes {cleared, id}", async () => {
+    const result = await tools.clear_phase_image.execute(
+      { phaseId: "ph-1" },
+      ctx,
+      call,
+    );
+
+    expect(clearPhaseImage).toHaveBeenCalledWith(spaceId, worldId, phaseId);
+    expect(result).toEqual({ cleared: true, id: "ph-1" });
   });
 });

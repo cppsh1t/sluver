@@ -3,8 +3,8 @@
  *
  * Consent levels:
  * - list / get / count → `auto`
- * - create / add_phase → `configurable`
- * - update / delete / reorder → `always`
+ * - create / add_phase / set_*_image_from_* → `configurable`
+ * - update / delete / reorder / clear_*_image → `always`
  *
  * Update tools use a read-merge-write pattern: only provided fields are changed;
  * omitted fields keep their current values. This is safer than full-replacement
@@ -28,9 +28,18 @@ import {
   updateCharacter,
   updatePhase,
 } from "@/api/character";
-import { updateCharacterImage, updatePhaseImage } from "@/api/image";
+import {
+  clearCharacterImage,
+  clearPhaseImage,
+  updateCharacterImage,
+  updatePhaseImage,
+} from "@/api/image";
 import type { CharacterPhase } from "@/types";
 import type { ToolDef } from "../types";
+import {
+  executeSetImageFromAttachment,
+  filenameSchema,
+} from "./image-from-attachment";
 import {
   ENTITY_IMAGE_CROP_SPEC,
   executeSetImageFromUrl,
@@ -347,6 +356,112 @@ export function characterTools(): Record<string, ToolDef> {
           (bytes, mime) =>
             updatePhaseImage(ctx.spaceId, ctx.worldId, phaseId as never, bytes, mime),
         );
+      },
+    },
+
+    // ── Image from attachment (configurable) ─────────────────────────────
+    //
+    // Same crop pipelines as the from-URL tools above (character/phase both
+    // 3:4 → 300×400 → lossless WebP), but the source is an in-conversation
+    // attachment; `prepare_image` compresses it into the canonical form
+    // (ADR-0048).
+
+    set_character_image_from_attachment: {
+      description:
+        "Set a character's portrait from an image the user attached in this " +
+        "conversation — the natural move when they say \"use this picture " +
+        "for her\". Pass the EXACT filename from the `[image attachment: " +
+        "\"...\"]` marker; the attachment is fetched from the thread, " +
+        "center-cropped to 3:4 portrait, resized to 300×400, and re-encoded " +
+        "as lossless WebP (large photos are compressed automatically). Any " +
+        "previous portrait is overwritten. Use set_character_image_from_url " +
+        "instead when the image lives at a link.",
+      inputSchema: z.object({
+        characterId: z.string().describe("The character's UUID."),
+        filename: filenameSchema,
+      }),
+      consentLevel: "configurable",
+      execute: async (input, ctx) => {
+        const { characterId, filename } = input as {
+          characterId: string;
+          filename: string;
+        };
+        return executeSetImageFromAttachment(
+          ctx,
+          filename,
+          ENTITY_IMAGE_CROP_SPEC.character,
+          (bytes, mime) =>
+            updateCharacterImage(ctx.spaceId, ctx.worldId, characterId as never, bytes, mime),
+        );
+      },
+    },
+
+    set_phase_image_from_attachment: {
+      description:
+        "Set a phase's portrait from an image the user attached in this " +
+        "conversation — useful when each life stage warrants a distinct " +
+        "visual and the user supplied the art themselves. Pass the EXACT " +
+        "filename from the `[image attachment: \"...\"]` marker; the " +
+        "attachment is fetched from the thread, center-cropped to 3:4 " +
+        "portrait, resized to 300×400, and re-encoded as lossless WebP. Any " +
+        "previous phase portrait is overwritten. Use " +
+        "set_phase_image_from_url instead when the image lives at a link.",
+      inputSchema: z.object({
+        phaseId: z.string().describe("The phase's UUID (NOT the character's id)."),
+        filename: filenameSchema,
+      }),
+      consentLevel: "configurable",
+      execute: async (input, ctx) => {
+        const { phaseId, filename } = input as {
+          phaseId: string;
+          filename: string;
+        };
+        return executeSetImageFromAttachment(
+          ctx,
+          filename,
+          ENTITY_IMAGE_CROP_SPEC.phase,
+          (bytes, mime) =>
+            updatePhaseImage(ctx.spaceId, ctx.worldId, phaseId as never, bytes, mime),
+        );
+      },
+    },
+
+    // ── Clear image (always) ──────────────────────────────────────────────
+    //
+    // Destructive — discards the stored bytes irrecoverably, so it always
+    // passes through the approval gate (matching the delete_* tools).
+
+    clear_character_image: {
+      description:
+        "Remove a character's portrait. The character, their phases, and all " +
+        "references are untouched — only the stored image bytes are " +
+        "discarded, and they cannot be recovered afterwards. Confirm with " +
+        "the user first if they did not explicitly ask for the removal.",
+      inputSchema: z.object({
+        id: z.string().describe("The character's UUID."),
+      }),
+      consentLevel: "always",
+      execute: async (input, ctx) => {
+        const { id } = input as { id: string };
+        await clearCharacterImage(ctx.spaceId, ctx.worldId, id as never);
+        return { cleared: true, id };
+      },
+    },
+
+    clear_phase_image: {
+      description:
+        "Remove a phase's portrait. The phase itself and all references are " +
+        "untouched — only the stored image bytes are discarded, and they " +
+        "cannot be recovered afterwards. Confirm with the user first if " +
+        "they did not explicitly ask for the removal.",
+      inputSchema: z.object({
+        phaseId: z.string().describe("The phase's UUID (NOT the character's id)."),
+      }),
+      consentLevel: "always",
+      execute: async (input, ctx) => {
+        const { phaseId } = input as { phaseId: string };
+        await clearPhaseImage(ctx.spaceId, ctx.worldId, phaseId as never);
+        return { cleared: true, id: phaseId };
       },
     },
   };
