@@ -564,10 +564,14 @@ describe("Agent.run multimodal content", () => {
     expect(userMsg.content).toEqual(content);
 
     // Derived Model Input: the text file became a sentinel TextPart; the
-    // image passed through untouched (imageInputSupported absent = unknown).
+    // image passed through untouched (imageInputSupported absent = unknown)
+    // and gained its filename companion annotation.
     const prompt = model.doStreamCalls[0]?.prompt ?? [];
     expect(promptTextsAt(prompt, 1)).toContain(
       '<attachment filename="notes.md" mime="text/markdown">\n# Title\nbody\n</attachment>',
+    );
+    expect(promptTextsAt(prompt, 1)).toContain(
+      '[image attachment: "sunset.png" — image content delivered in this message]',
     );
     expect(JSON.stringify(prompt)).not.toContain("data:text/markdown");
     expect(JSON.stringify(prompt)).toContain(pngB64);
@@ -620,7 +624,14 @@ describe("Agent.run multimodal content", () => {
 
     await agent.run(content, { imageInputSupported: true }).result;
 
-    expect(JSON.stringify(model.doStreamCalls[0]?.prompt)).toContain(pngB64);
+    // The model sees the image pixels AND the filename companion
+    // annotation — the filename is the handle for the from-attachment
+    // tools (ADR-0048).
+    const prompt = model.doStreamCalls[0]?.prompt ?? [];
+    expect(promptTextsAt(prompt, 1)).toContain(
+      '[image attachment: "sunset.png" — image content delivered in this message]',
+    );
+    expect(JSON.stringify(prompt)).toContain(pngB64);
   });
 
   it("slices the delta correctly when attachments and compaction reshape the input (inputLength regression)", async () => {
