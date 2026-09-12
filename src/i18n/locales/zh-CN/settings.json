@@ -54,6 +54,49 @@
     "saveFailed": "保存自定义 provider 失败",
     "loadFailed": "加载自定义 provider 失败"
   },
+  "webSearch": {
+    "title": "网络搜索",
+    "description": "选择智能体 web_search 工具使用的搜索引擎。",
+    "provider": {
+      "builtinBing": {
+        "name": "必应（内置）",
+        "description": "默认，无需 API Key"
+      },
+      "builtinBaidu": {
+        "name": "百度（内置）",
+        "description": "无需 Key，中文搜索"
+      },
+      "tavily": {
+        "name": "Tavily",
+        "description": "免费额度 1000 次/月"
+      },
+      "serper": {
+        "name": "Serper",
+        "description": "注册赠 2500 次"
+      },
+      "exa": {
+        "name": "Exa",
+        "description": "免 key 每日约 50 次；填 Key 另有每月 $10 免费额度"
+      },
+      "jina": {
+        "name": "Jina",
+        "description": "注册赠 1000 次"
+      },
+      "brave": {
+        "name": "Brave",
+        "description": "无免费额度，需订阅"
+      }
+    },
+    "apiKeyLabel": "{{name}} API Key",
+    "apiKeyPlaceholder": "粘贴 API Key",
+    "getKey": "获取 Key",
+    "keyRequiredHint": "此引擎需要 API Key 才能使用，未填写时搜索会失败。",
+    "keylessHint": "未填 Key 时使用免 key 每日约 50 次额度（无需代理）",
+    "windowsOnlyHint": "仅限 Windows",
+    "saveSuccess": "网络搜索设置已保存",
+    "saveFailed": "保存网络搜索设置失败",
+    "loadFailed": "加载网络搜索设置失败"
+  },
   "diagnostics": {
     "title": "诊断",
     "verbosity": {

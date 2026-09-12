@@ -54,6 +54,49 @@
     "saveFailed": "Failed to save custom providers",
     "loadFailed": "Failed to load custom providers"
   },
+  "webSearch": {
+    "title": "Web search",
+    "description": "Choose the search engine used by the agent's web_search tool.",
+    "provider": {
+      "builtinBing": {
+        "name": "Bing (built-in)",
+        "description": "Default — no key needed"
+      },
+      "builtinBaidu": {
+        "name": "Baidu (built-in)",
+        "description": "No key, Chinese search"
+      },
+      "tavily": {
+        "name": "Tavily",
+        "description": "Free tier: 1,000 searches/month"
+      },
+      "serper": {
+        "name": "Serper",
+        "description": "2,500 free sign-up credits"
+      },
+      "exa": {
+        "name": "Exa",
+        "description": "Keyless ~50/day; with a key, $10 free monthly credit"
+      },
+      "jina": {
+        "name": "Jina",
+        "description": "~1,000 free sign-up searches"
+      },
+      "brave": {
+        "name": "Brave",
+        "description": "No free tier — subscription required"
+      }
+    },
+    "apiKeyLabel": "{{name}} API key",
+    "apiKeyPlaceholder": "Paste your API key",
+    "getKey": "Get a key",
+    "keyRequiredHint": "This engine requires an API key — searches will fail without one.",
+    "keylessHint": "Without a key, uses the keyless tier (~50 searches/day, no proxy needed)",
+    "windowsOnlyHint": "Windows only",
+    "saveSuccess": "Web search settings saved",
+    "saveFailed": "Failed to save web search settings",
+    "loadFailed": "Failed to load web search settings"
+  },
   "diagnostics": {
     "title": "Diagnostics",
     "verbosity": {
