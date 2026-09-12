@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useRouterState } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { locale as detectOsLocale } from "@tauri-apps/plugin-os";
 import { openPath } from "@tauri-apps/plugin-opener";
@@ -30,6 +30,14 @@ import {
   type VerbosityTier,
 } from "@/api";
 import { toErrorPayload } from "@/api/client";
+import {
+  getWebSearchSettings,
+  setWebSearchSettings,
+  type WebSearchApiKeys,
+  type WebSearchProvider,
+  type WebSearchSettings,
+} from "@/api/search";
+import { translateError } from "@/i18n/errors";
 import { aiConfigKeys } from "@/hooks/use-ai-config";
 import { setDayjsLocale } from "@/lib/format";
 import { logger, setLevel, type LogLevel } from "@/lib/logger";
@@ -91,6 +99,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 
 interface SettingsDialogProps {
   open: boolean;
@@ -149,6 +158,45 @@ const CUSTOM_PROVIDERS_PLACEHOLDER = `{
     }
   }
 }`;
+
+/**
+ * Providers that ACCEPT an API key — exactly the keys of
+ * `WebSearchApiKeys` (ADR-0049). Used to narrow a `WebSearchProvider`
+ * down to a valid `WebSearchApiKeys` index for the key input, and to
+ * iterate every storable key in the save/dirty-check paths.
+ */
+const KEY_ACCEPTING_PROVIDERS: readonly WebSearchProvider[] = [
+  "tavily",
+  "serper",
+  "exa",
+  "jina",
+  "brave",
+];
+
+/**
+ * Providers where the key is MANDATORY — searches fail without one, so
+ * an empty key gets the required-key warning. Exa is deliberately absent:
+ * it works keyless (~50 searches/day per IP, no proxy needed); its key is
+ * an optional upgrade tier and gets the softer `keylessHint` instead.
+ */
+const KEY_REQUIRED_PROVIDERS: readonly WebSearchProvider[] = [
+  "tavily",
+  "serper",
+  "jina",
+  "brave",
+];
+
+/** Console URLs where the user can create/retrieve a provider API key. */
+const PROVIDER_DASHBOARDS: Record<
+  Exclude<WebSearchProvider, "builtin-bing" | "builtin-baidu">,
+  string
+> = {
+  tavily: "https://app.tavily.com",
+  serper: "https://serper.dev",
+  exa: "https://dashboard.exa.ai",
+  jina: "https://jina.ai",
+  brave: "https://api.search.brave.com",
+};
 
 /**
  * Global application settings (CONTEXT.md `Setting`) as a modal.
@@ -220,6 +268,59 @@ function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [customProvidersLoading, setCustomProvidersLoading] = useState(false);
   const [customProvidersSaving, setCustomProvidersSaving] = useState(false);
 
+  // ── Web search state (agent `web_search` provider, ADR-0049) ────────
+  // Same shape as the custom-providers block above: editable local state
+  // plus a `webSearchLoaded` snapshot of the last fetched/persisted value
+  // (drives the save button's dirty check). `builtin-bing` + no keys is
+  // also the backend's documented default, so the pre-load state matches.
+  const [webSearchProvider, setWebSearchProvider] =
+    useState<WebSearchProvider>("builtin-bing");
+  const [webSearchKeys, setWebSearchKeys] = useState<WebSearchApiKeys>({});
+  const [webSearchLoaded, setWebSearchLoaded] = useState<WebSearchSettings>({
+    provider: "builtin-bing",
+    apiKeys: {},
+  });
+
+  const webSearchQuery = useQuery({
+    queryKey: ["web-search-settings"],
+    queryFn: getWebSearchSettings,
+    enabled: open,
+  });
+  const webSearchLoading = webSearchQuery.fetchStatus === "fetching";
+
+  const webSearchMutation = useMutation({
+    mutationFn: setWebSearchSettings,
+    onSuccess: (saved) => {
+      setWebSearchLoaded(saved);
+      toast.success(i18n.t("settings:webSearch.saveSuccess"));
+      qc.invalidateQueries({ queryKey: ["web-search-settings"] });
+    },
+    onError: (e) => {
+      toast.error(i18n.t("settings:webSearch.saveFailed"), {
+        description: translateError(toErrorPayload(e)),
+      });
+    },
+  });
+
+  // Adopt fetched settings into the editable state. Runs on initial load
+  // and again after the post-save invalidation refetch lands (idempotent
+  // — both deliver the persisted value).
+  useEffect(() => {
+    const s = webSearchQuery.data;
+    if (!s) return;
+    setWebSearchProvider(s.provider);
+    setWebSearchKeys(s.apiKeys ?? {});
+    setWebSearchLoaded(s);
+  }, [webSearchQuery.data]);
+
+  useEffect(() => {
+    if (webSearchQuery.isError) {
+      toast.error(i18n.t("settings:webSearch.loadFailed"), {
+        description: toErrorPayload(webSearchQuery.error).message,
+      });
+    }
+  }, [webSearchQuery.isError, webSearchQuery.error]);
+
   const themeOptions: { value: ThemeMode; label: string }[] = [
     { value: "light", label: t("settings:theme.options.light") },
     { value: "dark", label: t("settings:theme.options.dark") },
@@ -240,6 +341,76 @@ function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     { value: "zh-CN", label: t("settings:language.options.zh-CN") },
     { value: "en", label: t("settings:language.options.en") },
   ];
+
+  // Static keys (no dynamic `t(\`...\`)`) so every string stays greppable,
+  // matching the theme/language option arrays above.
+  const webSearchProviders: {
+    value: WebSearchProvider;
+    label: string;
+    description: string;
+    keyed: boolean;
+  }[] = [
+    {
+      value: "builtin-bing",
+      label: t("settings:webSearch.provider.builtinBing.name"),
+      description: t("settings:webSearch.provider.builtinBing.description"),
+      keyed: false,
+    },
+    {
+      value: "builtin-baidu",
+      label: t("settings:webSearch.provider.builtinBaidu.name"),
+      description: `${t("settings:webSearch.provider.builtinBaidu.description")} · ${t("settings:webSearch.windowsOnlyHint")}`,
+      keyed: false,
+    },
+    {
+      value: "tavily",
+      label: t("settings:webSearch.provider.tavily.name"),
+      description: t("settings:webSearch.provider.tavily.description"),
+      keyed: true,
+    },
+    {
+      value: "serper",
+      label: t("settings:webSearch.provider.serper.name"),
+      description: t("settings:webSearch.provider.serper.description"),
+      keyed: true,
+    },
+    {
+      value: "exa",
+      label: t("settings:webSearch.provider.exa.name"),
+      description: t("settings:webSearch.provider.exa.description"),
+      keyed: true,
+    },
+    {
+      value: "jina",
+      label: t("settings:webSearch.provider.jina.name"),
+      description: t("settings:webSearch.provider.jina.description"),
+      keyed: true,
+    },
+    {
+      value: "brave",
+      label: t("settings:webSearch.provider.brave.name"),
+      description: t("settings:webSearch.provider.brave.description"),
+      keyed: true,
+    },
+  ];
+
+  // Narrow the selection to a key-accepting provider (valid
+  // `WebSearchApiKeys` index) — null for the keyless builtins, which
+  // hides the key input.
+  const activeKeyedProvider = KEY_ACCEPTING_PROVIDERS.includes(webSearchProvider)
+    ? (webSearchProvider as keyof WebSearchApiKeys)
+    : null;
+  const activeProviderMeta = webSearchProviders.find(
+    (p) => p.value === webSearchProvider,
+  );
+
+  const webSearchUnchanged =
+    webSearchProvider === webSearchLoaded.provider &&
+    KEY_ACCEPTING_PROVIDERS.every(
+      (k) =>
+        (webSearchKeys[k as keyof WebSearchApiKeys] ?? "") ===
+        (webSearchLoaded.apiKeys[k as keyof WebSearchApiKeys] ?? ""),
+    );
 
   useEffect(() => {
     getAppSetting()
@@ -588,6 +759,26 @@ function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     }
   }
 
+  // ── Web search handlers ─────────────────────────────────────────────
+
+  /**
+   * Persist the selection. Keys are trimmed; an empty key is omitted from
+   * `apiKeys` (the backend treats a missing field as unconfigured). A
+   * provider may still be saved without its key — for key-required
+   * providers the failure then surfaces at search time (the inline hint
+   * warns in advance); for exa it simply falls back to the keyless tier.
+   */
+  function handleSaveWebSearch() {
+    const apiKeys: WebSearchApiKeys = {};
+    for (const k of KEY_ACCEPTING_PROVIDERS) {
+      const v = (webSearchKeys[k as keyof WebSearchApiKeys] ?? "").trim();
+      if (v) {
+        apiKeys[k as keyof WebSearchApiKeys] = v;
+      }
+    }
+    webSearchMutation.mutate({ provider: webSearchProvider, apiKeys });
+  }
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -712,6 +903,90 @@ function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   }
                 >
                   {customProvidersSaving
+                    ? t("common:actions.saving")
+                    : t("common:actions.save")}
+                </Button>
+              </div>
+            </section>
+
+            {/* ── Web search (agent `web_search` provider, ADR-0049) ── */}
+            <section className="flex flex-col gap-3 border-t border-border pt-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {t("settings:webSearch.title")}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t("settings:webSearch.description")}
+              </p>
+
+              <div
+                role="radiogroup"
+                aria-label={t("settings:webSearch.title")}
+                className="flex flex-col gap-1"
+              >
+                {webSearchProviders.map((p) => (
+                  <RadioCard
+                    key={p.value}
+                    active={webSearchProvider === p.value}
+                    label={p.label}
+                    description={p.description}
+                    disabled={webSearchLoading}
+                    onSelect={() => setWebSearchProvider(p.value)}
+                  />
+                ))}
+              </div>
+
+              {activeKeyedProvider && (
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium">
+                      {t("settings:webSearch.apiKeyLabel", {
+                        name: activeProviderMeta?.label ?? "",
+                      })}
+                    </span>
+                    <a
+                      href={PROVIDER_DASHBOARDS[activeKeyedProvider]}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs text-primary underline underline-offset-4 hover:opacity-80"
+                    >
+                      {t("settings:webSearch.getKey")}
+                    </a>
+                  </div>
+                  <Input
+                    type="password"
+                    value={webSearchKeys[activeKeyedProvider] ?? ""}
+                    onChange={(e) =>
+                      setWebSearchKeys((prev) => ({
+                        ...prev,
+                        [activeKeyedProvider]: e.target.value,
+                      }))
+                    }
+                    placeholder={t("settings:webSearch.apiKeyPlaceholder")}
+                    autoComplete="off"
+                    spellCheck={false}
+                    disabled={webSearchLoading}
+                  />
+                  {!(webSearchKeys[activeKeyedProvider] ?? "").trim() && (
+                    <p className="text-xs text-muted-foreground">
+                      {KEY_REQUIRED_PROVIDERS.includes(activeKeyedProvider)
+                        ? t("settings:webSearch.keyRequiredHint")
+                        : t("settings:webSearch.keylessHint")}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  onClick={handleSaveWebSearch}
+                  disabled={
+                    webSearchLoading ||
+                    webSearchMutation.isPending ||
+                    webSearchUnchanged
+                  }
+                >
+                  {webSearchMutation.isPending
                     ? t("common:actions.saving")
                     : t("common:actions.save")}
                 </Button>
@@ -974,17 +1249,21 @@ function Segmented<T extends { value: string; label: string }>({
 /**
  * A single vertical radio option with a circular indicator. Used inside
  * the export sub-dialog for the Space-scope and date-range choices where
- * a horizontal `Segmented` control would be too wide for the narrow dialog.
+ * a horizontal `Segmented` control would be too wide for the narrow dialog,
+ * and in the web-search section for the provider list — where the optional
+ * `description` line (free-tier hints, etc.) renders under the label.
  */
 function RadioCard({
   active,
   disabled,
   label,
+  description,
   onSelect,
 }: {
   active: boolean;
   disabled?: boolean;
   label: string;
+  description?: string;
   onSelect: () => void;
 }) {
   return (
@@ -1012,7 +1291,14 @@ function RadioCard({
       >
         {active && <span className="size-1.5 rounded-full bg-foreground" />}
       </span>
-      <span>{label}</span>
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span>{label}</span>
+        {description && (
+          <span className="font-normal text-muted-foreground">
+            {description}
+          </span>
+        )}
+      </span>
     </button>
   );
 }
