@@ -144,3 +144,49 @@ export function fetchAndPrepareImage(
     outputHeight,
   });
 }
+
+// ─── Web search settings ────────────────────────────────────────────────────
+
+/**
+ * Search engine backing the agent's `web_search` tool (ADR-0049).
+ *
+ * - `builtin-bing` / `builtin-baidu` — keyless WebView2 SERP scraping
+ *   (Baidu is Windows-only).
+ * - The rest are BYOK REST providers requiring an entry in
+ *   {@link WebSearchApiKeys}.
+ */
+export type WebSearchProvider =
+  | 'builtin-bing'
+  | 'builtin-baidu'
+  | 'tavily'
+  | 'serper'
+  | 'exa'
+  | 'jina'
+  | 'brave';
+
+/** API keys for the keyed providers. Absent field = unconfigured. */
+export interface WebSearchApiKeys {
+  tavily?: string;
+  serper?: string;
+  exa?: string;
+  jina?: string;
+  brave?: string;
+}
+
+/** Persisted web search configuration (meta.db key `app.webSearch`). */
+export interface WebSearchSettings {
+  provider: WebSearchProvider;
+  apiKeys: WebSearchApiKeys;
+}
+
+/** Load the persisted web search settings (backend supplies defaults). */
+export function getWebSearchSettings(): Promise<WebSearchSettings> {
+  return call<WebSearchSettings>('get_web_search_settings');
+}
+
+/** Persist web search settings; returns the stored (normalized) value. */
+export function setWebSearchSettings(
+  settings: WebSearchSettings,
+): Promise<WebSearchSettings> {
+  return call<WebSearchSettings>('set_web_search_settings', { settings });
+}
