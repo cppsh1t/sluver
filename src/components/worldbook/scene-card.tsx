@@ -408,7 +408,7 @@ function SceneCard({
                   {t("novel:refs.characters.empty")}
                 </p>
               ) : (
-                <div className="flex flex-col gap-2">
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-2">
                   {scene.characterRefs.map((ref) => {
                     const c = charMap.get(ref.characterId);
                     const p = c?.phases.find((ph) => ph.id === ref.phaseId);
@@ -421,6 +421,10 @@ function SceneCard({
                         phaseName={p.name}
                         phaseAppearance={p.appearance}
                         phaseDescription={p.description}
+                        spaceId={spaceId}
+                        worldId={worldId}
+                        characterId={c.id}
+                        variant="compact"
                         onRemove={() =>
                           onFieldChange({
                             characterRefs: scene.characterRefs.filter(
@@ -466,19 +470,22 @@ function SceneCard({
                     );
                   }
                   return (
-                    <EntityCard
-                      spaceId={spaceId}
-                      worldId={worldId}
-                      id={loc.id}
-                      name={loc.name}
-                      description={loc.description}
-                      tags={loc.tags}
-                      updatedAt={loc.updatedAt}
-                      entityType="location"
-                      selectable
-                      selected
-                      onRemove={() => onFieldChange({ locationId: null })}
-                    />
+                    <div className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-2">
+                      <EntityCard
+                        spaceId={spaceId}
+                        worldId={worldId}
+                        id={loc.id}
+                        name={loc.name}
+                        description={loc.description}
+                        tags={loc.tags}
+                        updatedAt={loc.updatedAt}
+                        entityType="location"
+                        variant="compact"
+                        selectable
+                        selected
+                        onRemove={() => onFieldChange({ locationId: null })}
+                      />
+                    </div>
                   );
                 })()
               ) : (
@@ -512,7 +519,7 @@ function SceneCard({
                   {t("novel:refs.items.empty")}
                 </p>
               ) : (
-                <div className="flex flex-col gap-2">
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-2">
                   {scene.itemIds.map((id) => {
                     const item = itemMap.get(id);
                     if (!item) return null;
@@ -527,6 +534,7 @@ function SceneCard({
                         tags={item.tags}
                         updatedAt={item.updatedAt}
                         entityType="item"
+                        variant="compact"
                         selectable
                         selected
                         onRemove={() =>
@@ -565,7 +573,7 @@ function SceneCard({
                   {t("novel:refs.events.empty")}
                 </p>
               ) : (
-                <div className="flex flex-col gap-2">
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-2">
                   {scene.eventIds.map((id) => {
                     const evt = eventMap.get(id);
                     if (!evt) return null;
@@ -620,7 +628,7 @@ function SceneCard({
                   {t("novel:refs.lores.empty")}
                 </p>
               ) : (
-                <div className="flex flex-col gap-2">
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-2">
                   {scene.loreIds.map((id) => {
                     const lore = loreMap.get(id);
                     if (!lore) return null;
@@ -635,6 +643,7 @@ function SceneCard({
                         tags={lore.tags}
                         updatedAt={lore.updatedAt}
                         entityType="lore"
+                        variant="compact"
                         selectable
                         selected
                         onRemove={() =>

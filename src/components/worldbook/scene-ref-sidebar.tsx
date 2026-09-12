@@ -180,6 +180,10 @@ function SceneRefSidebar({
                   phaseName={p.name}
                   phaseAppearance={p.appearance}
                   phaseDescription={p.description}
+                  spaceId={spaceId}
+                  worldId={worldId}
+                  characterId={c.id}
+                  variant="compact"
                 />
               );
             })}
@@ -212,6 +216,7 @@ function SceneRefSidebar({
                   tags={loc.tags}
                   updatedAt={loc.updatedAt}
                   entityType="location"
+                  variant="compact"
                 />
               );
             })}
@@ -244,6 +249,7 @@ function SceneRefSidebar({
                   tags={item.tags}
                   updatedAt={item.updatedAt}
                   entityType="item"
+                  variant="compact"
                 />
               );
             })}
@@ -306,6 +312,7 @@ function SceneRefSidebar({
                   tags={lore.tags}
                   updatedAt={lore.updatedAt}
                   entityType="lore"
+                  variant="compact"
                 />
               );
             })}
