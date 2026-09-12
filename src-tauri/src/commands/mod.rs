@@ -9,6 +9,7 @@ pub mod event;
 pub mod export_book;
 pub mod font;
 pub mod grep;
+pub mod image;
 pub mod note;
 pub mod novel;
 pub mod notification;

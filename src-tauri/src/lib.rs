@@ -329,6 +329,10 @@ pub fn run() {
             // Image-from-URL pipeline (download + center-crop + resize + WebP).
             // Used by agent `set_<entity>_image_from_url` tools.
             commands::search::fetch_and_prepare_image,
+            // Image preparation bridge (compress chat attachments / remote
+            // URLs into the canonical entity-image format — CROP + FIT modes;
+            // shares its download + crop helpers with the command above).
+            commands::image::prepare_image,
             // Diagnostics (logging — ADR-0014 / ADR-0015)
             commands::diagnostics::frontend_log,
             commands::diagnostics::get_log_level,

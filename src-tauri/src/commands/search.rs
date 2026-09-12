@@ -37,12 +37,15 @@ use tauri::Manager;
 /// Bing search endpoint (GET with `q` + `adlt` query params).
 const BING_SEARCH_URL: &str = "https://www.bing.com/search";
 
-/// Request timeout. 15s is a generous ceiling for both search and fetch.
-const REQUEST_TIMEOUT_SECS: u64 = 15;
+/// Request timeout. 15s is a generous ceiling for search, fetch, and image
+/// download (`pub(crate)` — also used by `commands/image.rs::
+/// download_image_bytes`, the shared image download helper).
+pub(crate) const REQUEST_TIMEOUT_SECS: u64 = 15;
 
 /// User-Agent sent on all web requests. A real recent browser UA is
 /// mandatory — Bing (and most sites) instantly block non-browser UAs.
-const CHROME_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
+/// (`pub(crate)` — also used by `commands/image.rs::download_image_bytes`.)
+pub(crate) const CHROME_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
      AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -780,6 +783,10 @@ pub async fn fetch_url_via_webview(
 /// 6. Size ceiling check (`util::MAX_IMAGE_BYTES` = 1 MiB) — oversized output
 ///    surfaces as `INVALID_IMAGE` (the same code the user-upload path uses)
 ///
+/// Steps 1, 3-5 live in shared `pub(crate)` helpers in `commands/image.rs`
+/// (`parse_http_url` + `download_image_bytes` + `crop_resize_encode_webp`),
+/// which `prepare_image` also calls — one download + crop pipeline, no drift.
+///
 /// Output is returned as raw bytes via `tauri::ipc::Response` — bypasses
 /// JSON serialization on the wire, mirroring `get_*_image`. Frontend reads
 /// it as `ArrayBuffer` and feeds it to `update<Entity>Image(bytes, "image/webp")`.
@@ -803,18 +810,13 @@ pub async fn fetch_and_prepare_image(
     output_width: u32,
     output_height: u32,
 ) -> Result<tauri::ipc::Response, DbError> {
-    use image::ImageEncoder;
-    use std::io::Cursor;
-
     // ── 1. Validate URL + args ──────────────────────────────────────────
-    let target = Url::parse(&url)
-        .map_err(|e| DbError::Internal(format!("invalid URL: {e}")))?;
-    // Restrict to http(s) — same guard as `fetch_url_via_webview`. The image
-    // crate is happy to decode file:/// and data: URLs, which would expose
-    // local file contents to the agent.
-    if !matches!(target.scheme(), "http" | "https") {
-        return Err(DbError::Internal("only http(s) URLs are supported".into()));
-    }
+    // URL parse + http(s) scheme guard live in the shared helper
+    // (`commands::image::parse_http_url`) so this command and
+    // `prepare_image` cannot drift. Same rationale as
+    // `fetch_url_via_webview`: the image crate is happy to decode file:///
+    // and data: URLs, which would expose local file contents to the agent.
+    let target = crate::commands::image::parse_http_url(&url)?;
     if !(aspect.is_finite() && aspect > 0.0) {
         return Err(DbError::Internal(format!("invalid aspect ratio: {aspect}")));
     }
@@ -825,84 +827,24 @@ pub async fn fetch_and_prepare_image(
     }
 
     // ── 2. Download bytes (reuse the Chrome UA + timeout from fetch_url) ─
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
-        .build()
-        .map_err(|e| DbError::Internal(format!("fetch_image client build: {e}")))?;
-
-    let resp = client
-        .get(&url)
-        .header(reqwest::header::USER_AGENT, CHROME_UA)
-        .header(
-            reqwest::header::ACCEPT,
-            "image/png,image/jpeg,image/webp,image/*;q=0.8,*/*;q=0.5",
-        )
-        .send()
-        .await
-        .map_err(|e| DbError::Internal(format!("fetch_image request failed: {e}")))?;
-
-    if !resp.status().is_success() {
-        return Err(DbError::Internal(format!(
-            "fetch_image got HTTP {}",
-            resp.status()
-        )));
-    }
-
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| DbError::Internal(format!("fetch_image read body failed: {e}")))?;
+    // Shared helper (`commands::image::download_image_bytes`) — identical
+    // client builder, UA, accept header, and timeout as before the
+    // extraction.
+    let bytes = crate::commands::image::download_image_bytes(&target).await?;
 
     // ── 3. Decode (auto-detect format) ──────────────────────────────────
     let img = image::load_from_memory(&bytes)
         .map_err(|e| DbError::Internal(format!("image decode failed: {e}")))?;
 
-    // ── 4. Center-crop to target aspect ─────────────────────────────────
-    //
-    // Cuts the longer dimension so the surviving frame exactly matches the
-    // target aspect. Half the excess is removed from each side, keeping the
-    // source image's center in the cropped frame. For portrait-orientation
-    // sources with a centered subject (typical wiki/baike head-shots), this
-    // keeps the subject intact. Landscape sources will have their sides cut,
-    // which is acceptable for the use case (agent can pick a different URL).
-    let (iw, ih) = (img.width(), img.height());
-    let src_aspect = iw as f64 / ih as f64;
-    let (crop_w, crop_h, crop_x, crop_y) = if src_aspect > aspect {
-        // Source is wider than target → crop horizontally.
-        let new_w = (((ih as f64) * aspect).round() as u32).min(iw).max(1);
-        let x = (iw - new_w) / 2;
-        (new_w, ih, x, 0u32)
-    } else {
-        // Source is taller than (or equal to) target → crop vertically.
-        let new_h = (((iw as f64) / aspect).round() as u32).min(ih).max(1);
-        let y = (ih - new_h) / 2;
-        (iw, new_h, 0u32, y)
-    };
-    let cropped = img.crop_imm(crop_x, crop_y, crop_w, crop_h);
-
-    // ── 5. Lanczos3 resize to exact output dimensions ───────────────────
-    //
-    // After center-crop the source aspect ≈ target aspect, so resize
-    // introduces no further distortion — just smoothing/scaling. Lanczos3
-    // is the highest-quality filter in `image`; slower than Catmull-Rom but
-    // fine for one-shot 300×400 / 640×360 work (sub-10ms on modern CPUs).
-    let resized = cropped.resize_exact(
+    // ── 4-6. Center-crop + Lanczos3 resize + lossless WebP encode ──────
+    // Shared helper (`commands::image::crop_resize_encode_webp`) — the
+    // verbatim crop math + resize + encode this command has always used.
+    let out_bytes = crate::commands::image::crop_resize_encode_webp(
+        &img,
+        aspect,
         output_width,
         output_height,
-        image::imageops::FilterType::Lanczos3,
-    );
-
-    // ── 6. Lossless WebP encode ─────────────────────────────────────────
-    let mut buf = Cursor::new(Vec::new());
-    image::codecs::webp::WebPEncoder::new_lossless(&mut buf)
-        .write_image(
-            resized.as_bytes(),
-            output_width,
-            output_height,
-            resized.color().into(),
-        )
-        .map_err(|e| DbError::Internal(format!("webp encode failed: {e}")))?;
-    let out_bytes = buf.into_inner();
+    )?;
 
     tracing::Span::current().record("output_bytes", out_bytes.len());
 
