@@ -326,6 +326,10 @@ pub fn run() {
             commands::search::search_web,
             commands::search::fetch_url,
             commands::search::fetch_url_via_webview,
+            // Web search provider settings (meta.db `app.webSearch` —
+            // ADR-0049 multi-provider dispatch).
+            commands::search::get_web_search_settings,
+            commands::search::set_web_search_settings,
             // Image-from-URL pipeline (download + center-crop + resize + WebP).
             // Used by agent `set_<entity>_image_from_url` tools.
             commands::search::fetch_and_prepare_image,
@@ -462,6 +466,56 @@ fn determine_startup_space(db: &db::DbManager) -> Option<String> {
 
     // 2. First Space by created_at (do_list_spaces already sorts by created_at)
     spaces.first().map(|s| s.id.clone())
+}
+
+/// Smoke-test bridge for `examples/webview_search_smoke.rs` (ADR-0049).
+///
+/// `#[doc(hidden)]` — NOT part of the public API. Exists only so the example
+/// bin can drive the SAME internal dispatch path the `search_web` command
+/// uses, with the provider injected by the caller (the example has no
+/// DbManager/meta.db, so it cannot read `app.webSearch` itself). Reachable
+/// providers are the keyless ones — the builtin engines and Exa (empty
+/// `api_keys` make the dispatcher take the keyless hosted-MCP route). The
+/// keyed BYOK providers (tavily/serper/jina/brave) need API keys the smoke
+/// example deliberately does not hold; test those through the app.
+#[doc(hidden)]
+pub mod smoke {
+    use crate::commands::search::{SearchResult, WebSearchProvider, WebSearchSettings};
+    use crate::db::DbError;
+
+    /// Run one web search against a live engine. `provider` is a kebab-case
+    /// slug: "builtin-bing", "builtin-baidu", or "exa" (keyless MCP path —
+    /// dispatched with default/empty api_keys).
+    pub async fn run(
+        app: &tauri::AppHandle,
+        provider: &str,
+        query: &str,
+        max_results: u8,
+    ) -> Result<Vec<SearchResult>, DbError> {
+        let provider = match provider {
+            "builtin-bing" => WebSearchProvider::BuiltinBing,
+            "builtin-baidu" => WebSearchProvider::BuiltinBaidu,
+            "exa" => WebSearchProvider::Exa,
+            other => {
+                return Err(DbError::Internal(format!(
+                    "unknown or unsupported smoke provider '{other}' \
+                     (expected builtin-bing / builtin-baidu / exa)"
+                )));
+            }
+        };
+        let settings = WebSearchSettings {
+            provider,
+            api_keys: Default::default(),
+        };
+        crate::commands::search::dispatch_web_search(
+            app,
+            &settings,
+            query,
+            None,
+            Some(max_results as usize),
+        )
+        .await
+    }
 }
 
 /// Read the persisted verbosity tier (`settings.app.logLevel`) from
