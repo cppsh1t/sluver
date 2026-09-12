@@ -41,7 +41,9 @@ export function webSearchTools(): Record<string, ToolDef> {
       description:
         "Search the public web via Bing. Use when you need real-world information not in the worldbuilding database: " +
         "historical facts, geography, scientific concepts, public figures, current events, names of real places or people, etc. " +
-        "Returns a list of results each with a title, URL, and short snippet.",
+        "Returns a list of results each with a title, URL, and short snippet. " +
+        "Query discipline: keep queries to 3-8 keywords rather than full sentences. " +
+        "For time-sensitive topics, append the year to the query (e.g. \"oscar winners 2026\").",
       inputSchema: searchInputSchema,
       consentLevel: "auto",
       execute: async (input) => {
