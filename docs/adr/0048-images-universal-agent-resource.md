@@ -43,6 +43,8 @@ One tool per image-bearing entity (world, character, phase, location, item, lore
 
 A filename miss returns a structured `{error: "attachment_not_found", filename, message}` result, never a throw — the `look_at` convention: the model likely mis-copied the filename and should re-check the marker, not conclude its call shape was wrong. Consent `configurable`, matching `set_*_image_from_url` (a create-class overwrite).
 
+The filename contract is closed on the OTHER side by the Derived Model Input pipeline. On the vision pass-through path (`imageInputSupported` `true`/unknown), the model received the pixels but NO filename anywhere: provider mappings drop `FilePart.filename` for image content (OpenAI `image_url`, Anthropic `source`), so the from-attachment tools were unaddressable even though their parameter was technically describable. The fix rides the existing `downgradeImageParts` transform (ADR-0044 D9): immediately after each filename-bearing image FilePart it injects a companion annotation — `[image attachment: "..." — image content delivered in this message]` — at the Derived Model Input layer only, never persisted (ADR-0028 keeps the Persisted Thread verbatim). Text next to the part is the only reliable filename channel, and the shared `[image attachment: "..."` prefix keeps tool teachings substring-compatible with the NOT-delivered downgrade marker, so one description serves both paths.
+
 **Rejected:** widening `set_<entity>_image_from_url` to also accept `filename` (the name would lie about the source; the exactly-one-source schema discipline and the prescriptive per-parameter descriptions would blur into "sometimes a URL, sometimes a filename").
 
 ### 3. `look_at` entity source: `EntityImageLookup` on ToolContext
