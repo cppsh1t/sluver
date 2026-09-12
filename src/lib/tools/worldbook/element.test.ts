@@ -1,7 +1,8 @@
 /**
  * Element domain tool tests (Location / Item / Lore) — representative
  * coverage of the shared read-merge-write, best-effort delete, create
- * passthrough, and per-entity crop specs.
+ * passthrough, per-entity crop specs (URL source), the attachment-sourced
+ * image tools, and the clear-image tools.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -14,7 +15,14 @@ import {
   getLocation,
   updateLocation,
 } from "@/api/element";
-import { updateItemImage, updateLocationImage } from "@/api/image";
+import {
+  clearItemImage,
+  clearLocationImage,
+  clearLoreImage,
+  prepareImage,
+  updateItemImage,
+  updateLocationImage,
+} from "@/api/image";
 import { fetchAndPrepareImage } from "@/api/search";
 import {
   itemIdSchema,
@@ -51,6 +59,10 @@ vi.mock("@/api/element", () => ({
 }));
 
 vi.mock("@/api/image", () => ({
+  clearItemImage: vi.fn(),
+  clearLocationImage: vi.fn(),
+  clearLoreImage: vi.fn(),
+  prepareImage: vi.fn(async () => new Uint8Array([6, 6]).buffer),
   updateItemImage: vi.fn(),
   updateLocationImage: vi.fn(),
   updateLoreImage: vi.fn(),
@@ -78,6 +90,7 @@ function makeStubCtx(overrides: Partial<ToolContext> = {}): ToolContext {
     activatedSkills: new Set(),
     visionConfig: null,
     attachmentLookup: { findByFilename: vi.fn(() => null) },
+    entityImageLookup: { findByEntity: vi.fn(async () => null) },
     ...overrides,
   };
 }
@@ -259,5 +272,113 @@ describe("image-from-URL tools", () => {
       imageUrl: "https://example.com/map.jpg",
     });
     expect(good.success).toBe(true);
+  });
+});
+
+describe("image-from-attachment tools", () => {
+  const ATTACHMENT = {
+    dataUrl: "data:image/png;base64,iVBORw0KGgo=",
+    mediaType: "image/png",
+  };
+
+  function ctxWithAttachment(): ToolContext {
+    return makeStubCtx({
+      attachmentLookup: { findByFilename: vi.fn(() => ATTACHMENT) },
+    });
+  }
+
+  it("set_location_image_from_attachment compresses to the 4:3 400×300 spec", async () => {
+    const result = await locationTools().set_location_image_from_attachment.execute(
+      { id: "loc-1", filename: "map.png" },
+      ctxWithAttachment(),
+      call,
+    );
+
+    expect(prepareImage).toHaveBeenCalledWith({
+      dataBase64: "iVBORw0KGgo=",
+      width: 400,
+      height: 300,
+    });
+    expect(updateLocationImage).toHaveBeenCalledWith(
+      spaceId,
+      worldId,
+      locationId,
+      new Uint8Array([6, 6]),
+      "image/webp",
+    );
+    expect(result).toEqual({ updated: true });
+  });
+
+  it("set_item_image_from_attachment compresses to the 1:1 256×256 spec", async () => {
+    const result = await itemTools().set_item_image_from_attachment.execute(
+      { id: "item-1", filename: "sword.png" },
+      ctxWithAttachment(),
+      call,
+    );
+
+    expect(prepareImage).toHaveBeenCalledWith({
+      dataBase64: "iVBORw0KGgo=",
+      width: 256,
+      height: 256,
+    });
+    expect(updateItemImage).toHaveBeenCalledWith(
+      spaceId,
+      worldId,
+      itemId,
+      new Uint8Array([6, 6]),
+      "image/webp",
+    );
+    expect(result).toEqual({ updated: true });
+  });
+
+  it("returns a structured attachment_not_found error on a filename miss", async () => {
+    const result = await loreTools().set_lore_image_from_attachment.execute(
+      { id: "lore-1", filename: "missing.png" },
+      ctx, // default stub: findByFilename → null
+      call,
+    );
+
+    expect(result).toEqual({
+      error: "attachment_not_found",
+      filename: "missing.png",
+      message: expect.stringContaining("missing.png"),
+    });
+    expect(prepareImage).not.toHaveBeenCalled();
+  });
+});
+
+describe("clear image tools", () => {
+  it("clear_location_image / clear_item_image / clear_lore_image echo {cleared, id}", async () => {
+    const loc = await locationTools().clear_location_image.execute(
+      { id: "loc-1" },
+      ctx,
+      call,
+    );
+    expect(clearLocationImage).toHaveBeenCalledWith(
+      spaceId,
+      worldId,
+      locationId,
+    );
+    expect(loc).toEqual({ cleared: true, id: "loc-1" });
+
+    const item = await itemTools().clear_item_image.execute(
+      { id: "item-1" },
+      ctx,
+      call,
+    );
+    expect(clearItemImage).toHaveBeenCalledWith(spaceId, worldId, itemId);
+    expect(item).toEqual({ cleared: true, id: "item-1" });
+
+    const lore = await loreTools().clear_lore_image.execute(
+      { id: "lore-1" },
+      ctx,
+      call,
+    );
+    expect(clearLoreImage).toHaveBeenCalledWith(
+      spaceId,
+      worldId,
+      loreIdSchema.parse("lore-1"),
+    );
+    expect(lore).toEqual({ cleared: true, id: "lore-1" });
   });
 });

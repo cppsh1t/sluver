@@ -5,7 +5,8 @@
  * tags) and API shape. This file defines shared input schemas and exports one
  * factory per entity type.
  *
- * Consent levels: list/get → `auto`, create → `configurable`, update/delete → `always`.
+ * Consent levels: list/get → `auto`, create + set_*_image_from_* →
+ * `configurable`, update/delete/clear_*_image → `always`.
  */
 
 import { z } from "zod";
@@ -31,11 +32,18 @@ import {
   updateLore,
 } from "@/api/element";
 import {
+  clearItemImage,
+  clearLocationImage,
+  clearLoreImage,
   updateItemImage,
   updateLocationImage,
   updateLoreImage,
 } from "@/api/image";
 import type { ToolDef } from "../types";
+import {
+  executeSetImageFromAttachment,
+  filenameSchema,
+} from "./image-from-attachment";
 import {
   ENTITY_IMAGE_CROP_SPEC,
   executeSetImageFromUrl,
@@ -164,6 +172,56 @@ export function locationTools(): Record<string, ToolDef> {
         );
       },
     },
+
+    // ── Image from attachment (configurable) ─────────────────────────────
+    //
+    // Same 4:3 → 400×300 → lossless WebP pipeline as the from-URL tool,
+    // but the source is an in-conversation attachment; `prepare_image`
+    // compresses it into the canonical form (ADR-0048).
+
+    set_location_image_from_attachment: {
+      description:
+        "Set a location's image from a file the user attached in this " +
+        "conversation — e.g. a map or photo they supplied themselves. Pass " +
+        "the EXACT filename from the `[image attachment: \"...\"]` marker; " +
+        "the attachment is fetched from the thread, center-cropped to 4:3 " +
+        "landscape, resized to 400×300, and re-encoded as lossless WebP " +
+        "(large photos are compressed automatically). Any previous image is " +
+        "overwritten. Use set_location_image_from_url instead when the " +
+        "image lives at a link.",
+      inputSchema: z.object({
+        id: z.string().describe("The location's UUID."),
+        filename: filenameSchema,
+      }),
+      consentLevel: "configurable",
+      execute: async (input, ctx) => {
+        const { id, filename } = input as { id: string; filename: string };
+        return executeSetImageFromAttachment(
+          ctx,
+          filename,
+          ENTITY_IMAGE_CROP_SPEC.location,
+          (bytes, mime) =>
+            updateLocationImage(ctx.spaceId, ctx.worldId, id as never, bytes, mime),
+        );
+      },
+    },
+
+    // ── Clear image (always) ──────────────────────────────────────────────
+
+    clear_location_image: {
+      description:
+        "Remove a location's image. The location and all references to it " +
+        "are untouched — only the stored image bytes are discarded, and " +
+        "they cannot be recovered afterwards. Confirm with the user first " +
+        "if they did not explicitly ask for the removal.",
+      inputSchema: idSchema,
+      consentLevel: "always",
+      execute: async (input, ctx) => {
+        const { id } = input as { id: string };
+        await clearLocationImage(ctx.spaceId, ctx.worldId, id as never);
+        return { cleared: true, id };
+      },
+    },
   };
 }
 
@@ -267,6 +325,54 @@ export function itemTools(): Record<string, ToolDef> {
         );
       },
     },
+
+    // ── Image from attachment (configurable) ─────────────────────────────
+    //
+    // Same 1:1 → 256×256 → lossless WebP pipeline as the from-URL tool.
+
+    set_item_image_from_attachment: {
+      description:
+        "Set an item's image from a file the user attached in this " +
+        "conversation — e.g. an artifact photo they supplied themselves. " +
+        "Pass the EXACT filename from the `[image attachment: \"...\"]` " +
+        "marker; the attachment is fetched from the thread, center-cropped " +
+        "to a 1:1 square, resized to 256×256, and re-encoded as lossless " +
+        "WebP (large photos are compressed automatically). Any previous " +
+        "image is overwritten. Use set_item_image_from_url instead when " +
+        "the image lives at a link.",
+      inputSchema: z.object({
+        id: z.string().describe("The item's UUID."),
+        filename: filenameSchema,
+      }),
+      consentLevel: "configurable",
+      execute: async (input, ctx) => {
+        const { id, filename } = input as { id: string; filename: string };
+        return executeSetImageFromAttachment(
+          ctx,
+          filename,
+          ENTITY_IMAGE_CROP_SPEC.item,
+          (bytes, mime) =>
+            updateItemImage(ctx.spaceId, ctx.worldId, id as never, bytes, mime),
+        );
+      },
+    },
+
+    // ── Clear image (always) ──────────────────────────────────────────────
+
+    clear_item_image: {
+      description:
+        "Remove an item's image. The item and all references to it are " +
+        "untouched — only the stored image bytes are discarded, and they " +
+        "cannot be recovered afterwards. Confirm with the user first if " +
+        "they did not explicitly ask for the removal.",
+      inputSchema: idSchema,
+      consentLevel: "always",
+      execute: async (input, ctx) => {
+        const { id } = input as { id: string };
+        await clearItemImage(ctx.spaceId, ctx.worldId, id as never);
+        return { cleared: true, id };
+      },
+    },
   };
 }
 
@@ -366,6 +472,54 @@ export function loreTools(): Record<string, ToolDef> {
           (bytes, mime) =>
             updateLoreImage(ctx.spaceId, ctx.worldId, id as never, bytes, mime),
         );
+      },
+    },
+
+    // ── Image from attachment (configurable) ─────────────────────────────
+    //
+    // Same 1:1 → 256×256 → lossless WebP pipeline as `set_lore_image_from_url`.
+
+    set_lore_image_from_attachment: {
+      description:
+        "Set a lore entry's image from a file the user attached in this " +
+        "conversation — e.g. a symbol or illustration they supplied " +
+        "themselves. Pass the EXACT filename from the `[image attachment: " +
+        "\"...\"]` marker; the attachment is fetched from the thread, " +
+        "center-cropped to a 1:1 square, resized to 256×256, and re-encoded " +
+        "as lossless WebP (large photos are compressed automatically). Any " +
+        "previous image is overwritten. Use set_lore_image_from_url instead " +
+        "when the image lives at a link.",
+      inputSchema: z.object({
+        id: z.string().describe("The lore entry's UUID."),
+        filename: filenameSchema,
+      }),
+      consentLevel: "configurable",
+      execute: async (input, ctx) => {
+        const { id, filename } = input as { id: string; filename: string };
+        return executeSetImageFromAttachment(
+          ctx,
+          filename,
+          ENTITY_IMAGE_CROP_SPEC.lore,
+          (bytes, mime) =>
+            updateLoreImage(ctx.spaceId, ctx.worldId, id as never, bytes, mime),
+        );
+      },
+    },
+
+    // ── Clear image (always) ──────────────────────────────────────────────
+
+    clear_lore_image: {
+      description:
+        "Remove a lore entry's image. The lore entry and all references to " +
+        "it are untouched — only the stored image bytes are discarded, and " +
+        "they cannot be recovered afterwards. Confirm with the user first " +
+        "if they did not explicitly ask for the removal.",
+      inputSchema: idSchema,
+      consentLevel: "always",
+      execute: async (input, ctx) => {
+        const { id } = input as { id: string };
+        await clearLoreImage(ctx.spaceId, ctx.worldId, id as never);
+        return { cleared: true, id };
       },
     },
   };
