@@ -53,6 +53,7 @@ Tauri v2 desktop app for **worldbuilding & novel writing**. React 19 + TypeScrip
   - [ADR-0045](./docs/adr/0045-look-at-tool-vision-agent.md) — `look_at` tool backed by a dedicated seeded `vision` agent (one-shot `generateText` on the AgentConfig-resolved model; filename-or-URL input; `consentLevel: "auto"`; configured = enabled like `namer`)
   - [ADR-0046](./docs/adr/0046-custom-llm-providers.md) — Custom LLM providers via JSON in global Settings (models.dev-compatible, stored in meta.db, merged Rust-side into catalog; custom wins on id collision)
   - [ADR-0047](./docs/adr/0047-user-initiated-message-mutations.md) — User-initiated message mutations (pair-aware delete, in-place body edit for user + assistant messages; durable-first relaxation of ADR-0028 append-only)
+  - [ADR-0048](./docs/adr/0048-images-universal-agent-resource.md) — Images as a universal agent resource: `prepare_image` compression bridge (attachment bytes or URL in, ≤1 MiB canonical WebP out; dual crop/fit modes), `set_*_image_from_attachment` + `clear_*_image` + scene-gallery tools, and a `look_at` entity-image source via `entityImageLookup`
 
 ## Git commit style
 
@@ -114,9 +115,9 @@ db/
   manager.rs      # DbManager — the ONLY managed State. with_meta() / with_world() closure pattern
   migrations.rs   # ALL migrations inline as &str SQL — NO .sql files. META_MIGRATIONS + WORLD_MIGRATIONS
   error.rs        # DbError enum — serializes to ErrorPayload {code, message, args} (see Internationalization section)
-commands/         # 26 modules / ~160 commands, one file per domain: world, space, setting, window, tray,
+commands/         # 27 modules / ~161 commands, one file per domain: world, space, setting, window, tray,
                   #   character, element, event, novel, note, conversation, session, attachment, ai, skill,
-                  #   shell, search, world_search, grep, timeline, export_book, font, notification,
+                  #   shell, search, world_search, grep, image, timeline, export_book, font, notification,
                   #   world_config, diagnostics — plus events.rs (shared `entity-changed` emit helpers,
                   #   NOT a command domain; note the singular/plural split: event.rs = Event entity CRUD)
 models/           # One file per entity: structs with #[serde(rename_all = "camelCase")]
