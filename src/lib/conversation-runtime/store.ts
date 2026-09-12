@@ -813,13 +813,14 @@ function fetchEntityImageBytes(
  * the prompt must never advertise a tool that cannot run, so the teaching
  * rides the SAME registration-time gate as the tool itself
  * (`visionConfig != null`), exactly like the `<available_skills>` catalog
- * below. Hedged wording ("may not reach you as pixels") stays accurate
- * when the bound chat model is itself vision-capable — the downgrade
- * markers simply never appear in that configuration.
+ * below. Wording covers BOTH attachment paths: a non-vision bound model
+ * sees NOT-delivered downgrade markers (ADR-0044 D9), a vision-capable one
+ * sees the pixels plus a delivered companion annotation (ADR-0048) — the
+ * teaching must tell the model how to tell the two markers apart.
  */
 const LOOK_AT_PROMPT_BLOCK = [
   "<image_access>",
-  'Images the user attaches may not reach you as pixels: they can arrive as `[image attachment: "..." — image content NOT delivered...]` markers carrying only a filename, and image URLs in text cannot be viewed directly. When you see such a marker, or the user references an image by URL, call the look_at tool with the EXACT filename from the marker (or the image\'s URL) to get a description from a separate vision model.',
+  'Images the user attaches arrive WITH a `[image attachment: "filename" — ...]` marker telling you whether the pixels reached you. If the marker says image content NOT delivered you cannot see the image — call the look_at tool with the EXACT filename from the marker. If it says image content delivered in this message you already see the pixels (no look_at needed; the filename is the handle for the image tools, e.g. set_character_image_from_attachment). Image URLs in text cannot be viewed directly — call look_at with the URL. Every look_at call returns a description from a separate vision model.',
   'Entity images you or the user have stored CAN also be examined: call look_at with entityKind + entityId to describe a character/novel/event/element image (works for any entity whose hasImage is true — get_/list_ tools report it), entityKind "scene_image" with an image id from list_scene_images for a scene gallery image, or entityKind "world" ALONE (no id) for the current world\'s cover. This is how you verify a portrait or cover actually shows what it should.',
   "Pass question to focus on what you need to know. Use the description before answering questions about the image's content.",
   "</image_access>",
