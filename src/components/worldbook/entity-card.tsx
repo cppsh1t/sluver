@@ -65,6 +65,12 @@ interface EntityCardProps {
   selected?: boolean;
   onSelect?: () => void;
   onRemove?: () => void;
+  /**
+   * Layout variant. `"full"` (default) = catalog card with image banner.
+   * `"compact"` = single-row thumbnail card mirroring the event-row pattern
+   * in scene-card.tsx, for dense ref lists.
+   */
+  variant?: "full" | "compact";
 }
 
 function EntityCard({
@@ -83,6 +89,7 @@ function EntityCard({
   selected,
   onSelect,
   onRemove,
+  variant = "full",
 }: EntityCardProps) {
   const { t } = useTranslation(["worldbook", "common"]);
   const entityName = t(`worldbook:entityName.${entityType}.singular`);
@@ -110,6 +117,72 @@ function EntityCard({
       e.preventDefault();
       handleCardClick();
     }
+  }
+
+  // Compact variant: single-row card (event-row pattern from scene-card.tsx).
+  // No banner, tags, timestamp, dropdown, or delete dialog — but identical
+  // interaction behavior (role/tabIndex/click/keydown, selection ring,
+  // top-right remove button / tick).
+  if (variant === "compact") {
+    return (
+      <div
+        role={interactive ? "button" : undefined}
+        tabIndex={interactive ? 0 : undefined}
+        onClick={interactive ? handleCardClick : undefined}
+        onKeyDown={interactive ? handleCardKeyDown : undefined}
+        className={cn(
+          "relative flex items-center gap-2 rounded-md border px-3 py-2",
+          interactive && "cursor-pointer",
+          selectable && (onRemove || selected) && "pr-8",
+          selected && "ring-2 ring-primary",
+        )}
+      >
+        <EntityAvatar
+          kind={entityType}
+          spaceId={spaceId as SpaceId}
+          worldId={worldId}
+          id={id}
+          aspect={1}
+          alt={name}
+          fallbackIcon={
+            <HugeiconsIcon
+              icon={Icon}
+              strokeWidth={2}
+              className="size-4 text-muted-foreground"
+            />
+          }
+          className="size-10 shrink-0 rounded-md"
+        />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium">{name}</p>
+          {description && (
+            <p className="line-clamp-1 text-xs text-muted-foreground">
+              {description}
+            </p>
+          )}
+        </div>
+
+        {selectable && selected && !onRemove && (
+          <HugeiconsIcon
+            icon={Tick02Icon}
+            strokeWidth={2}
+            className="absolute top-2 right-2 size-4 text-primary"
+          />
+        )}
+        {selectable && onRemove && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+            className="absolute top-2 right-2 flex size-6 items-center justify-center rounded-full bg-background/80 text-muted-foreground hover:bg-background hover:text-foreground"
+          >
+            <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} className="size-4" />
+          </button>
+        )}
+      </div>
+    );
   }
 
   return (
