@@ -1,9 +1,11 @@
 /**
  * Image IPC API — single-cover / portrait / illustration pipeline.
  *
- * 24 thin wrappers (3 ops × 8 entities) over the Rust `*_image` commands.
- * Image bytes are NOT part of the entity schema — they live in dedicated
- * sidecar columns and are read/written exclusively through this module.
+ * 24 thin wrappers (3 ops × 8 entities) over the Rust `*_image` commands,
+ * plus {@link prepareImage} — the source-agnostic compression pipeline the
+ * agent's attachment-sourced image tools route through (ADR-0048). Image
+ * bytes are NOT part of the entity schema — they live in dedicated sidecar
+ * columns and are read/written exclusively through this module.
  *
  * ## Wire format
  *
@@ -346,6 +348,59 @@ export async function getEventImage(
     if (toErrorPayload(e).code === 'NOT_FOUND') return null;
     throw e;
   }
+}
+
+// ─── Prepare (compression pipeline — ADR-0048) ───────────────────────────────
+
+/**
+ * Input for the `prepare_image` command — the Rust-side image compression
+ * pipeline shared by every agent image tool that does NOT fetch from a URL
+ * (the URL path has its own `fetch_and_prepare_image`).
+ *
+ * Contract (frozen, see the command in `commands/image.rs`):
+ * - EXACTLY ONE source: `dataBase64` (base64 payload, no `data:` prefix) or
+ *   `url` (direct http(s) image URL).
+ * - EXACTLY ONE mode: `width` + `height` TOGETHER (center-crop to the aspect,
+ *   Lanczos3 resize to the exact dimensions, lossless WebP encode — the same
+ *   pipeline behind `fetch_and_prepare_image`) OR `maxDimension` alone
+ *   (fit-within resize preserving aspect ratio, WebP encode).
+ * - Output is ALWAYS lossless-or-lossy WebP bytes under 1 MiB, returned as raw
+ *   bytes via `tauri::ipc::Response` (same binary channel as the
+ *   `get_<entity>_image` reads above).
+ */
+export interface PrepareImageInput {
+  /** Base64-encoded image bytes (no `data:` URL prefix — payload only). */
+  readonly dataBase64?: string;
+  /** Direct http(s) URL of the image bytes. */
+  readonly url?: string;
+  /** Exact output width (center-crop mode — requires `height`). */
+  readonly width?: number;
+  /** Exact output height (center-crop mode — requires `width`). */
+  readonly height?: number;
+  /** Fit-within ceiling (largest edge, aspect preserved — exclusive of crop). */
+  readonly maxDimension?: number;
+}
+
+/**
+ * Compress / crop an image into an entity-ready form WITHOUT writing it.
+ *
+ * The agent's attachment-sourced image tools use this to bridge the size gap
+ * between chat attachments (≤5 MiB, any of JPEG/PNG/WebP) and entity image
+ * columns (≤1 MiB canonical WebP): the bytes go in, the entity's canonical
+ * crop comes out, and only then does the caller run the actual
+ * `update<Entity>Image` write.
+ *
+ * @returns Raw WebP bytes (ArrayBuffer) ready for any `update<Entity>Image`
+ *          wrapper or `addSceneImage`.
+ */
+export function prepareImage(input: PrepareImageInput): Promise<ArrayBuffer> {
+  // The Rust command takes a single `input: PrepareImageInput` struct
+  // parameter, so the payload rides under the `input` key (same convention
+  // as `createX(worldId, input)` → `{ worldId, input }`). A flat spread
+  // would desynchronize the seam: the command would find no `input` arg
+  // and fail arg deserialization at RUNTIME — invisible to type-check and
+  // unit tests, which mock this module.
+  return call<ArrayBuffer>('prepare_image', { input });
 }
 
 // ─── Novel ───────────────────────────────────────────────────────────────────
