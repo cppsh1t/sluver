@@ -7,7 +7,7 @@
  * own a 1:N image gallery (`scene_images` sidecar table) with its own tool
  * surface below.
  *
- * Consent levels: list/get → `auto`, create + set_*_image_from_* +
+ * Consent levels: list/get/count → `auto`, create + set_*_image_from_* +
  * add_scene_image_* → `configurable`, update/delete/reorder/clear_*_image →
  * `always`.
  */
@@ -43,6 +43,8 @@ import {
   listSceneImageIds,
 } from "@/api/scene-image";
 import { clearNovelImage, updateNovelImage } from "@/api/image";
+import i18n from "@/i18n";
+import { countWords } from "@/lib/word-count";
 import type { ToolDef } from "../types";
 import {
   executeAddSceneImageFromAttachment,
@@ -382,6 +384,27 @@ export function sceneTools(): Record<string, ToolDef> {
       execute: async (input, ctx) => {
         const { id } = input as { id: string };
         return getScene(ctx.spaceId, ctx.worldId, id as never);
+      },
+    },
+    count_scene_words: {
+      description:
+        "Count the word count of a scene's prose content without fetching " +
+        "the full text — useful for progress checks against the scene's " +
+        "word-count requirement. CJK text counts non-whitespace characters; " +
+        "other languages count whitespace-separated words (the same " +
+        "semantics as the counts shown in the app UI). Returns the scene's " +
+        "title, the count, and its word-count requirement when one is set.",
+      inputSchema: z.object({ id: z.string().describe("The scene's UUID.") }),
+      consentLevel: "auto",
+      execute: async (input, ctx) => {
+        const { id } = input as { id: string };
+        const scene = await getScene(ctx.spaceId, ctx.worldId, id as never);
+        return {
+          id: scene.id,
+          title: scene.title,
+          wordCount: countWords(scene.content, i18n.language),
+          wordCountRequirements: scene.wordCountRequirements,
+        };
       },
     },
     create_scene: {

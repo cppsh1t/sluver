@@ -90,6 +90,15 @@ vi.mock("@/api/search", () => ({
   fetchAndPrepareImage: vi.fn(async () => new Uint8Array([3, 3]).buffer),
 }));
 
+const i18nState = vi.hoisted(() => ({ language: "zh-CN" }));
+
+vi.mock("@/i18n", () => ({
+  default: i18nState,
+  // @/types/setting.ts imports these named exports at runtime (z.enum) — keep them defined.
+  AUTO_LOCALE: "auto",
+  SUPPORTED_LOCALES: ["zh-CN", "en"],
+}));
+
 const spaceId = spaceIdSchema.parse("space-1");
 const worldId = worldIdSchema.parse("world-1");
 const novelId = novelIdSchema.parse("nv-1");
@@ -228,6 +237,83 @@ describe("update_scene", () => {
     // Omitted junctions keep the current values.
     expect(input.eventIds).toEqual(["ev-9"]);
     expect(input.locationId).toEqual(locationId);  });
+});
+
+describe("count_scene_words", () => {
+  it("counts non-whitespace characters for CJK languages (zh)", async () => {
+    const scene = makeScene({ content: "港口 燃烧。\n烟雾升腾。" });
+    vi.mocked(getScene).mockResolvedValue(scene);
+
+    const result = await sceneTools().count_scene_words.execute(
+      { id: "sc-1" },
+      ctx,
+      call,
+    );
+
+    expect(getScene).toHaveBeenCalledWith(spaceId, worldId, sceneId);
+    expect(result).toEqual({
+      id: sceneId,
+      title: "The burning harbor",
+      wordCount: 10, // "港口燃烧。烟雾升腾。" — 10 non-whitespace chars
+      wordCountRequirements: "",
+    });
+  });
+
+  it("counts whitespace-separated words for non-CJK languages (en)", async () => {
+    i18nState.language = "en";
+    try {
+      const scene = makeScene({ content: "The harbor burns at anchor tonight." });
+      vi.mocked(getScene).mockResolvedValue(scene);
+
+      const result = await sceneTools().count_scene_words.execute(
+        { id: "sc-1" },
+        ctx,
+        call,
+      );
+
+      expect(result).toEqual({
+        id: sceneId,
+        title: "The burning harbor",
+        wordCount: 6,
+        wordCountRequirements: "",
+      });
+    } finally {
+      i18nState.language = "zh-CN";
+    }
+  });
+
+  it("returns 0 for empty content", async () => {
+    const scene = makeScene({ content: "" });
+    vi.mocked(getScene).mockResolvedValue(scene);
+
+    const result = await sceneTools().count_scene_words.execute(
+      { id: "sc-1" },
+      ctx,
+      call,
+    );
+
+    expect(result).toEqual({
+      id: sceneId,
+      title: "The burning harbor",
+      wordCount: 0,
+      wordCountRequirements: "",
+    });
+  });
+
+  it("surfaces the scene's word-count requirement when set", async () => {
+    const scene = makeScene({ wordCountRequirements: "目标 3000 字" });
+    vi.mocked(getScene).mockResolvedValue(scene);
+
+    const result = await sceneTools().count_scene_words.execute(
+      { id: "sc-1" },
+      ctx,
+      call,
+    );
+
+    expect(result).toEqual(
+      expect.objectContaining({ wordCountRequirements: "目标 3000 字" }),
+    );
+  });
 });
 
 describe("delete_novel", () => {
