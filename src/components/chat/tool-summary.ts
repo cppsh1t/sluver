@@ -162,7 +162,8 @@ export function domainFromUrl(url: string | undefined): string | undefined {
  *
  * Special cases: `get_current_time`, `web_search`, `web_fetch`,
  * `web_fetch_via_browser`, `add_phase`, `count_character_refs`,
- * `count_phase_refs`, `grep_notes` (search over the note entity),
+ * `count_phase_refs`, `count_scene_words`, `grep_notes` (search over the
+ * note entity),
  * `run_shell_command` (ADR-0041 — no entity; the command string is the
  * payload of record). Generic tools follow `{action}_{entity}`; reorder
  * tools use the plural entity (`reorder_phases`) which is singularized.
@@ -191,6 +192,9 @@ function parseToolName(toolName: string): {
   }
   if (toolName === "count_phase_refs") {
     return { action: "count", entityType: "phase" };
+  }
+  if (toolName === "count_scene_words") {
+    return { action: "count", entityType: "scene" };
   }
   if (toolName === "grep_notes") {
     // `grep` prefix isn't a parseable action — map the notes-scoped search
@@ -247,7 +251,7 @@ const ID_FIELDS = ["id", "phaseId", "noteId"] as const;
 const ARRAY_FIELDS = ["phaseIds", "chapterIds", "sceneIds"] as const;
 
 /** scope-id input fields (list/count). */
-const SCOPE_ID_FIELDS = ["novelId", "chapterId", "characterId", "phaseId"] as const;
+const SCOPE_ID_FIELDS = ["novelId", "chapterId", "characterId", "phaseId", "id"] as const;
 
 /** Build the param rows for a given action from the input record. */
 function buildParamRows(
