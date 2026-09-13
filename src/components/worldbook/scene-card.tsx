@@ -43,6 +43,8 @@ import {
   Link02Icon,
   MoreHorizontalIcon,
   PencilEdit01Icon,
+  TextCreationIcon,
+  TextNumberSignIcon,
 } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
 import { countWords } from "@/lib/word-count";
@@ -68,6 +70,8 @@ type ScenePatch = Partial<
     | "title"
     | "summary"
     | "content"
+    | "writingRequirements"
+    | "wordCountRequirements"
     | "startAt"
     | "endAt"
     | "characterRefs"
@@ -133,6 +137,8 @@ function SceneCard({
   const [titleDraft, setTitleDraft] = useState(scene.title);
   const [summaryOpen, setSummaryOpen] = useState(true);
   const [refsOpen, setRefsOpen] = useState(false);
+  const [writingRequirementsOpen, setWritingRequirementsOpen] = useState(false);
+  const [wordCountOpen, setWordCountOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [itemPickerOpen, setItemPickerOpen] = useState(false);
   const [eventPickerOpen, setEventPickerOpen] = useState(false);
@@ -357,6 +363,55 @@ function SceneCard({
             placeholder={t("novel:scene.summaryPlaceholder")}
             className="mt-1 min-h-[60px] text-sm"
             rows={2}
+          />
+        )}
+      </div>
+
+      {/* Collapsible writing requirements (编写要求) */}
+      <div className="px-4 pt-1">
+        <button
+          type="button"
+          onClick={() => setWritingRequirementsOpen((v) => !v)}
+          className="flex items-center gap-1 text-xs text-muted-foreground/70 hover:text-muted-foreground"
+        >
+          <HugeiconsIcon icon={TextCreationIcon} strokeWidth={2} className="size-3.5" />
+          {writingRequirementsOpen
+            ? t("novel:scene.writingRequirementsHide")
+            : t("novel:scene.writingRequirementsShow")}
+        </button>
+        {writingRequirementsOpen && (
+          <Textarea
+            value={scene.writingRequirements}
+            onChange={(e) =>
+              onFieldChange({ writingRequirements: e.currentTarget.value })
+            }
+            placeholder={t("novel:scene.writingRequirementsPlaceholder")}
+            className="mt-1 min-h-[60px] text-sm"
+            rows={2}
+          />
+        )}
+      </div>
+
+      {/* Collapsible word count requirements (字数要求) */}
+      <div className="px-4 pt-1">
+        <button
+          type="button"
+          onClick={() => setWordCountOpen((v) => !v)}
+          className="flex items-center gap-1 text-xs text-muted-foreground/70 hover:text-muted-foreground"
+        >
+          <HugeiconsIcon icon={TextNumberSignIcon} strokeWidth={2} className="size-3.5" />
+          {wordCountOpen
+            ? t("novel:scene.wordCountHide")
+            : t("novel:scene.wordCountShow")}
+        </button>
+        {wordCountOpen && (
+          <Input
+            value={scene.wordCountRequirements}
+            onChange={(e) =>
+              onFieldChange({ wordCountRequirements: e.currentTarget.value })
+            }
+            placeholder={t("novel:scene.wordCountPlaceholder")}
+            className="mt-1 h-7 text-sm"
           />
         )}
       </div>
