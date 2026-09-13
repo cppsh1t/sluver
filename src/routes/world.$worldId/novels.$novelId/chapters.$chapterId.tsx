@@ -213,6 +213,8 @@ function ChapterWorkspacePage() {
             title: scene.title,
             summary: scene.summary,
             content: scene.content,
+            writingRequirements: scene.writingRequirements,
+            wordCountRequirements: scene.wordCountRequirements,
             startAt: scene.startAt,
             endAt: scene.endAt,
             characterRefs: scene.characterRefs,

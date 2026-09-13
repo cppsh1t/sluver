@@ -418,6 +418,8 @@ export function sceneTools(): Record<string, ToolDef> {
           title: changes.title ?? current.title,
           summary: changes.summary ?? current.summary,
           content: changes.content ?? current.content,
+          writingRequirements: current.writingRequirements,
+          wordCountRequirements: current.wordCountRequirements,
           startAt: changes.startAt ?? current.startAt,
           endAt: changes.endAt ?? current.endAt,
           characterRefs: (changes.characterRefs ?? current.characterRefs) as never,

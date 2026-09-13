@@ -155,6 +155,10 @@ export const sceneSchema = z.object({
   summary: z.string(),
   /** 具体内容 — the full AI-generated narrative prose. */
   content: z.string(),
+  /** 编写要求 — free-form requirements / notes for writing this scene. */
+  writingRequirements: z.string(),
+  /** 字数要求 — target word count for this scene (free-form text). */
+  wordCountRequirements: z.string(),
   /** Story timeline — when this scene starts (ISO 8601). `null` if unspecified. */
   startAt: z.iso.datetime().nullable(),
   /** Story timeline — when this scene ends (ISO 8601). `null` if unspecified. */
