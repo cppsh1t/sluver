@@ -77,7 +77,7 @@ function queryOnly(tools: Record<string, ToolDef>): Record<string, ToolDef> {
 
 /**
  * Explorer toolset: full worldbook CRUD + novel/chapter/scene query + system.
- * 83 tools (75 + 8 search + shell + look_at). The Explorer surveys and builds
+ * 84 tools (76 + 8 search + shell + look_at). The Explorer surveys and builds
  * the world (characters, locations, items, lore, events) and can read (but
  * not modify) the novel structure — `list_scene_images` included, the other
  * gallery tools not. It also carries the shell execution tool
@@ -131,7 +131,7 @@ export function buildExplorerTools(ctx: ToolContext): ToolSet {
 
 /**
  * Writer toolset: full novel/chapter/scene CRUD + worldbook query + system.
- * 63 tools (55 + 8 search + shell + look_at). The Writer drafts and refines
+ * 64 tools (56 + 8 search + shell + look_at). The Writer drafts and refines
  * prose (novels, chapters, scenes — including the novel cover set/clear and
  * the scene-gallery add/delete/list tools) and can read (but not modify)
  * the worldbook for reference. It also carries the shell execution tool

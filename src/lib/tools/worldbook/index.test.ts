@@ -133,6 +133,7 @@ describe("buildExplorerTools", () => {
       "list_scenes",
       "search_scenes",
       "get_scene",
+      "count_scene_words",
       "list_scene_images",
     ]) {
       expect(keys).toContain(name);
@@ -215,6 +216,7 @@ describe("buildWriterTools", () => {
       "search_novels",
       "get_novel",
       "get_chapter_overview",
+      "count_scene_words",
       "list_scene_images",
     ]) {
       expect(keys).toContain(name);
