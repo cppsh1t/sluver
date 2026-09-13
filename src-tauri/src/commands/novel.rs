@@ -124,6 +124,8 @@ fn load_scene(conn: &rusqlite::Connection, id: &str) -> Result<Scene, DbError> {
         title,
         summary,
         content,
+        writing_requirements,
+        word_count_requirements,
         start_at,
         end_at,
         location_id,
@@ -131,7 +133,7 @@ fn load_scene(conn: &rusqlite::Connection, id: &str) -> Result<Scene, DbError> {
         updated_at,
     ) = conn
         .query_row(
-            "SELECT chapter_id, title, summary, content, start_at, end_at, location_id, created_at, updated_at
+            "SELECT chapter_id, title, summary, content, writing_requirements, word_count_requirements, start_at, end_at, location_id, created_at, updated_at
              FROM scenes WHERE id = ?1",
             params![id],
             |row| {
@@ -140,6 +142,8 @@ fn load_scene(conn: &rusqlite::Connection, id: &str) -> Result<Scene, DbError> {
                     row.get::<_, String>("title")?,
                     row.get::<_, String>("summary")?,
                     row.get::<_, String>("content")?,
+                    row.get::<_, String>("writing_requirements")?,
+                    row.get::<_, String>("word_count_requirements")?,
                     row.get::<_, Option<String>>("start_at")?,
                     row.get::<_, Option<String>>("end_at")?,
                     row.get::<_, Option<String>>("location_id")?,
@@ -190,6 +194,8 @@ fn load_scene(conn: &rusqlite::Connection, id: &str) -> Result<Scene, DbError> {
         title,
         summary,
         content,
+        writing_requirements,
+        word_count_requirements,
         start_at,
         end_at,
         character_refs,
@@ -462,6 +468,8 @@ pub fn list_scenes(
         title: String,
         summary: String,
         content: String,
+        writing_requirements: String,
+        word_count_requirements: String,
         start_at: Option<String>,
         end_at: Option<String>,
         location_id: Option<String>,
@@ -469,7 +477,7 @@ pub fn list_scenes(
         updated_at: String,
     }
     let mut stmt = conn.prepare(
-        "SELECT id, title, summary, content, start_at, end_at, location_id, created_at, updated_at
+        "SELECT id, title, summary, content, writing_requirements, word_count_requirements, start_at, end_at, location_id, created_at, updated_at
          FROM scenes WHERE chapter_id = ?1 ORDER BY position",
     )?;
     let raws: Vec<SceneRaw> = stmt
@@ -479,6 +487,8 @@ pub fn list_scenes(
                 title: row.get("title")?,
                 summary: row.get("summary")?,
                 content: row.get("content")?,
+                writing_requirements: row.get("writing_requirements")?,
+                word_count_requirements: row.get("word_count_requirements")?,
                 start_at: row.get("start_at")?,
                 end_at: row.get("end_at")?,
                 location_id: row.get("location_id")?,
@@ -589,6 +599,8 @@ pub fn list_scenes(
                 title: raw.title,
                 summary: raw.summary,
                 content: raw.content,
+                writing_requirements: raw.writing_requirements,
+                word_count_requirements: raw.word_count_requirements,
                 start_at: raw.start_at,
                 end_at: raw.end_at,
                 character_refs,
@@ -1129,14 +1141,16 @@ pub(crate) fn do_create_scene(
         )?;
 
     tx.execute(
-        "INSERT INTO scenes (id, chapter_id, title, summary, content, start_at, end_at, location_id, position, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        "INSERT INTO scenes (id, chapter_id, title, summary, content, writing_requirements, word_count_requirements, start_at, end_at, location_id, position, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
         params![
             id,
             chapter_id,
             input.title,
             input.summary,
             input.content,
+            input.writing_requirements,
+            input.word_count_requirements,
             start_at,
             end_at,
             input.location_id,
@@ -1232,12 +1246,14 @@ pub(crate) fn do_update_scene(
     let tx = conn.transaction()?;
 
     let affected = tx.execute(
-        "UPDATE scenes SET title = ?1, summary = ?2, content = ?3, start_at = ?4, end_at = ?5, location_id = ?6, updated_at = ?7
-         WHERE id = ?8",
+        "UPDATE scenes SET title = ?1, summary = ?2, content = ?3, writing_requirements = ?4, word_count_requirements = ?5, start_at = ?6, end_at = ?7, location_id = ?8, updated_at = ?9
+         WHERE id = ?10",
         params![
             input.title,
             input.summary,
             input.content,
+            input.writing_requirements,
+            input.word_count_requirements,
             start_at,
             end_at,
             input.location_id,

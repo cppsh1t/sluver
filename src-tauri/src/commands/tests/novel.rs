@@ -61,6 +61,8 @@ fn scene_input(
         title: title.into(),
         summary: String::new(),
         content: String::new(),
+        writing_requirements: String::new(),
+        word_count_requirements: String::new(),
         start_at: None,
         end_at: None,
         character_refs,
@@ -84,6 +86,8 @@ fn scene_update(
         title: title.into(),
         summary: String::new(),
         content: String::new(),
+        writing_requirements: String::new(),
+        word_count_requirements: String::new(),
         start_at: None,
         end_at: None,
         character_refs,
@@ -168,18 +172,23 @@ fn novel_chapter_scene(fx: &WorldFixture) -> (Novel, Chapter, Scene) {
     let item_id = insert_item(fx, 11);
     let event_id = insert_event(fx, 12);
     let lore_id = insert_lore(fx, 13);
+    let mut input = scene_input(
+        "S",
+        vec![char_ref(cid, pid)],
+        vec![item_id],
+        vec![event_id],
+        vec![lore_id],
+    );
+    // Non-empty writing-guidance values so create/update tests can assert
+    // the columns roundtrip (everything else uses the empty default).
+    input.writing_requirements = "Third person, tense pacing".into();
+    input.word_count_requirements = "2000-3000 words".into();
     let scene = do_create_scene(
         &fx.mgr,
         &fx.space_id,
         &fx.world_id,
         &chapter.id,
-        &scene_input(
-            "S",
-            vec![char_ref(cid, pid)],
-            vec![item_id],
-            vec![event_id],
-            vec![lore_id],
-        ),
+        &input,
         None,
     )
     .expect("create scene");
@@ -233,15 +242,35 @@ fn create_scene_writes_row_and_all_junction_tables() {
     let (_novel, chapter, scene) = novel_chapter_scene(&fx);
 
     with_world(&fx, |conn| {
-        let (title, position): (String, i64) = conn
+        let (title, position, writing_requirements, word_count_requirements): (
+            String,
+            i64,
+            String,
+            String,
+        ) = conn
             .query_row(
-                "SELECT title, position FROM scenes WHERE id = ?1",
+                "SELECT title, position, writing_requirements, word_count_requirements FROM scenes WHERE id = ?1",
                 params![scene.id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                    ))
+                },
             )
             .expect("scene row must exist");
         assert_eq!(title, "S");
         assert_eq!(position, 0, "first scene in chapter gets position 0");
+        assert_eq!(
+            writing_requirements, "Third person, tense pacing",
+            "writing_requirements roundtrips"
+        );
+        assert_eq!(
+            word_count_requirements, "2000-3000 words",
+            "word_count_requirements roundtrips"
+        );
         Ok(())
     })
     .expect("assert scene row");
@@ -327,18 +356,21 @@ fn update_scene_replaces_junction_refs() {
     )
     .expect("create scene");
 
+    let mut update = scene_update(
+        "New",
+        vec![char_ref(cid_b.clone(), pid_b.clone())],
+        vec![item_b.clone()],
+        vec![event_b.clone()],
+        vec![lore_b.clone()],
+    );
+    update.writing_requirements = "Rewrite with tighter pacing".into();
+    update.word_count_requirements = "About 4000 words".into();
     do_update_scene(
         &fx.mgr,
         &fx.space_id,
         &fx.world_id,
         &scene.id,
-        &scene_update(
-            "New",
-            vec![char_ref(cid_b.clone(), pid_b.clone())],
-            vec![item_b.clone()],
-            vec![event_b.clone()],
-            vec![lore_b.clone()],
-        ),
+        &update,
         None,
     )
     .expect("update scene refs");
@@ -380,15 +412,24 @@ fn update_scene_replaces_junction_refs() {
     );
     assert_eq!(new_lore, 1, "new lore ref must be present");
 
-    let title: String = with_world(&fx, |conn| {
-        Ok(conn.query_row(
-            "SELECT title FROM scenes WHERE id = ?1",
-            params![scene.id],
-            |row| row.get(0),
-        )?)
-    })
-    .expect("read scene title");
+    let (title, writing_requirements, word_count_requirements): (String, String, String) =
+        with_world(&fx, |conn| {
+            Ok(conn.query_row(
+                "SELECT title, writing_requirements, word_count_requirements FROM scenes WHERE id = ?1",
+                params![scene.id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )?)
+        })
+        .expect("read scene title");
     assert_eq!(title, "New");
+    assert_eq!(
+        writing_requirements, "Rewrite with tighter pacing",
+        "writing_requirements is full-replacement updated"
+    );
+    assert_eq!(
+        word_count_requirements, "About 4000 words",
+        "word_count_requirements is full-replacement updated"
+    );
 }
 
 /// Transaction atomicity: an update_scene input containing a nonexistent

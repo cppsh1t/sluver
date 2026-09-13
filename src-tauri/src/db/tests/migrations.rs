@@ -121,10 +121,10 @@ fn space_fresh_install_schema() {
     );
 }
 
-/// world.db fresh install: thirteen migrations → user_version 13, the
+/// world.db fresh install: fourteen migrations → user_version 14, the
 /// exact 20-table set, and the exact 19 named indexes (3 FK lookups from
 /// v1 + 11 UNIQUE from v2 + messages/scene_images/notes/message_attachments
-/// indexes from v4/v8/v11/v13).
+/// indexes from v4/v8/v11/v13; v14 adds columns only).
 #[test]
 fn world_fresh_install_schema() {
     let mut conn = Connection::open_in_memory().expect("open in-memory world db");
@@ -134,7 +134,7 @@ fn world_fresh_install_schema() {
 
     assert_eq!(
         user_version(&conn),
-        13,
+        14,
         "world user_version after to_latest"
     );
     assert_eq!(
@@ -161,7 +161,7 @@ fn world_fresh_install_schema() {
             "scenes",
             "world_config",
         ],
-        "world table set at v13 (20 tables)"
+        "world table set at v14 (20 tables)"
     );
     assert_eq!(
         named_indexes(&conn),
@@ -186,19 +186,19 @@ fn world_fresh_install_schema() {
             "idx_scenes_chapter_pos",
             "idx_scenes_chapter_title",
         ],
-        "world named index set at v13 (19 indexes)"
+        "world named index set at v14 (19 indexes)"
     );
 }
 
 // ── family (b): historical upgrade path ────────────────────────────────
 
-/// world.db upgrade path: step 0→13 on ONE connection, asserting
+/// world.db upgrade path: step 0→14 on ONE connection, asserting
 /// user_version and the per-step schema facts (tables added, columns
 /// added / renamed).
 #[test]
 fn world_upgrade_path_step_by_step() {
     let mut conn = Connection::open_in_memory().expect("open in-memory world db");
-    for v in 0..=13 {
+    for v in 0..=14 {
         WORLD_MIGRATIONS
             .to_version(&mut conn, v)
             .unwrap_or_else(|e| panic!("world to_version({v}): {e}"));
@@ -354,10 +354,25 @@ fn world_upgrade_path_step_by_step() {
                 assert_eq!(
                     table_names(&conn).len(),
                     20,
-                    "final world schema has 20 tables"
+                    "world schema has 20 tables at v13"
                 );
             }
-            _ => unreachable!("loop is bounded to 0..=13"),
+            14 => {
+                assert!(
+                    has_column(&conn, "scenes", "writing_requirements"),
+                    "v14 adds scenes.writing_requirements"
+                );
+                assert!(
+                    has_column(&conn, "scenes", "word_count_requirements"),
+                    "v14 adds scenes.word_count_requirements"
+                );
+                assert_eq!(
+                    table_names(&conn).len(),
+                    20,
+                    "final world schema still has 20 tables at v14 (columns only)"
+                );
+            }
+            _ => unreachable!("loop is bounded to 0..=14"),
         }
     }
 }
@@ -686,7 +701,7 @@ fn to_latest_twice_is_idempotent_for_all_kinds() {
     let cases: [(&str, &Migrations, i64); 3] = [
         ("meta", &META_MIGRATIONS, 1),
         ("space", &SPACE_MIGRATIONS, 10),
-        ("world", &WORLD_MIGRATIONS, 13),
+        ("world", &WORLD_MIGRATIONS, 14),
     ];
     for (name, migrations, latest) in cases {
         let mut conn = Connection::open_in_memory().expect("open in-memory db");

@@ -79,6 +79,8 @@ pub struct Scene {
     pub title: String,
     pub summary: String,
     pub content: String,
+    pub writing_requirements: String,
+    pub word_count_requirements: String,
     pub start_at: Option<String>,
     pub end_at: Option<String>,
     pub character_refs: Vec<CharacterRef>,
@@ -98,6 +100,10 @@ pub struct CreateSceneInput {
     pub summary: String,
     #[serde(default)]
     pub content: String,
+    #[serde(default)]
+    pub writing_requirements: String,
+    #[serde(default)]
+    pub word_count_requirements: String,
     #[serde(default)]
     pub start_at: Option<String>,
     #[serde(default)]
@@ -120,6 +126,8 @@ pub struct UpdateSceneInput {
     pub title: String,
     pub summary: String,
     pub content: String,
+    pub writing_requirements: String,
+    pub word_count_requirements: String,
     pub start_at: Option<String>,
     pub end_at: Option<String>,
     pub character_refs: Vec<CharacterRef>,

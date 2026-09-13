@@ -687,6 +687,22 @@ const WORLD_MIGRATION_013: &str = r#"
     CREATE INDEX IF NOT EXISTS idx_message_attachments_message ON message_attachments(message_id, position);
 "#;
 
+/// Migration 14 for each world DB: scene writing-guidance fields —
+/// `writing_requirements` and `word_count_requirements`, plain
+/// user-authored text the writer pins to a scene before drafting. Both
+/// follow the `novels.author` precedent (WORLD_MIGRATION_009): non-null
+/// text columns on an existing table, backfilled to `''` for pre-existing
+/// rows via `NOT NULL DEFAULT ''`. Author-facing only — deliberately
+/// excluded from the grep corpus, novel export, and agent overview
+/// surfaces. Added as a separate migration so existing world DB files get
+/// the columns via `rusqlite_migration`'s incremental tracking —
+/// modifying the original `WORLD_SQL` would NOT re-run for
+/// already-migrated databases.
+const WORLD_MIGRATION_014: &str = r#"
+    ALTER TABLE scenes ADD COLUMN writing_requirements TEXT NOT NULL DEFAULT '';
+    ALTER TABLE scenes ADD COLUMN word_count_requirements TEXT NOT NULL DEFAULT '';
+"#;
+
 const WORLD_SLICE: &[M] = &[
     M::up(WORLD_SQL),
     M::up(WORLD_MIGRATION_002),
@@ -701,6 +717,7 @@ const WORLD_SLICE: &[M] = &[
     M::up(WORLD_MIGRATION_011),
     M::up(WORLD_MIGRATION_012),
     M::up(WORLD_MIGRATION_013),
+    M::up(WORLD_MIGRATION_014),
 ];
 pub const WORLD_MIGRATIONS: Migrations = Migrations::from_slice(WORLD_SLICE);
 
