@@ -3,7 +3,8 @@
 // Mirrors the pure library's SessionStore interface 1:1:
 //   list_conversations  -> listSessions   (kind="world" only; ADR Q6b)
 //   create_conversation -> createSession  (server builds meta from kind)
-//   delete_conversation -> deleteSession  (FK cascade handles messages)
+//   delete_conversation -> deleteSession  (FK cascade handles messages;
+//     meta-JSON sweep handles subagent runs, F4)
 //   load_messages       -> loadMessages   (ordered ASC; never throws)
 //   append_messages     -> appendMessages (single txn; bump updated_at)
 //
@@ -83,8 +84,8 @@ pub fn list_conversations(
     })
 }
 
-/// Create a conversation row. `meta` is built server-side from `kind` (+ the
-/// optional `chapter_id`) — the client never sends raw `meta`.
+/// Create a conversation row. `meta` is built server-side from the kind
+/// discriminator — the client never sends raw `meta`.
 #[tracing::instrument(skip(state, input), fields(entity_id))]
 #[tauri::command]
 pub fn create_conversation(
@@ -93,33 +94,69 @@ pub fn create_conversation(
     input: CreateConversationInput,
     state: State<'_, DbManager>,
 ) -> Result<Conversation, DbError> {
+    let conversation = do_create_conversation(&state, &space_id, &world_id, input)?;
+    tracing::Span::current().record("entity_id", conversation.id.as_str());
+    Ok(conversation)
+}
+
+/// `create_conversation` implementation over a bare `&DbManager` — the
+/// `do_*` split per the crate's no-mock-runtime test convention (see
+/// `commands/space.rs`). The command wrapper above only adds tracing.
+pub(crate) fn do_create_conversation(
+    mgr: &DbManager,
+    space_id: &str,
+    world_id: &str,
+    input: CreateConversationInput,
+) -> Result<Conversation, DbError> {
     let id = new_id();
-    tracing::Span::current().record("entity_id", id.as_str());
     let now = now_iso();
 
     // Build meta server-side from the kind discriminator. A chapter
-    // conversation carries the chapterId; anything else collapses to "world"
-    // (defensive against an unexpected kind value). A chapter kind WITHOUT a
-    // chapter_id is rejected — storing `{"chapterId":null}` would violate the
-    // frontend's discriminated-union schema (`chapterId` is required for the
-    // chapter variant).
+    // conversation carries the chapterId; a subagent run conversation
+    // (ADR-0050 D2) carries the parent linkage + dispatched role verbatim;
+    // anything else collapses to "world" (defensive against an unexpected
+    // kind value). A chapter kind WITHOUT a chapter_id — or a subagent
+    // kind WITHOUT ANY of parent_conversation_id / parent_tool_call_id /
+    // role — is rejected: persisting `{"chapterId":null}` or JSON-null
+    // linkage fields would violate the frontend's discriminated-union
+    // schema, where EVERY field of the subagent variant (and `chapterId`
+    // for the chapter variant) is required non-null.
     let meta = match input.kind.as_str() {
         "chapter" => {
             let chapter_id = input.chapter_id.ok_or_else(|| {
-                DbError::InvalidInput(
-                    "kind=\"chapter\" requires a chapter_id".to_string(),
-                )
+                DbError::InvalidInput("kind=\"chapter\" requires a chapter_id".to_string())
             })?;
             serde_json::json!({
                 "kind": "chapter",
                 "chapterId": chapter_id,
             })
         }
+        "subagent" => {
+            let parent_conversation_id = input.parent_conversation_id.ok_or_else(|| {
+                DbError::InvalidInput(
+                    "kind=\"subagent\" requires a parent_conversation_id".to_string(),
+                )
+            })?;
+            let parent_tool_call_id = input.parent_tool_call_id.ok_or_else(|| {
+                DbError::InvalidInput(
+                    "kind=\"subagent\" requires a parent_tool_call_id".to_string(),
+                )
+            })?;
+            let role = input.role.ok_or_else(|| {
+                DbError::InvalidInput("kind=\"subagent\" requires a role".to_string())
+            })?;
+            serde_json::json!({
+                "kind": "subagent",
+                "parentConversationId": parent_conversation_id,
+                "parentToolCallId": parent_tool_call_id,
+                "role": role,
+            })
+        }
         _ => serde_json::json!({ "kind": "world" }),
     };
     let meta_str = serde_json::to_string(&meta)?;
 
-    state.with_world(&space_id, &world_id, |conn| {
+    mgr.with_world(space_id, world_id, |conn| {
         conn.execute(
             "INSERT INTO conversations (id, agent_config_name, title, meta, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -139,8 +176,57 @@ pub fn create_conversation(
     })
 }
 
-/// Delete a conversation. The `messages` rows go away via the FK ON DELETE
-/// CASCADE — no separate delete needed.
+/// Fetch a single conversation by id — ANY kind. Unlike
+/// `list_conversations` (which filters `kind = "world"`), this exposes
+/// hidden rows too: the subagent drill-in (ADR-0050 D10) uses it to load a
+/// historical run's Conversation object after an app restart, so the
+/// frontend runtime store can ensure a slot and replay the transcript.
+/// `NotFound` when the id doesn't exist.
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
+#[tauri::command]
+pub fn get_conversation(
+    space_id: String,
+    world_id: String,
+    id: String,
+    state: State<'_, DbManager>,
+) -> Result<Conversation, DbError> {
+    do_get_conversation(&state, &space_id, &world_id, &id)
+}
+
+/// `get_conversation` implementation over a bare `&DbManager` — the `do_*`
+/// split per the crate's no-mock-runtime test convention (see
+/// `commands/space.rs`). The command wrapper above only adds tracing.
+pub(crate) fn do_get_conversation(
+    mgr: &DbManager,
+    space_id: &str,
+    world_id: &str,
+    id: &str,
+) -> Result<Conversation, DbError> {
+    mgr.with_world(space_id, world_id, |conn| {
+        conn.query_row(
+            "SELECT id, agent_config_name, title, meta, created_at, updated_at
+             FROM conversations WHERE id = ?1",
+            params![id],
+            row_to_conversation,
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                DbError::NotFound("Conversation", id.to_string())
+            }
+            other => DbError::Sqlite(other),
+        })
+    })
+}
+
+/// Delete a conversation — ANY kind. Hidden subagent runs parented to it
+/// (via `meta.parentConversationId`, ADR-0050 D2) are deleted FIRST: the
+/// linkage lives inside the `meta` JSON column, not a table column, so
+/// the FK machinery can't see it — an explicit `json_extract` match is
+/// the only way to reach the children. One level of cascade suffices:
+/// runs never have runs of their own (subagents don't receive the
+/// dispatch tool, ADR-0050 D1). Each child's `messages`/attachment rows
+/// go away via the existing FK ON DELETE CASCADE; zero matching children
+/// is fine — only a missing PARENT is a NotFound.
 #[tracing::instrument(skip(state, id), fields(entity_id = %id))]
 #[tauri::command]
 pub fn delete_conversation(
@@ -149,10 +235,34 @@ pub fn delete_conversation(
     id: String,
     state: State<'_, DbManager>,
 ) -> Result<(), DbError> {
-    state.with_world(&space_id, &world_id, |conn| {
+    do_delete_conversation(&state, &space_id, &world_id, &id)
+}
+
+/// `delete_conversation` implementation over a bare `&DbManager` — the
+/// `do_*` split per the crate's no-mock-runtime test convention (see
+/// `commands/space.rs`). The command wrapper above only adds tracing.
+pub(crate) fn do_delete_conversation(
+    mgr: &DbManager,
+    space_id: &str,
+    world_id: &str,
+    id: &str,
+) -> Result<(), DbError> {
+    mgr.with_world(space_id, world_id, |conn| {
+        // Children first — runs whose meta parents them to this id. The
+        // `?1` binding doubles as the parent id below; the two DELETEs
+        // run in one closure so a failure between them stays within the
+        // same connection scope.
+        conn.execute(
+            "DELETE FROM conversations
+             WHERE json_extract(meta, '$.kind') = 'subagent'
+               AND json_extract(meta, '$.parentConversationId') = ?1",
+            params![id],
+        )?;
+        // Then the target row; only ITS absence is a NotFound (a zero-row
+        // children sweep above must not mask this check).
         let deleted = conn.execute("DELETE FROM conversations WHERE id = ?1", params![id])?;
         if deleted == 0 {
-            return Err(DbError::NotFound("Conversation", id));
+            return Err(DbError::NotFound("Conversation", id.to_string()));
         }
         Ok(())
     })

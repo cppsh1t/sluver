@@ -362,14 +362,17 @@ fn delete_messages_cascades_message_attachments() {
         &AppendMessagesInput {
             conversation_id: conv,
             messages: vec![
-                msg_input(&attached, vec![att(
-                    &uuid_shape(27),
-                    0,
-                    "image",
-                    "image/png",
-                    "pic.png",
-                    png,
-                )]),
+                msg_input(
+                    &attached,
+                    vec![att(
+                        &uuid_shape(27),
+                        0,
+                        "image",
+                        "image/png",
+                        "pic.png",
+                        png,
+                    )],
+                ),
                 msg_input(&bare, vec![]),
             ],
         },
@@ -680,4 +683,386 @@ fn update_message_unknown_conversation_is_not_found() {
         "expected NotFound(\"Message\", _), got {err:?}"
     );
     assert_eq!(count(&fx, "messages"), 0);
+}
+
+// ─── get_conversation (any kind — subagent drill-in, ADR-0050 D10) ──────────
+
+/// `get_conversation` returns ANY kind of row — including the hidden
+/// `kind="subagent"` runs `list_conversations` filters out — with the meta
+/// payload intact (the drill-in path needs the parent linkage to round-trip).
+#[test]
+fn get_conversation_round_trips_subagent_run_meta() {
+    let fx = make_space_with_world();
+    let parent = uuid_shape(60);
+    let created = do_create_conversation(
+        &fx.mgr,
+        &fx.space_id,
+        &fx.world_id,
+        CreateConversationInput {
+            agent_config_name: "writer".into(),
+            kind: "subagent".into(),
+            chapter_id: None,
+            parent_conversation_id: Some(parent.clone()),
+            parent_tool_call_id: Some(uuid_shape(61)),
+            role: Some("writer".into()),
+            title: None,
+        },
+    )
+    .expect("create subagent run conversation");
+
+    let fetched = do_get_conversation(&fx.mgr, &fx.space_id, &fx.world_id, &created.id)
+        .expect("get the hidden run conversation by id");
+
+    assert_eq!(fetched.id, created.id);
+    assert_eq!(fetched.agent_config_name, "writer");
+    assert_eq!(
+        fetched.meta,
+        serde_json::json!({
+            "kind": "subagent",
+            "parentConversationId": parent,
+            "parentToolCallId": uuid_shape(61),
+            "role": "writer",
+        }),
+        "meta (incl. parent linkage) survives the round trip"
+    );
+}
+
+/// An unknown id is a `NotFound` business error — the drill-in UI relies on
+/// this to bail out of replaying a run whose row is gone.
+#[test]
+fn get_conversation_unknown_id_is_not_found() {
+    let fx = make_space_with_world();
+    let missing = uuid_shape(62);
+    let err = do_get_conversation(&fx.mgr, &fx.space_id, &fx.world_id, &missing)
+        .expect_err("missing conversation must be rejected");
+    assert!(
+        matches!(err, DbError::NotFound("Conversation", ref id) if *id == missing),
+        "expected NotFound(\"Conversation\", {missing}), got {err:?}"
+    );
+}
+
+// ─── create_conversation (kind discrimination) ─────────────────────────────
+
+/// kind="subagent" round-trips the parent linkage + role verbatim through
+/// `meta` (ADR-0050 D2): both the returned row AND the persisted column
+/// carry all four fields.
+#[test]
+fn create_conversation_subagent_round_trips_meta() {
+    let fx = make_space_with_world();
+    let parent = uuid_shape(50);
+    let tool_call = uuid_shape(51);
+
+    let created = do_create_conversation(
+        &fx.mgr,
+        &fx.space_id,
+        &fx.world_id,
+        CreateConversationInput {
+            agent_config_name: "curator".into(),
+            kind: "subagent".into(),
+            chapter_id: None,
+            parent_conversation_id: Some(parent.clone()),
+            parent_tool_call_id: Some(tool_call.clone()),
+            role: Some("curator".into()),
+            title: None,
+        },
+    )
+    .expect("create subagent run conversation");
+
+    let expected = serde_json::json!({
+        "kind": "subagent",
+        "parentConversationId": parent,
+        "parentToolCallId": tool_call,
+        "role": "curator",
+    });
+    assert_eq!(
+        created.meta, expected,
+        "returned meta carries the parent linkage + role verbatim"
+    );
+    assert_eq!(created.agent_config_name, "curator");
+
+    // Prove the persisted column content matches (the helper's read-back
+    // already covers the return path; this pins the stored JSON).
+    let stored: String = with_world(&fx, |conn| {
+        Ok(conn.query_row(
+            "SELECT meta FROM conversations WHERE id = ?1",
+            params![created.id],
+            |r| r.get(0),
+        )?)
+    })
+    .expect("read stored meta");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&stored).expect("stored meta is valid JSON"),
+        expected,
+        "persisted meta matches verbatim"
+    );
+}
+
+/// A subagent kind WITHOUT a parent_conversation_id is rejected before any
+/// row is written — mirrors the chapter-kind/chapter_id contract.
+#[test]
+fn create_conversation_subagent_requires_parent_conversation_id() {
+    let fx = make_space_with_world();
+    let err = do_create_conversation(
+        &fx.mgr,
+        &fx.space_id,
+        &fx.world_id,
+        CreateConversationInput {
+            agent_config_name: "scribe".into(),
+            kind: "subagent".into(),
+            chapter_id: None,
+            parent_conversation_id: None,
+            parent_tool_call_id: None,
+            role: None,
+            title: None,
+        },
+    )
+    .expect_err("subagent kind without parent must be rejected");
+    assert!(
+        matches!(err, DbError::InvalidInput(ref msg) if msg.contains("parent_conversation_id")),
+        "expected InvalidInput mentioning parent_conversation_id, got {err:?}"
+    );
+    assert_eq!(
+        count(&fx, "conversations"),
+        0,
+        "no row may be persisted on rejection"
+    );
+}
+
+/// parent_tool_call_id is as load-bearing as the parent conversation id
+/// (F5): the frontend's discriminated union requires it non-null for the
+/// subagent variant, so a None must be rejected rather than serialized
+/// into meta as JSON null.
+#[test]
+fn create_conversation_subagent_requires_parent_tool_call_id() {
+    let fx = make_space_with_world();
+    let err = do_create_conversation(
+        &fx.mgr,
+        &fx.space_id,
+        &fx.world_id,
+        CreateConversationInput {
+            agent_config_name: "scribe".into(),
+            kind: "subagent".into(),
+            chapter_id: None,
+            parent_conversation_id: Some(uuid_shape(74)),
+            parent_tool_call_id: None,
+            role: Some("scribe".into()),
+            title: None,
+        },
+    )
+    .expect_err("subagent kind without parent_tool_call_id must be rejected");
+    assert!(
+        matches!(err, DbError::InvalidInput(ref msg) if msg.contains("parent_tool_call_id")),
+        "expected InvalidInput mentioning parent_tool_call_id, got {err:?}"
+    );
+    assert_eq!(
+        count(&fx, "conversations"),
+        0,
+        "no row may be persisted on rejection"
+    );
+}
+
+/// role completes the subagent meta contract (F5): None is rejected —
+/// the run's dispatched role must never persist as JSON null.
+#[test]
+fn create_conversation_subagent_requires_role() {
+    let fx = make_space_with_world();
+    let err = do_create_conversation(
+        &fx.mgr,
+        &fx.space_id,
+        &fx.world_id,
+        CreateConversationInput {
+            agent_config_name: "scribe".into(),
+            kind: "subagent".into(),
+            chapter_id: None,
+            parent_conversation_id: Some(uuid_shape(75)),
+            parent_tool_call_id: Some(uuid_shape(76)),
+            role: None,
+            title: None,
+        },
+    )
+    .expect_err("subagent kind without role must be rejected");
+    assert!(
+        matches!(err, DbError::InvalidInput(ref msg) if msg.contains("role")),
+        "expected InvalidInput mentioning role, got {err:?}"
+    );
+    assert_eq!(
+        count(&fx, "conversations"),
+        0,
+        "no row may be persisted on rejection"
+    );
+}
+
+/// `list_conversations`' `meta->>'kind' = 'world'` filter keeps subagent
+/// run rows out of the chat list (ADR-0050 D2) — verified against the
+/// exact SQL the command runs. Also sanity-checks that a plain world-kind
+/// create still collapses to `{"kind":"world"}`.
+#[test]
+fn subagent_conversations_stay_hidden_from_list_filter() {
+    let fx = make_space_with_world();
+    let world_conv = do_create_conversation(
+        &fx.mgr,
+        &fx.space_id,
+        &fx.world_id,
+        CreateConversationInput {
+            agent_config_name: "orchestrator".into(),
+            kind: "world".into(),
+            chapter_id: None,
+            parent_conversation_id: None,
+            parent_tool_call_id: None,
+            role: None,
+            title: None,
+        },
+    )
+    .expect("create world conversation");
+    assert_eq!(
+        world_conv.meta,
+        serde_json::json!({ "kind": "world" }),
+        "world kind still collapses to the bare discriminator"
+    );
+
+    let _run = do_create_conversation(
+        &fx.mgr,
+        &fx.space_id,
+        &fx.world_id,
+        CreateConversationInput {
+            agent_config_name: "historian".into(),
+            kind: "subagent".into(),
+            chapter_id: None,
+            parent_conversation_id: Some(world_conv.id.clone()),
+            parent_tool_call_id: Some(uuid_shape(52)),
+            role: Some("historian".into()),
+            title: None,
+        },
+    )
+    .expect("create subagent run conversation");
+    assert_eq!(count(&fx, "conversations"), 2, "both rows persisted");
+
+    // The exact predicate list_conversations runs.
+    let listed: Vec<String> = with_world(&fx, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT id FROM conversations
+             WHERE meta->>'kind' = 'world'
+             ORDER BY updated_at DESC",
+        )?;
+        let rows = stmt
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    })
+    .expect("run the list_conversations SQL");
+
+    assert_eq!(
+        listed,
+        vec![world_conv.id],
+        "only the world conversation is listed; the subagent run stays hidden"
+    );
+}
+
+// ─── delete_conversation (subagent-run cascade, F4) ─────────────────────────
+
+/// F4: deleting a parent conversation must also remove its hidden subagent
+/// run rows — the linkage lives inside `meta` JSON, invisible to the FK
+/// cascade — together with the runs' messages/attachments (which DO ride
+/// the FK chain once the run row itself is deleted).
+#[test]
+fn delete_conversation_cascades_to_subagent_runs() {
+    let fx = make_space_with_world();
+    let parent = do_create_conversation(
+        &fx.mgr,
+        &fx.space_id,
+        &fx.world_id,
+        CreateConversationInput {
+            agent_config_name: "orchestrator".into(),
+            kind: "world".into(),
+            chapter_id: None,
+            parent_conversation_id: None,
+            parent_tool_call_id: None,
+            role: None,
+            title: None,
+        },
+    )
+    .expect("create parent conversation");
+
+    let run = do_create_conversation(
+        &fx.mgr,
+        &fx.space_id,
+        &fx.world_id,
+        CreateConversationInput {
+            agent_config_name: "writer".into(),
+            kind: "subagent".into(),
+            chapter_id: None,
+            parent_conversation_id: Some(parent.id.clone()),
+            parent_tool_call_id: Some(uuid_shape(70)),
+            role: Some("writer".into()),
+            title: None,
+        },
+    )
+    .expect("create subagent run conversation");
+
+    // A message (+attachment) ON THE RUN — after the parent delete it must
+    // be gone without any per-child message cleanup.
+    do_append_messages(
+        &fx.mgr,
+        &fx.space_id,
+        &fx.world_id,
+        &AppendMessagesInput {
+            conversation_id: run.id.clone(),
+            messages: vec![msg_input(
+                &uuid_shape(71),
+                vec![att(
+                    &uuid_shape(72),
+                    0,
+                    "image",
+                    "image/png",
+                    "pic.png",
+                    &[0x89, b'P', b'N', b'G'],
+                )],
+            )],
+        },
+    )
+    .expect("seed run message + attachment");
+    assert_eq!(count(&fx, "conversations"), 2);
+    assert_eq!(count(&fx, "messages"), 1);
+
+    do_delete_conversation(&fx.mgr, &fx.space_id, &fx.world_id, &parent.id)
+        .expect("delete parent conversation");
+
+    let err = do_get_conversation(&fx.mgr, &fx.space_id, &fx.world_id, &run.id)
+        .expect_err("the run row must be gone with its parent");
+    assert!(
+        matches!(err, DbError::NotFound("Conversation", _)),
+        "expected NotFound(\"Conversation\", _), got {err:?}"
+    );
+    assert_eq!(
+        count(&fx, "conversations"),
+        0,
+        "parent AND run rows both gone"
+    );
+    assert_eq!(count(&fx, "messages"), 0, "run messages cascaded away");
+    assert_eq!(
+        count(&fx, "message_attachments"),
+        0,
+        "run attachment rows cascaded away"
+    );
+}
+
+/// Regression guard for the pre-F4 paths: a childless delete still works,
+/// and re-deleting the now-gone id is still a NotFound — the zero-row
+/// children sweep must not mask the parent-existence check.
+#[test]
+fn delete_conversation_without_children_and_unknown_id() {
+    let fx = make_space_with_world();
+    let conv = uuid_shape(73);
+    seed_conversation(&fx, &conv);
+
+    do_delete_conversation(&fx.mgr, &fx.space_id, &fx.world_id, &conv)
+        .expect("childless delete still works");
+    assert_eq!(count(&fx, "conversations"), 0);
+
+    let err = do_delete_conversation(&fx.mgr, &fx.space_id, &fx.world_id, &conv)
+        .expect_err("unknown id must be rejected");
+    assert!(
+        matches!(err, DbError::NotFound("Conversation", _)),
+        "expected NotFound(\"Conversation\", _), got {err:?}"
+    );
 }

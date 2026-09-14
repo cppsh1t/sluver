@@ -284,6 +284,7 @@ pub fn run() {
             commands::export_book::export_novel,
             // Conversation (world-scoped chat — ADR-0022)
             commands::conversation::list_conversations,
+            commands::conversation::get_conversation,
             commands::conversation::create_conversation,
             commands::conversation::delete_conversation,
             commands::conversation::load_messages,

@@ -3,8 +3,10 @@ use serde::{Deserialize, Serialize};
 /// Conversation — one AI chat thread, persisted in `world.db` (ADR-0022).
 ///
 /// Mirrors the pure library's `SessionRecord`. The `meta` JSON field always
-/// carries a `kind` discriminator (`"world"` or `"chapter"`, the latter with
-/// a `chapterId`). `agent_config_name` is set at creation and immutable; the
+/// carries a `kind` discriminator (`"world"` or `"chapter"` — the latter
+/// with a `chapterId` — or `"subagent"`, a hidden Subagent Run row carrying
+/// `parentConversationId` / `parentToolCallId` / `role` per ADR-0050 D2).
+/// `agent_config_name` is set at creation and immutable; the
 /// model is resolved live from the AgentConfig at run time (ADR-0023), so it
 /// is NOT snapshotted here.
 ///
@@ -55,15 +57,30 @@ pub struct Message {
 }
 
 /// Input for `create_conversation`. The server builds `meta` from `kind` +
-/// the optional `chapter_id`.
+/// the optional kind-specific fields (`chapter_id` for `"chapter"`;
+/// `parent_conversation_id` / `parent_tool_call_id` / `role` for
+/// `"subagent"`).
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateConversationInput {
     pub agent_config_name: String,
-    /// Discriminator stored in `meta.kind`: `"world"` or `"chapter"`.
+    /// Discriminator stored in `meta.kind`: `"world"`, `"chapter"`, or
+    /// `"subagent"` (a Subagent Run, ADR-0050 D2).
     pub kind: String,
     #[serde(default)]
     pub chapter_id: Option<String>,
+    /// Subagent Run linkage (ADR-0050 D2), only read when
+    /// `kind = "subagent"`: the dispatching (parent) conversation id —
+    /// REQUIRED for the subagent kind (rejected as `InvalidInput` when
+    /// missing) — plus the parent thread's dispatch tool-call id and the
+    /// dispatched role name. All three are persisted verbatim into `meta`
+    /// alongside the kind.
+    #[serde(default)]
+    pub parent_conversation_id: Option<String>,
+    #[serde(default)]
+    pub parent_tool_call_id: Option<String>,
+    #[serde(default)]
+    pub role: Option<String>,
     #[serde(default)]
     pub title: Option<String>,
 }
