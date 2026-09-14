@@ -33,11 +33,14 @@ import { formatRelativeTime } from "@/lib/format";
 // 8 KB window — a naive spread of a 10 MB zip would blow V8's argument limit).
 import { base64Encode } from "@/lib/image-bytes";
 import {
+  useAllRolesEnabledSkills,
   useDeleteSkill,
-  useEnabledSkills,
   useSkills,
   useUploadSkill,
 } from "@/hooks";
+// Registry is the single source of the role list (ADR-0050 D1) — the
+// "enabled by" hint iterates loop roles from here, never a hardcoded set.
+import { LOOP_ROLE_NAMES } from "@/lib/ai-roles";
 import type { SkillId, SkillSummary, SpaceId } from "@/types";
 
 /**
@@ -68,20 +71,20 @@ function SpaceSkillsPage() {
   const uploadMut = useUploadSkill(spaceIdBranded);
   const deleteMut = useDeleteSkill(spaceIdBranded);
 
-  // Read-only "enabled by" readout per skill. Both role queries sit under
-  // the ["skills", spaceId] key namespace, so the mutations above keep
-  // them fresh via prefix invalidation. The line renders only once the
-  // data is in and at least one role has the skill enabled.
-  const explorerEnabledQ = useEnabledSkills(spaceIdBranded, "explorer");
-  const writerEnabledQ = useEnabledSkills(spaceIdBranded, "writer");
-  const explorerIds = useMemo(
-    () => new Set<SkillId>((explorerEnabledQ.data ?? []).map((s) => s.id)),
-    [explorerEnabledQ.data],
-  );
-  const writerIds = useMemo(
-    () => new Set<SkillId>((writerEnabledQ.data ?? []).map((s) => s.id)),
-    [writerEnabledQ.data],
-  );
+  // Read-only "enabled by" readout per skill, across ALL loop roles
+  // (orchestrator + the 8 subagents, ADR-0050; the one-shot roles never
+  // carry skills and are excluded by the query itself). Its key sits under
+  // the same ["skills", spaceId] namespace, so the mutations above keep it
+  // fresh via prefix invalidation. The line renders only once the data is
+  // in and at least one role has the skill enabled.
+  const allRolesEnabledQ = useAllRolesEnabledSkills(spaceIdBranded);
+  const roleEnabledIds = useMemo(() => {
+    const byRole = new Map<string, Set<SkillId>>();
+    for (const [role, enabled] of Object.entries(allRolesEnabledQ.data ?? {})) {
+      byRole.set(role, new Set(enabled.map((s) => s.id)));
+    }
+    return byRole;
+  }, [allRolesEnabledQ.data]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   // The skill pending delete-confirmation; `null` = dialog closed.
@@ -123,13 +126,14 @@ function SpaceSkillsPage() {
     }
   }
 
-  /** Muted hint line: localized role names of the agents with this skill enabled. */
+  /**
+   * Muted hint line: localized role names of the agents with this skill
+   * enabled, in registry order (orchestrator, then the subagent roster).
+   */
   function enabledRoles(skill: SkillSummary): string[] {
-    const roles: string[] = [];
-    if (explorerIds.has(skill.id))
-      roles.push(t("ai:agentConfigs.name.explorer"));
-    if (writerIds.has(skill.id)) roles.push(t("ai:agentConfigs.name.writer"));
-    return roles;
+    return LOOP_ROLE_NAMES.filter((role) =>
+      roleEnabledIds.get(role)?.has(skill.id),
+    ).map((role) => t(`ai:agentConfigs.name.${role}`, { defaultValue: role }));
   }
 
   return (

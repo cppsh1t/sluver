@@ -47,14 +47,58 @@
       "updateFailed": "更新模型失败"
     },
     "name": {
+      "orchestrator": "编排者",
       "explorer": "探索者",
+      "curator": "策展人",
+      "scribe": "文书",
+      "historian": "史官",
+      "editor": "编辑",
+      "plotter": "大纲师",
       "writer": "作者",
+      "critic": "审稿人",
       "namer": "自动命名",
       "vision": "识图"
     },
     "roleDescription": {
+      "orchestrator": "唯一与你直接对话的 Agent：规划工作、确认意图，并调度下方的专职子代理。",
+      "explorer": "考察世界观设定、小说结构、时间线、语料库与网络；纯读取角色，汇报带 ID 的检索结果。",
+      "curator": "创建、更新、删除与排序世界观实体（角色与阶段、地点、物品、传说、事件）及其图片。",
+      "scribe": "管理你的笔记——搜索、阅读、创建、更新与删除。",
+      "historian": "通读一切并做综合——连贯性检查、编年梳理、关系图谱；不持有任何写入工具。",
+      "editor": "负责世界封面与小说、章节、场景的结构工作——增删改查、排序、图片与场景画廊。",
+      "plotter": "规划叙事结构——章节与场景的增删改查，辅以世界观设定查阅。",
+      "writer": "通过 update_scene 撰写与打磨场景正文；不创建、删除或排序场景。",
+      "critic": "审读章节与场景并给出可执行的评审意见；纯读取角色。",
       "namer": "在对话首条回复完成后自动生成简短标题。不配置模型即为停用。",
       "vision": "为不具备视觉能力的对话模型提供图片描述（look_at 工具背后的识图模型）。不配置模型即为停用。"
+    },
+    "groups": {
+      "orchestrator": {
+        "title": "编排者",
+        "description": "唯一面向你的对话角色——由它调度其余全部子代理。"
+      },
+      "subagents": {
+        "title": "子代理",
+        "description": "由编排者派遣的专职角色，各自持有精简的工具集。"
+      },
+      "utilities": {
+        "title": "实用工具",
+        "description": "一次性后台角色，被触发时各自执行单次调用，不参与对话。"
+      }
+    },
+    "bulkApply": {
+      "button": "为未配置项批量指定模型",
+      "dialog": {
+        "title": "为未配置项批量指定模型",
+        "description": "将所选模型绑定到 {{count}} 个尚未指定模型的 Agent。",
+        "visionNote": "其中包含「识图」：它需要支持图像输入的模型，若所选模型不支持，请单独为它配置。",
+        "apply": "应用",
+        "applying": "应用中…"
+      },
+      "toast": {
+        "success": "已为 {{count}} 个 Agent 指定模型",
+        "partial": "批量应用未完全成功（{{applied}}/{{total}}）"
+      }
     },
     "autoExecute": {
       "title": "自动执行工具",

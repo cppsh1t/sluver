@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { createRoute, useParams } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
@@ -20,12 +20,22 @@ import {
   SpacePasswordDialog,
 } from "@/components/space-management";
 import { AgentConfigModelPicker } from "@/components/ai/agent-config-model-picker";
+import { AgentConfigBulkApply } from "@/components/ai/agent-config-bulk-apply";
 import { CatalogStatusBanner } from "@/components/ai/catalog-status-banner";
 import { ProviderCombobox } from "@/components/ai/provider-combobox";
 import { ProviderCredentialList } from "@/components/ai/provider-credential-list";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+// Registry-driven grouping of the 11 seeded configs (ADR-0050 D7): the
+// conversational Orchestrator first, the eight dispatchable subagents in
+// roster order, then the two one-shot utilities. The name lists come from
+// the role registry — this array only fixes the groups' display order.
+import {
+  CONVERSATIONAL_ROLE_NAMES,
+  ONESHOT_ROLE_NAMES,
+  SUBAGENT_ROLE_NAMES,
+} from "@/lib/ai-roles";
 import {
   useAgentConfigs,
   useModelsDevCatalog,
@@ -40,6 +50,12 @@ import type { SpaceId } from "@/types";
 
 // Stable error code from the Rust backend (db/error.rs `to_payload`).
 const SPACE_NAME_TAKEN = "SPACE_NAME_TAKEN";
+
+const AGENT_CONFIG_GROUPS = [
+  { key: "orchestrator", names: CONVERSATIONAL_ROLE_NAMES },
+  { key: "subagents", names: SUBAGENT_ROLE_NAMES },
+  { key: "utilities", names: ONESHOT_ROLE_NAMES },
+] as const;
 
 /**
  * Space 配置 page — the Space-scoped control surface (ADR-0009 amendment).
@@ -65,6 +81,22 @@ function SpaceConfigPage() {
   const catalogQ = useModelsDevCatalog();
   const providersQ = useProviderCredentials(spaceId as SpaceId);
   const agentConfigsQ = useAgentConfigs(spaceId as SpaceId);
+
+  // Grouped rendering state (ADR-0050 D7): lookup by registry name for the
+  // three group sections, plus the bulk-apply target set (configs with no
+  // model bound).
+  const agentConfigs = useMemo(
+    () => agentConfigsQ.data ?? [],
+    [agentConfigsQ.data],
+  );
+  const agentConfigsByName = useMemo(
+    () => new Map(agentConfigs.map((c) => [c.name, c])),
+    [agentConfigs],
+  );
+  const unconfiguredConfigs = useMemo(
+    () => agentConfigs.filter((c) => c.modelId === null),
+    [agentConfigs],
+  );
 
   const space = spacesQ.data?.find((s) => s.id === (spaceId as SpaceId));
   const spaceName = space?.name;
@@ -279,25 +311,64 @@ function SpaceConfigPage() {
           </section>
 
           {/* ─── AgentConfig Models ─────────────────────────────────── */}
-          <section className="flex flex-col divide-y divide-border border-b border-border pt-5">
-            <div className="flex flex-col gap-0.5 pb-3">
-              <h2 className="font-heading text-sm font-medium tracking-tight">
-                {t("ai:agentConfigs.title")}
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                {t("ai:agentConfigs.description")}
-              </p>
-            </div>
-            {(agentConfigsQ.data ?? []).map((agentConfig) => (
-              <AgentConfigModelPicker
-                key={agentConfig.id}
+          <section className="flex flex-col border-b border-border pt-5">
+            <div className="flex items-center justify-between gap-4 pb-3">
+              <div className="flex flex-col gap-0.5">
+                <h2 className="font-heading text-sm font-medium tracking-tight">
+                  {t("ai:agentConfigs.title")}
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  {t("ai:agentConfigs.description")}
+                </p>
+              </div>
+              {/* Bulk convenience (ADR-0050 D7): bind one model to every
+                  config still missing one; disabled once nothing is
+                  unconfigured. */}
+              <AgentConfigBulkApply
                 spaceId={spaceId as SpaceId}
-                agentConfig={agentConfig}
+                unconfigured={unconfiguredConfigs}
                 providers={catalogProviders}
                 credentials={providersQ.data ?? []}
                 disabled={!catalogReady}
               />
-            ))}
+            </div>
+            {AGENT_CONFIG_GROUPS.map((group) => {
+              // Registry order within the group; unknown/missing names
+              // (e.g. a not-yet-migrated DB) simply render nothing rather
+              // than crashing the page.
+              const groupConfigs = group.names.flatMap((name) => {
+                const config = agentConfigsByName.get(name);
+                return config ? [config] : [];
+              });
+              if (groupConfigs.length === 0) return null;
+              return (
+                <div
+                  key={group.key}
+                  className="flex flex-col gap-1.5 border-t border-border py-3"
+                >
+                  <div className="flex flex-col gap-0.5">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {t(`ai:agentConfigs.groups.${group.key}.title`)}
+                    </h3>
+                    <p className="text-[0.6875rem] text-muted-foreground/70">
+                      {t(`ai:agentConfigs.groups.${group.key}.description`)}
+                    </p>
+                  </div>
+                  <div className="flex flex-col divide-y divide-border">
+                    {groupConfigs.map((agentConfig) => (
+                      <AgentConfigModelPicker
+                        key={agentConfig.id}
+                        spaceId={spaceId as SpaceId}
+                        agentConfig={agentConfig}
+                        providers={catalogProviders}
+                        credentials={providersQ.data ?? []}
+                        disabled={!catalogReady}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </section>
         </div>
       </main>

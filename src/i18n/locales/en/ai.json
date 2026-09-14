@@ -47,14 +47,58 @@
       "updateFailed": "Failed to update model"
     },
     "name": {
+      "orchestrator": "Orchestrator",
       "explorer": "Explorer",
+      "curator": "Curator",
+      "scribe": "Scribe",
+      "historian": "Historian",
+      "editor": "Editor",
+      "plotter": "Plotter",
       "writer": "Writer",
+      "critic": "Critic",
       "namer": "Auto-namer",
       "vision": "Vision"
     },
     "roleDescription": {
+      "orchestrator": "The only agent that talks to you: plans the work, confirms intent, and dispatches the specialist subagents below.",
+      "explorer": "Surveys the worldbook, novel structure, timeline, corpus, and the web; a pure reader that reports findings with ids.",
+      "curator": "Creates, updates, deletes, and reorders worldbook entities (characters and phases, locations, items, lore, events) and their images.",
+      "scribe": "Manages the user's notes — search, read, create, update, delete.",
+      "historian": "Reads everything and synthesizes — continuity checks, chronologies, relationship maps; zero write tools.",
+      "editor": "Structural work on world covers, novels, chapters, and scenes — CRUD, reorder, images, scene gallery.",
+      "plotter": "Plans narrative structure — chapter and scene CRUD plus worldbook reads for reference.",
+      "writer": "Drafts and refines scene prose via update_scene; no scene create/delete/reorder.",
+      "critic": "Reviews chapters and scenes and reports an actionable critique; a pure reader.",
       "namer": "Automatically generates a short title for a conversation after its first reply. Leave the model unconfigured to disable it.",
       "vision": "Provides image descriptions for chat models without vision (powers the look_at tool). Leave the model unassigned to disable."
+    },
+    "groups": {
+      "orchestrator": {
+        "title": "Orchestrator",
+        "description": "The only role you chat with — it dispatches every specialist below."
+      },
+      "subagents": {
+        "title": "Subagents",
+        "description": "Specialists dispatched by the Orchestrator, each with a lean toolset."
+      },
+      "utilities": {
+        "title": "Utilities",
+        "description": "One-shot background roles — each runs a single call when triggered, never a conversation."
+      }
+    },
+    "bulkApply": {
+      "button": "Apply model to all unconfigured",
+      "dialog": {
+        "title": "Apply model to all unconfigured",
+        "description": "Binds the selected model to the {{count}} agents without a model.",
+        "visionNote": "Includes \"Vision\": it needs an image-capable model — configure it separately if your choice is text-only.",
+        "apply": "Apply",
+        "applying": "Applying…"
+      },
+      "toast": {
+        "success": "Model applied to {{count}} agents",
+        "partial": "Bulk apply incomplete ({{applied}}/{{total}})"
+      }
     },
     "autoExecute": {
       "title": "Auto-execute tools",

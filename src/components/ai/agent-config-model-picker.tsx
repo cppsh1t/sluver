@@ -18,7 +18,7 @@ import {
   useUpdateAgentConfigSystemPrompt,
 } from "@/hooks";
 import { parseModelId } from "@/lib/ai";
-import { getRoleBehavior } from "@/lib/ai-roles";
+import { getRoleDefinition } from "@/lib/ai-roles";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -100,14 +100,23 @@ export function AgentConfigModelPicker({
   const skillMut = useSetSkillEnabled(spaceId);
   const [localPrompt, setLocalPrompt] = useState(agentConfig.systemPrompt);
 
-  // ADR-0040 — the "namer" agent drives a single one-shot naming call;
-  // the "vision" agent likewise backs a single one-shot image-description
-  // call (the look_at tool). Tool execution / context compaction / system
-  // prompt override are meaningless for such one-shot roles, so their
-  // dialogs show the model binding only. Explorer/writer cards are
-  // unaffected (byte-identical rendering).
-  const isOneShot =
-    agentConfig.name === "namer" || agentConfig.name === "vision";
+  // Registry-driven role shape (ADR-0050 D1): every flag below reads the
+  // role's registry entry instead of hardcoded name lists, so new roles
+  // seeded by the registry inherit the right card behavior for free.
+  const roleDef = getRoleDefinition(agentConfig.name);
+
+  // One-line duty statement under the config name (ADR-0050 D7): localized
+  // via `roleDescription.<name>`, falling back to the registry's model-
+  // facing `duty` string so a missing translation never blanks the line.
+  const dutyLine = t(`ai:agentConfigs.roleDescription.${agentConfig.name}`, {
+    defaultValue: roleDef?.duty ?? "",
+  });
+
+  // ADR-0040/0045 — the "namer" and "vision" agents drive single one-shot
+  // calls (auto-titling / look_at). Tool execution / context compaction /
+  // system prompt override are meaningless for such roles, so their
+  // dialogs show the model binding only.
+  const isOneShot = roleDef?.kind === "oneshot";
 
   // ADR-0045 — the vision role's model dropdown filters to image-capable
   // (or unknown-capability) models; tri-state semantics live in
@@ -115,11 +124,11 @@ export function AgentConfigModelPicker({
   // work, so it keeps the unfiltered list.
   const isVision = agentConfig.name === "vision";
 
-  // ADR-0042 — the shell tool is registered on the explorer and writer
-  // roles (each gated by that role's `shellToolEnabled` flag), so its
-  // toggle is hidden for the namer config only.
+  // ADR-0042/0050 — the shell tool is part of every loop role's universal
+  // set (conversational + subagents), each gated by that role's own
+  // `shellToolEnabled` flag; one-shot roles never carry it.
   const canUseShellTool =
-    agentConfig.name === "explorer" || agentConfig.name === "writer";
+    roleDef?.kind === "conversational" || roleDef?.kind === "subagent";
 
   // ADR-0043 — skill enablement per AgentConfig. The enabled set comes
   // from the agent's INSTALLED (on-disk) copies — the runtime truth — so
@@ -374,6 +383,11 @@ export function AgentConfigModelPicker({
           <span className="truncate text-sm font-medium">
             {t(`ai:agentConfigs.name.${agentConfig.name}`, { defaultValue: agentConfig.name })}
           </span>
+          {dutyLine && (
+            <span className="truncate text-xs text-muted-foreground/70">
+              {dutyLine}
+            </span>
+          )}
           {summary ? (
             <span className="truncate text-xs text-muted-foreground/70">
               {summary}
@@ -404,11 +418,10 @@ export function AgentConfigModelPicker({
             {t(`ai:agentConfigs.name.${agentConfig.name}`, { defaultValue: agentConfig.name })}
           </DialogTitle>
           <DialogDescription>
-            {isOneShot
-              ? t(`ai:agentConfigs.roleDescription.${agentConfig.name}`, {
-                  defaultValue: "",
-                })
-              : t("ai:agentConfigs.dialog.description")}
+            {/* Duty line for every role (ADR-0050 D7); the generic
+                description survives only as the fallback for configs the
+                registry doesn't know (e.g. legacy DB rows). */}
+            {dutyLine || t("ai:agentConfigs.dialog.description")}
           </DialogDescription>
         </DialogHeader>
 
@@ -657,7 +670,7 @@ export function AgentConfigModelPicker({
               value={localPrompt}
               onChange={(e) => setLocalPrompt(e.currentTarget.value)}
               onBlur={commitPromptIfDirty}
-              placeholder={getRoleBehavior(agentConfig.name)?.systemPrompt ?? ""}
+              placeholder={getRoleDefinition(agentConfig.name)?.systemPrompt ?? ""}
               className="min-h-24 text-xs"
               disabled={disabled || systemPromptMut.isPending}
             />
