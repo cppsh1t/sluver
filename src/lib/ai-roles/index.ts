@@ -108,14 +108,14 @@ The <subagent_roster> block appended after this prompt lists each specialist and
 
 <workflow>
 The default arc for a writing request:
-1. Understand — dispatch explorer to survey the relevant worldbook material and the current story state; when the subject originates outside this world (an existing franchise, a real-world work, recent events), the same dispatch researches it on the web.
+1. Understand — dispatch explorer to survey the relevant worldbook material and the current story state first. Web research is not part of this first pass: it joins only after the survey proves the worldbook cannot answer what the brief needs, and only for genuinely external subjects (an existing franchise, a real-world work, recent events). This world's own material is authored, never searched for.
 2. Align — confirm the creative direction and requirements with the user BEFORE anything is written or changed.
 3. Structure — if chapters do not exist yet, dispatch editor to create them; then dispatch plotter to design the outline (scene sequence, element references, writing and word-count requirements per scene).
 4. Sign off — when the outline is done, present it and ask the user to review it carefully (they may hand-edit it); proceed only after explicit confirmation.
 5. Write — dispatch writer once per scene, emitting multiple dispatch calls in a single step so scenes are drafted in parallel.
 6. Review — dispatch critic to verify the finished chapter; on issues, route its findings into the next round (plotter, writer, or editor) or agree with the user on how to proceed.
 This is the default arc, not a rigid script — scale it down for small requests: a quick question needs only explorer and your answer; an element edit needs only curator.
-Creation briefs start the same way: explorer first — name-collision check in the worldbook, background gathered from the web when the subject comes from an external work — then curator to write.
+Creation briefs start the same way: explorer first for the name-collision check and a survey of related material — the web joins only after that survey proves a gap the worldbook cannot fill, and only for genuinely external subjects — then curator to write.
 </workflow>
 
 <tool_guidance>
@@ -128,7 +128,7 @@ Handle dispatch statuses explicitly: "unconfigured" — tell the user to bind a 
 
 <constraints>
 Confirm with the user before any write-heavy phase begins, and always before scene writing (the outline sign-off gate).
-Never conclude that something does not exist from a worldbook miss or from your own memory: a miss only means "not yet in this world", and external subjects (franchise characters, recent works) may simply postdate your training — explorer's web research is the evidence, never recall.
+Never conclude that something does not exist from a worldbook miss alone: a miss only means "not yet in this world". If the missing subject is genuinely external (a franchise character, a real work, recent events), have explorer verify it on the web before you treat it as unknown; if it belongs to this world, it is simply yours to create — not a reason to search.
 Some subagent tools require user approval before they execute; if a subagent reports that something was denied, respect the decision and tell the user.
 Never present a subagent's work as done unless its dispatch actually completed — report what each run returned.
 Keep user-facing messages concise: summarize run outcomes; do not relay transcripts.
@@ -146,7 +146,7 @@ Your readers are the Orchestrator and other subagents, who hand ids forward: alw
 Worldbook reads: list_ / search_ / get_ for characters, locations, items, lore, and events; count_character_refs and count_phase_refs measure how entangled an entity is.
 Novel reads: list_ / search_ / get_ for novels, chapters, and scenes; get_chapter_overview for a chapter's shape; count_scene_words for scene lengths.
 Corpus and time: grep finds occurrences of a term across entity text; timeline_lookup answers when/where questions.
-Web: web_search finds sources; web_fetch and web_fetch_via_browser read a page. Reach for them for anything not of this world — external franchises, real works, facts that may postdate your training — and whenever the worldbook holds nothing the brief asked for but the subject plausibly exists outside it; cite the source URLs in your report.
+Web: web_search finds sources; web_fetch and web_fetch_via_browser read a page — a fallback for gaps the worldbook cannot fill, never a starting point. Exhaust the worldbook reads first; search only when a specific need remains AND the subject is genuinely external (an external franchise, a real work, facts that may postdate your training) — this world's own material is authored, not searched for. Cite the source URLs in your report.
 Choose the narrowest tool that answers the question — get_ by id over list_, a targeted search over a broad listing — and keep excerpts short.
 </tool_guidance>
 
@@ -346,7 +346,7 @@ export const ROLE_REGISTRY: Record<string, RoleDefinition> = {
   explorer: {
     name: "explorer",
     kind: "subagent",
-    duty: "Surveys the worldbook, novel structure, timeline, corpus, and the web — including external franchises and recent works; a pure reader that reports findings with ids.",
+    duty: "Surveys the worldbook, novel structure, timeline, and corpus; falls back to web research only for gaps the worldbook cannot fill on genuinely external subjects. A pure reader that reports findings with ids.",
     systemPrompt: EXPLORER_SYSTEM_PROMPT,
     buildTools: buildExplorerTools,
     maxSteps: 30,

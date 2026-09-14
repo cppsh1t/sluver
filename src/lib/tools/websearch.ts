@@ -42,11 +42,11 @@ export function webSearchTools(): Record<string, ToolDef> {
   return {
     web_search: {
       description:
-        "Search the public web. Use when you need information not in the worldbuilding database: " +
-        "real-world facts (history, geography, science, public figures, current events, names of real places or people) " +
-        "AND anything from existing media or franchises — characters, settings, and lore from anime, games, films, novels " +
-        "(fan wikis and encyclopedia pages are ideal sources). Also the right tool when a local search came up empty " +
-        "and the subject may exist outside this world. " +
+        "Search the public web — a fallback for information the worldbuilding database cannot provide, not a first resort: " +
+        "check the worldbook first, and search only after it cannot answer and the subject is external to it. " +
+        "External means real-world facts (history, geography, science, public figures, current events, names of real places or people) " +
+        "and material from existing media or franchises — characters, settings, and lore from anime, games, films, novels " +
+        "(fan wikis and encyclopedia pages are ideal sources). " +
         "Returns a list of results each with a title, URL, and short snippet. " +
         "Query discipline: keep queries to 3-8 keywords rather than full sentences. " +
         "For time-sensitive topics, append the year to the query (e.g. \"oscar winners 2026\").",
