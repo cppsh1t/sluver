@@ -54,13 +54,12 @@ describe("ROLE_REGISTRY shape", () => {
     expect(partition).toEqual([...SEED_ROLE_NAMES].sort());
   });
 
-  it("assigns maxSteps: orchestrator 10, writer/curator 15, other loop roles 10", () => {
-    expect(ROLE_REGISTRY.orchestrator.maxSteps).toBe(10);
-    expect(ROLE_REGISTRY.writer.maxSteps).toBe(15);
-    expect(ROLE_REGISTRY.curator.maxSteps).toBe(15);
+  it("defaults maxSteps to 30 for every loop role; one-shots keep the inert 1", () => {
     for (const name of LOOP_ROLE_NAMES) {
-      if (name === "writer" || name === "curator") continue;
-      expect(ROLE_REGISTRY[name].maxSteps).toBe(10);
+      expect(ROLE_REGISTRY[name].maxSteps).toBe(30);
+    }
+    for (const name of ONESHOT_ROLE_NAMES) {
+      expect(ROLE_REGISTRY[name].maxSteps).toBe(1);
     }
   });
 

@@ -65,7 +65,12 @@ export interface RoleDefinition {
   readonly systemPrompt: string;
   /** Factory: receives ToolContext, returns a wired SDK ToolSet with consent gates. */
   readonly buildTools: (ctx: ToolContext) => ToolSet;
-  /** Maximum number of steps before the loop forces `finishReason: 'max-steps'`. */
+  /**
+   * Fallback step budget used when the AgentConfig row carries no user-set
+   * `maxSteps` (NULL). The effective budget is resolved at run composition
+   * in the conversation-runtime store: DB value > this default. One-shots
+   * never run the loop, so theirs is an inert shape-keeper.
+   */
   readonly maxSteps: number;
   /**
    * Per-role consent-level overrides, applied at toolset composition time
@@ -172,7 +177,7 @@ export const ROLE_REGISTRY: Record<string, RoleDefinition> = {
     duty: "Coordinates everything: plans work, confirms with the user, and dispatches the specialists below.",
     systemPrompt: ORCHESTRATOR_SYSTEM_PROMPT,
     buildTools: buildOrchestratorTools,
-    maxSteps: 10,
+    maxSteps: 30,
   },
   explorer: {
     name: "explorer",
@@ -180,7 +185,7 @@ export const ROLE_REGISTRY: Record<string, RoleDefinition> = {
     duty: "Surveys the worldbook, novel structure, timeline, corpus, and the web; a pure reader that reports findings with ids.",
     systemPrompt: EXPLORER_SYSTEM_PROMPT,
     buildTools: buildExplorerTools,
-    maxSteps: 10,
+    maxSteps: 30,
   },
   curator: {
     name: "curator",
@@ -188,7 +193,7 @@ export const ROLE_REGISTRY: Record<string, RoleDefinition> = {
     duty: "Creates, updates, deletes, and reorders worldbook entities (characters and phases, locations, items, lore, events) and their images.",
     systemPrompt: CURATOR_SYSTEM_PROMPT,
     buildTools: buildCuratorTools,
-    maxSteps: 15,
+    maxSteps: 30,
   },
   scribe: {
     name: "scribe",
@@ -196,7 +201,7 @@ export const ROLE_REGISTRY: Record<string, RoleDefinition> = {
     duty: "Manages the user's notes — search, read, create, update, delete.",
     systemPrompt: SCRIBE_SYSTEM_PROMPT,
     buildTools: buildScribeTools,
-    maxSteps: 10,
+    maxSteps: 30,
   },
   historian: {
     name: "historian",
@@ -204,7 +209,7 @@ export const ROLE_REGISTRY: Record<string, RoleDefinition> = {
     duty: "Reads everything and synthesizes — continuity checks, chronologies, relationship maps; zero write tools.",
     systemPrompt: HISTORIAN_SYSTEM_PROMPT,
     buildTools: buildHistorianTools,
-    maxSteps: 10,
+    maxSteps: 30,
   },
   editor: {
     name: "editor",
@@ -212,7 +217,7 @@ export const ROLE_REGISTRY: Record<string, RoleDefinition> = {
     duty: "Structural work on world covers, novels, chapters, and scenes — CRUD, reorder, images, scene gallery.",
     systemPrompt: EDITOR_SYSTEM_PROMPT,
     buildTools: buildEditorTools,
-    maxSteps: 10,
+    maxSteps: 30,
   },
   plotter: {
     name: "plotter",
@@ -220,7 +225,7 @@ export const ROLE_REGISTRY: Record<string, RoleDefinition> = {
     duty: "Plans narrative structure — chapter and scene CRUD plus worldbook reads for reference.",
     systemPrompt: PLOTTER_SYSTEM_PROMPT,
     buildTools: buildPlotterTools,
-    maxSteps: 10,
+    maxSteps: 30,
   },
   writer: {
     name: "writer",
@@ -228,7 +233,7 @@ export const ROLE_REGISTRY: Record<string, RoleDefinition> = {
     duty: "Drafts and refines scene prose via update_scene; no scene create/delete/reorder.",
     systemPrompt: WRITER_SYSTEM_PROMPT,
     buildTools: buildWriterTools,
-    maxSteps: 15,
+    maxSteps: 30,
     consentOverrides: WRITER_CONSENT_OVERRIDES,
   },
   critic: {
@@ -237,7 +242,7 @@ export const ROLE_REGISTRY: Record<string, RoleDefinition> = {
     duty: "Reviews chapters and scenes and reports an actionable critique; a pure reader.",
     systemPrompt: CRITIC_SYSTEM_PROMPT,
     buildTools: buildCriticTools,
-    maxSteps: 10,
+    maxSteps: 30,
   },
   // ── One-shot roles (ADR-0040 namer, ADR-0045 vision) ──
   // Never run the AgentLoop — each fires a single `generateText` call from
