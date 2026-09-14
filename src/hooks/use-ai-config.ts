@@ -15,7 +15,14 @@ import {
   updateAgentConfigSystemPrompt,
 } from "@/api";
 import { parseModelId, type ResolvedModelConfig } from "@/lib/ai";
-import type { ContextCompaction, ProviderCredentialId, SpaceId } from "@/types";
+import type {
+  AgentConfig,
+  ContextCompaction,
+  ModelsDevCatalog,
+  ProviderCredential,
+  ProviderCredentialId,
+  SpaceId,
+} from "@/types";
 
 // Hooks are toast-free on purpose: components own success/error UX so the
 // same hook is reusable across pages that surface errors differently. The
@@ -177,6 +184,102 @@ export const useRefreshModelsDevCatalog = () => {
 
 // ─── Resolved model config (compose agent config + credential + catalog) ────
 
+/** The joined per-role fields {@link resolveAgentModelConfig} produces. */
+export interface ResolvedAgentModelConfig {
+  /**
+   * Everything `createLanguageModel()` needs, or `null` when any piece is
+   * missing (agent config unbound, no credential, provider not in
+   * catalog). Consumers should guard on `config` before generating.
+   */
+  config: ResolvedModelConfig | null;
+  /** The agent's `autoExecuteDangerousTools` flag (false until resolved). */
+  autoExecuteDangerousTools: boolean;
+  /**
+   * Whether the shell execution tool is registered for this role
+   * (ADR-0042). Defaults to `false` until config resolves.
+   */
+  shellToolEnabled: boolean;
+  /** Per-role Context-mode compaction config (ADR-0031 Phase 1). */
+  contextCompaction: ContextCompaction;
+  /** Per-role system prompt override. Empty string = code-defined default. */
+  systemPrompt: string;
+}
+
+/**
+ * Pure join of ONE agent config with the Space's credentials + the global
+ * catalog — the shared core of {@link useResolvedModelConfig} and the
+ * conversation-runtime Provider's registry-driven model resolver
+ * (ADR-0050 D1: the Provider resolves ANY role by name from a configs
+ * list, so the join must exist once, free of hook topology).
+ *
+ * All inputs may be `undefined` (queries still loading / role absent) —
+ * the join then reports defaulted flags + `config: null`.
+ */
+export function resolveAgentModelConfig(
+  agentConfig: AgentConfig | undefined,
+  credentials: readonly ProviderCredential[] | undefined,
+  catalog: ModelsDevCatalog | undefined,
+): ResolvedAgentModelConfig {
+  const autoExecuteDangerousTools = agentConfig?.autoExecuteDangerousTools ?? false;
+  const shellToolEnabled = agentConfig?.shellToolEnabled ?? false;
+  // Per-role Context-mode compaction config (ADR-0031 Phase 1). Defaults to
+  // disabled when the agent config hasn't resolved yet — the Agent will be
+  // (re)built once config lands (same lifecycle as model rebinding).
+  const contextCompaction: ContextCompaction = agentConfig?.contextCompaction ?? {
+    enabled: false,
+    turnAge: 3,
+  };
+  const systemPrompt = agentConfig?.systemPrompt ?? "";
+  const [providerId, modelId] = parseModelId(agentConfig?.modelId ?? null);
+
+  if (!providerId || !modelId) {
+    return {
+      config: null,
+      autoExecuteDangerousTools,
+      shellToolEnabled,
+      contextCompaction,
+      systemPrompt,
+    };
+  }
+
+  const credential = credentials?.find((c) => c.providerId === providerId);
+  const catalogProvider = catalog?.providers.find((p) => p.id === providerId);
+
+  // `apiKey` MUST be a non-empty string — provider packages will accept an
+  // empty string at construction but fail with an opaque 401 mid-stream,
+  // which surfaces as a generic `status: "error"` with no diagnostic trail.
+  // Reject early here so the consumer sees `config: null` instead.
+  if (
+    !credential ||
+    !credential.apiKey ||
+    credential.apiKey.trim() === "" ||
+    !catalogProvider?.npm
+  ) {
+    return {
+      config: null,
+      autoExecuteDangerousTools,
+      shellToolEnabled,
+      contextCompaction,
+      systemPrompt,
+    };
+  }
+
+  return {
+    config: {
+      npmPackage: catalogProvider.npm,
+      modelId,
+      apiKey: credential.apiKey,
+      ...(catalogProvider.apiBaseUrl
+        ? { baseURL: catalogProvider.apiBaseUrl }
+        : {}),
+    },
+    autoExecuteDangerousTools,
+    shellToolEnabled,
+    contextCompaction,
+    systemPrompt,
+  };
+}
+
 /**
  * Compose everything needed to call `createLanguageModel()` for a specific
  * agent config, by joining three data sources:
@@ -229,74 +332,12 @@ export function useResolvedModelConfig(
     const error = agentConfigs.error ?? credentials.error ?? catalog.error;
 
     const agentConfig = agentConfigs.data?.find((a) => a.name === agentConfigName);
-    const autoExecuteDangerousTools = agentConfig?.autoExecuteDangerousTools ?? false;
-    const shellToolEnabled = agentConfig?.shellToolEnabled ?? false;
-    // Per-role Context-mode compaction config (ADR-0031 Phase 1). Defaults to
-    // disabled when the agent config hasn't resolved yet — the Agent will be
-    // (re)built once config lands (same lifecycle as model rebinding).
-    const contextCompaction: ContextCompaction = agentConfig?.contextCompaction ?? {
-      enabled: false,
-      turnAge: 3,
-    };
-    const systemPrompt = agentConfig?.systemPrompt ?? "";
-    const [providerId, modelId] = parseModelId(agentConfig?.modelId ?? null);
-
-    if (!providerId || !modelId) {
-      return {
-        config: null,
-        autoExecuteDangerousTools,
-        shellToolEnabled,
-        contextCompaction,
-        systemPrompt,
-        isLoading,
-        error,
-      };
-    }
-
-    const credential = credentials.data?.find(
-      (c) => c.providerId === providerId,
+    const joined = resolveAgentModelConfig(
+      agentConfig,
+      credentials.data,
+      catalog.data,
     );
-    const catalogProvider = catalog.data?.providers.find(
-      (p) => p.id === providerId,
-    );
-
-    // `apiKey` MUST be a non-empty string — provider packages will accept an
-    // empty string at construction but fail with an opaque 401 mid-stream,
-    // which surfaces as a generic `status: "error"` with no diagnostic trail.
-    // Reject early here so the consumer sees `config: null` instead.
-    if (
-      !credential ||
-      !credential.apiKey ||
-      credential.apiKey.trim() === "" ||
-      !catalogProvider?.npm
-    ) {
-      return {
-        config: null,
-        autoExecuteDangerousTools,
-        shellToolEnabled,
-        contextCompaction,
-        systemPrompt,
-        isLoading,
-        error,
-      };
-    }
-
-    return {
-      config: {
-        npmPackage: catalogProvider.npm,
-        modelId,
-        apiKey: credential.apiKey,
-        ...(catalogProvider.apiBaseUrl
-          ? { baseURL: catalogProvider.apiBaseUrl }
-          : {}),
-      },
-      autoExecuteDangerousTools,
-      shellToolEnabled,
-      contextCompaction,
-      systemPrompt,
-      isLoading,
-      error,
-    };
+    return { ...joined, isLoading, error };
   }, [
     agentConfigs.data,
     agentConfigs.isLoading,

@@ -113,9 +113,10 @@ export class TauriSessionStore implements SessionStore {
    * {@link SessionStore} contract for completeness.
    *
    * Reads `agentConfigName` + `kind` from `init.meta`. When `meta` is absent
-   * entirely it defaults to `{ agentConfigName: "explorer", kind: "world" }`
-   * (the most common role). When `meta` is present but `agentConfigName` is
-   * missing, it throws -- a malformed call that should surface loudly.
+   * entirely it defaults to `{ agentConfigName: "orchestrator", kind: "world" }`
+   * (the single user-facing role per ADR-0050 D1). When `meta` is present
+   * but `agentConfigName` is missing, it throws -- a malformed call that
+   * should surface loudly.
    */
   async createSession(init?: SessionInit): Promise<SessionRecord> {
     let agentConfigName: string;
@@ -124,7 +125,7 @@ export class TauriSessionStore implements SessionStore {
 
     if (init?.meta === undefined) {
       // No meta at all -- the conservative default.
-      agentConfigName = "explorer";
+      agentConfigName = "orchestrator";
     } else {
       const meta = init.meta as TauriSessionMeta;
       if (!meta.agentConfigName) {

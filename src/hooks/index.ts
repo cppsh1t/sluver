@@ -144,4 +144,4 @@ export {
   useSetSkillEnabled,
 } from "./use-skills";
 
-export { enabledSkillsKey, useEnabledSkills } from "./use-enabled-skills";
+export { enabledSkillsKey, useEnabledSkills, useAllRolesEnabledSkills } from "./use-enabled-skills";

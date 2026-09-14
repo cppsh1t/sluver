@@ -85,8 +85,8 @@ export function updateAgentConfigAutoExecute(
 /**
  * Toggle an agent config's `shellToolEnabled` flag (ADR-0042). When
  * `true`, the shell execution tool (`run_shell_command`) is registered
- * on the explorer role and auto-executes; when `false` it is not
- * registered at all. Returns the updated agent config.
+ * on that role and auto-executes; when `false` it is not registered at
+ * all. Returns the updated agent config.
  */
 export function updateAgentConfigShellTool(
   spaceId: string,

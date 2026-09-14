@@ -6,7 +6,8 @@ import { z } from "zod";
  * Two tables in `space.db` (see ADR-0012 Space-scoped AI config):
  *  - `provider_credentials` — one row per provider (anthropic / openai / …),
  *    keyed by `provider_id` which aligns with the models.dev catalog.
- *  - `agents` — seeded rows (`explorer`, `writer`); each points its
+ *  - `agents` — seeded rows (11 per Space post-ADR-0050: orchestrator +
+ *    8 subagents + namer/vision; see `src/lib/ai-roles`); each points its
  *    `model_id` at a `"{providerId}/{modelId}"` string.
  *
  * The catalog (`ModelsDevCatalog`) is a global, non-Space-scoped snapshot of
@@ -88,15 +89,16 @@ export type ContextCompaction = z.infer<typeof contextCompactionSchema>;
 // ─── AgentConfig ────────────────────────────────────────────────────────────
 
 /**
- * A built-in agent config (`explorer` or `writer`). Seeded at Space creation;
- * the frontend never creates or deletes agent configs — only updates `modelId`.
+ * A built-in agent config. Seeded at Space creation from the role registry
+ * (`src/lib/ai-roles` — 11 names post-ADR-0050); the frontend never creates
+ * or deletes agent configs — only updates `modelId`.
  *
  * `modelId` follows the `"{providerId}/{modelId}"` convention (e.g.
  * `"anthropic/claude-sonnet-5"`), or `null` when unset.
  */
 export const agentConfigSchema = z.object({
   id: agentConfigIdSchema,
-  /** Stable name: `"explorer"` or `"writer"`. */
+  /** Stable name, one of the registry's `SEED_ROLE_NAMES`. */
   name: z.string(),
   /** `"{providerId}/{modelId}"`, or `null` when no model is chosen. */
   modelId: z.string().nullable(),
@@ -107,9 +109,10 @@ export const agentConfigSchema = z.object({
   autoExecuteDangerousTools: z.boolean(),
   /**
    * When `true`, the shell execution tool (`run_shell_command`) is
-   * registered on the explorer role and auto-executes (ADR-0042,
-   * supersedes ADR-0041 §2). Defaults to `false` (the DB DDL owns the
-   * default; Rust always serializes this field).
+   * registered on this role and auto-executes (ADR-0042, supersedes
+   * ADR-0041 §2 — part of every loop role's universal set post-ADR-0050).
+   * Defaults to `false` (the DB DDL owns the default; Rust always
+   * serializes this field).
    */
   shellToolEnabled: z.boolean(),
   /**
@@ -121,8 +124,8 @@ export const agentConfigSchema = z.object({
   contextCompaction: contextCompactionSchema,
   /**
    * Per-role system prompt override. Empty string = use the code-defined
-   * default (see `src/lib/ai-roles/index.ts` `ROLE_BEHAVIOR`). A non-empty
-   * value replaces the role's system prompt for this Space.
+   * default (see the role registry in `src/lib/ai-roles/index.ts`). A
+   * non-empty value replaces the role's system prompt for this Space.
    */
   systemPrompt: z.string(),
   createdAt: z.iso.datetime(),
