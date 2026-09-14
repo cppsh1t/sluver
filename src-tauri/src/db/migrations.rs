@@ -300,8 +300,22 @@ const SPACE_MIGRATION_011: &str = r#"
          '9999-12-31T23:59:59.999Z', '9999-12-31T23:59:59.999Z'),
         ('01a00a6e-36c6-7a06-9b6a-3e7c2d9b4a06', 'plotter', NULL, 0, 0, 0, 3, '',
          '9999-12-31T23:59:59.999Z', '9999-12-31T23:59:59.999Z'),
-        ('01a00a6e-36c7-7a07-9b7a-3e7c2d9b4a07', 'critic', NULL, 0, 0, 0, 3, '',
-         '9999-12-31T23:59:59.999Z', '9999-12-31T23:59:59.999Z');
+         ('01a00a6e-36c7-7a07-9b7a-3e7c2d9b4a07', 'critic', NULL, 0, 0, 0, 3, '',
+          '9999-12-31T23:59:59.999Z', '9999-12-31T23:59:59.999Z');
+"#;
+
+/// Migration 12 for `space.db`: per-role loop step budget on
+/// `agent_configs`. Nullable INTEGER — NULL (the DEFAULT for existing
+/// rows) means "use the code default" (the frontend ROLE_REGISTRY value,
+/// 30 for loop roles), so unlike the flag columns there is deliberately
+/// no NOT NULL DEFAULT; validation (positive integer) is app-layer in
+/// `do_update_agent_config_max_steps`, following the turn_age guard
+/// precedent. Added as a separate migration so existing `space.db` files
+/// get the column via `rusqlite_migration`'s incremental migration
+/// tracking — modifying `SPACE_MIGRATION_002` would NOT re-run for
+/// already-migrated databases.
+const SPACE_MIGRATION_012: &str = r#"
+    ALTER TABLE agent_configs ADD COLUMN max_steps INTEGER;
 "#;
 
 // ─── world DB schema ────────────────────────────────────────────────────────
@@ -470,6 +484,7 @@ const SPACE_SLICE: &[M] = &[
     M::up(SPACE_MIGRATION_009),
     M::up(SPACE_MIGRATION_010),
     M::up(SPACE_MIGRATION_011),
+    M::up(SPACE_MIGRATION_012),
 ];
 pub const SPACE_MIGRATIONS: Migrations = Migrations::from_slice(SPACE_SLICE);
 
