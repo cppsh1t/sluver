@@ -38,12 +38,14 @@ import { listConversations, updateConversationTitle } from "@/api";
 import { createLanguageModel } from "@/lib/ai";
 import { generateConversationTitle } from "@/lib/ai/auto-title";
 import {
+  resolveAgentModelConfig,
   useAgentConfigs,
   useModelsDevCatalog,
+  useProviderCredentials,
   useResolvedModelConfig,
 } from "@/hooks/use-ai-config";
 import { conversationKeys } from "@/hooks/use-conversations";
-import { useEnabledSkills } from "@/hooks/use-enabled-skills";
+import { useAllRolesEnabledSkills } from "@/hooks/use-enabled-skills";
 import { logger } from "@/lib/logger";
 import {
   EMPTY_VIEW,
@@ -128,76 +130,95 @@ export function ConversationRuntimeProvider({
   }
   const store = storeRef.current;
 
-  // Live model resolution for both roles (ADR-0023). The bound model is read
-  // from the Space's AgentConfig at Agent-construction time (lazy, on first
-  // send/ensure per conversation). The constructed Agent is then cached in the
-  // store for this Provider's lifetime, so a model change in Settings takes
-  // effect for NEW conversations immediately and for existing ones the next
-  // time the Space window is reopened (the Provider unmounts, dropping all
-  // cached Agents — there is no per-conversation model rebind while open).
-  const explorerConfig = useResolvedModelConfig(spaceId, "explorer");
-  const writerConfig = useResolvedModelConfig(spaceId, "writer");
+  // Live model resolution for every registry role (ADR-0023 + ADR-0050 D1).
+  // The bound model is read from the Space's AgentConfig at
+  // Agent-construction time (lazy, on first send/ensure per conversation).
+  // The constructed Agent is then cached in the store for this Provider's
+  // lifetime, so a model change in Settings takes effect for NEW
+  // conversations immediately and for existing ones the next time the
+  // Space window is reopened (the Provider unmounts, dropping all cached
+  // Agents — there is no per-conversation model rebind while open).
+  //
+  // Registry-driven: ONE query family (agent configs + credentials +
+  // catalog) feeds a resolver that resolves ANY role by name — subagent
+  // models are resolved lazily at dispatch time, not at Provider
+  // construction. No per-role hook fan-out.
+  const agentConfigsQ = useAgentConfigs(spaceId);
+  const credentialsQ = useProviderCredentials(spaceId);
+  const catalogQ = useModelsDevCatalog();
+  // Per-role enabled Agent Skills (ADR-0043 §3) for ALL nine loop roles in
+  // ONE query — feeds the `<available_skills>` catalog + skill tool
+  // registration at Agent-construction time, with the same
+  // live-resolution lifecycle as the model config. Keyed under the
+  // storage-center's ["skills", spaceId] namespace, so skill toggle
+  // mutations invalidate it by prefix exactly like the per-role queries.
+  const allSkillsQ = useAllRolesEnabledSkills(spaceId);
   // The dedicated naming agent (ADR-0040) — a one-shot `generateText` call,
-  // never routed through the conversation AgentLoop or the chat role picker.
-  // `config: null` (model unbound / credential missing / still loading) is
-  // the "not configured" gate: auto-titling silently does nothing. The
-  // namer never carries skills (ADR-0043 §3) — no query for it.
+  // never routed through the conversation AgentLoop. `config: null` (model
+  // unbound / credential missing / still loading) is the "not configured"
+  // gate: auto-titling silently does nothing. The namer never carries
+  // skills (ADR-0043 §3) — no query for it.
   const namerConfig = useResolvedModelConfig(spaceId, "namer");
   // The dedicated vision agent (ADR-0045) — one-shot `generateText` behind
-  // the `look_at` tool, shared by both roles (Space-scoped, not per-role).
-  // Same "configured = enabled, silent when unconfigured" gate as the
-  // namer: `config ?? null` rides the model resolver into the ToolContext;
-  // unbound → the tool is simply not registered. Shares every underlying
-  // react-query with the resolvers above (no extra IPC); never carries
-  // skills — no query for it.
+  // the `look_at` tool, shared by every role (Space-scoped, not per-role).
+  // ADR-0050 D6 moved the "unbound" case from registration-time gating to
+  // a structured `unconfigured` tool result, but the resolved config still
+  // rides the ToolContext (`visionConfig: null` → that result). Shares
+  // every underlying react-query with the resolvers above (no extra IPC);
+  // never carries skills — no query for it.
   const visionConfig = useResolvedModelConfig(spaceId, "vision");
-  // Per-role enabled Agent Skills (ADR-0043 §3) — feed the `<available_skills>`
-  // catalog + skill tool registration at Agent-construction time, with the
-  // same live-resolution lifecycle as the model config above. Only `data` /
-  // `isLoading` are read (primitives, extracted during render so react-query
-  // prop-tracking sees them) — the resolver below consumes those.
-  const explorerSkills = useEnabledSkills(spaceId, "explorer");
-  const writerSkills = useEnabledSkills(spaceId, "writer");
-  const explorerSkillsData = explorerSkills.data;
-  const explorerSkillsLoading = explorerSkills.isLoading;
-  const writerSkillsData = writerSkills.data;
-  const writerSkillsLoading = writerSkills.isLoading;
+
+  // Primitives extracted during render so react-query prop-tracking sees
+  // them; the resolver below consumes them per-call.
+  const agentConfigsData = agentConfigsQ.data;
+  const credentialsData = credentialsQ.data;
+  const catalogData = catalogQ.data;
+  const skillsByRole = allSkillsQ.data;
+  const configsLoading =
+    agentConfigsQ.isLoading || credentialsQ.isLoading || catalogQ.isLoading;
+  const skillsLoading = allSkillsQ.isLoading;
+  const visionResolved = visionConfig.config ?? null;
 
   const modelResolver = useMemo<ModelResolver>(() => {
     return (role: string): ResolvedModel => {
-      const cfg = role === "writer" ? writerConfig : explorerConfig;
-      const skillsData = role === "writer" ? writerSkillsData : explorerSkillsData;
-      const skillsLoading = role === "writer" ? writerSkillsLoading : explorerSkillsLoading;
       // While the Space-scoped AI config is still loading, the role's
-      // configured-ness is UNKNOWN. Returning "loading" (not "unconfigured")
-      // prevents `resolveAgent` from flashing a spurious MODEL_NOT_CONFIGURED
-      // before the queries resolve. Both whole config objects (carrying
-      // `isLoading` + `config`) are in the deps below so this builder — and
-      // thus the `useEnsureRuntime` effect — re-runs the moment config lands,
-      // retrying resolution. They are themselves referentially stable
-      // (`useResolvedModelConfig` memoizes), so this recomputes only on real
-      // value changes, not every render.
+      // configured-ness is UNKNOWN. Returning "loading" (not
+      // "unconfigured") prevents `resolveAgent` from flashing a spurious
+      // MODEL_NOT_CONFIGURED before the queries resolve. The extracted
+      // primitives are in the deps below so this builder — and thus the
+      // `useEnsureRuntime` effect — re-runs the moment config lands,
+      // retrying resolution.
       //
-      // The enabled-skills query rides the SAME gate: constructing the Agent
-      // before it resolves would cache a skillless Agent for the window's
-      // lifetime (ADR-0024), silently dropping the role's skills. On query
-      // error `isLoading` settles false and `data` is undefined → `[]`.
-      if (cfg.isLoading || skillsLoading) return { status: "loading" };
-      if (!cfg.config) return { status: "unconfigured" };
+      // The all-roles enabled-skills query rides the SAME gate:
+      // constructing the Agent before it resolves would cache a skillless
+      // Agent for the window's lifetime (ADR-0024), silently dropping the
+      // role's skills. On query error `isLoading` settles false and
+      // `data` is undefined → `[]`.
+      if (configsLoading || skillsLoading) return { status: "loading" };
+      // Registry-driven name → config lookup (ADR-0050 D1): any unknown
+      // or unbound name joins to `config: null` → "unconfigured".
+      const agentConfig = agentConfigsData?.find((a) => a.name === role);
+      const joined = resolveAgentModelConfig(
+        agentConfig,
+        credentialsData,
+        catalogData,
+      );
+      if (!joined.config) return { status: "unconfigured" };
       try {
         return {
           status: "ready",
-          model: createLanguageModel(cfg.config),
-          autoExecuteDangerousTools: cfg.autoExecuteDangerousTools,
-          shellToolEnabled: cfg.shellToolEnabled,
-          contextCompaction: cfg.contextCompaction,
-          systemPrompt: cfg.systemPrompt,
-          skills: skillsData ?? [],
+          model: createLanguageModel(joined.config),
+          autoExecuteDangerousTools: joined.autoExecuteDangerousTools,
+          shellToolEnabled: joined.shellToolEnabled,
+          contextCompaction: joined.contextCompaction,
+          systemPrompt: joined.systemPrompt,
+          skills: skillsByRole?.[role] ?? [],
           // ADR-0045 — Space-scoped vision agent config for `look_at`.
-          // `null` (unbound / still loading) → tool not registered. The
-          // vision query shares its react-query keys with the role config
-          // above, so by the time the role is "ready" this has settled too.
-          visionConfig: visionConfig.config ?? null,
+          // `null` (unbound) → the always-registered tool returns its
+          // structured `unconfigured` result (ADR-0050 D6). The vision
+          // query shares its react-query keys with the config sources
+          // above, so by the time the role is "ready" this has settled.
+          visionConfig: visionResolved,
         };
       } catch (e) {
         // Provider package not installed / factory mismatch — surface as
@@ -210,13 +231,13 @@ export function ConversationRuntimeProvider({
       }
     };
   }, [
-    explorerConfig,
-    writerConfig,
-    visionConfig,
-    explorerSkillsData,
-    explorerSkillsLoading,
-    writerSkillsData,
-    writerSkillsLoading,
+    configsLoading,
+    skillsLoading,
+    agentConfigsData,
+    credentialsData,
+    catalogData,
+    skillsByRole,
+    visionResolved,
   ]);
 
   const onPersistError = useCallback<PersistErrorHandler>((e) => {
@@ -226,15 +247,9 @@ export function ConversationRuntimeProvider({
   // ── Vision capability resolution (ADR-0044 §D9 step 2) ──────────────────
   // Same data the token-status-bar joins for `contextWindow` (the established
   // catalog-access precedent): the Space's agent configs + the global
-  // models.dev catalog. Both queries are shared/cache-hit with the ones
-  // `useResolvedModelConfig` runs above — no extra IPC. Only `data` is
-  // extracted during render (primitive, prop-tracking friendly); the
-  // resolver below consumes it per-send.
-  const agentConfigs = useAgentConfigs(spaceId);
-  const modelsDevCatalog = useModelsDevCatalog();
-  const agentConfigsData = agentConfigs.data;
-  const catalogData = modelsDevCatalog.data;
-
+  // models.dev catalog. Both are the SAME queries the model resolver above
+  // consumes (shared/cache-hit — no extra IPC); only `data` is consumed
+  // per-call.
   const resolveImageInputSupported = useCallback<ImageInputSupportedResolver>(
     (role) => {
       const agentConfig = agentConfigsData?.find((a) => a.name === role);
@@ -650,6 +665,24 @@ export function useResolveApproval(
   return useCallback(
     (conversationId: ConversationId, toolCallId: string, approved: boolean) => {
       store.getState().resolveApproval(worldId, conversationId, toolCallId, approved);
+    },
+    [store, worldId],
+  );
+}
+
+/**
+ * Returns an approve-all driver bound to the store's `approveAllForRun`
+ * action (ADR-0050 D5) — resolves every pending approval on a subagent
+ * run's slot in one gesture. The subagent block's cross-runtime consent
+ * surface (the child's gate is not the parent conversation's).
+ */
+export function useApproveAllForRun(
+  worldId: string,
+): (runId: ConversationId) => void {
+  const { store } = useRuntimeContext();
+  return useCallback(
+    (runId: ConversationId) => {
+      store.getState().approveAllForRun(worldId, runId);
     },
     [store, worldId],
   );

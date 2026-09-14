@@ -219,6 +219,114 @@ export interface AttachmentLookup {
   findByFilename(filename: string): { dataUrl: string; mediaType: string } | null;
 }
 
+// ─── Subagent dispatch (ADR-0050 D2/D3/D4) ──────────────────────────────────
+
+/**
+ * One dispatch request handed to {@link SubagentRunner.run} by the
+ * `dispatch_subagent` tool's execute.
+ *
+ * - `role` — the dispatched subagent's registry name (schema-validated to the
+ *   eight-name enum at the tool boundary).
+ * - `task` — the Orchestrator-composed brief. This is the ONLY context the
+ *   child run receives (D2 — runs share no memory); it is passed verbatim as
+ *   the child's single user turn.
+ * - `parentToolCallId` — the dispatch tool-call id anchoring the parent-link
+ *   back-reference. Populated by the tool from `ToolCallOptions.toolCallId`
+ *   (threaded from the SDK execute options); a UUID is minted as a fallback
+ *   when the id is genuinely unavailable (direct execute calls in tests).
+ */
+export interface SubagentDispatchInput {
+  readonly role: string;
+  readonly task: string;
+  readonly parentToolCallId?: string;
+}
+
+/**
+ * The outcome of one subagent run, returned to the Orchestrator as the
+ * `dispatch_subagent` tool result (and persisted verbatim as the parent
+ * thread's `tool_result` — the subagent block anchors on `runId`, D3).
+ *
+ * ## Statuses
+ *
+ * - `"completed"`  — the child run finished (`stop`/`length`/`max-steps`/…).
+ * - `"aborted"`    — the PARENT run was stopped and the abort cascaded (D4).
+ * - `"stopped"`    — this child alone was stopped via `SubagentRunner.stop`.
+ * - `"error"`      — the child run errored (or the dispatch itself failed).
+ * - `"unconfigured"` — the role's AgentConfig has no bound model; NO
+ *   conversation was created (`runId` is `null`). The Orchestrator reports
+ *   this to the user (D6 — explicit-fail over silent-hide).
+ *
+ * `finalMessage` is the child's last assistant text (partial text for
+ * aborted/stopped runs; the error description for errored runs; guidance for
+ * `unconfigured`) — NEVER the transcript. `usage` carries the child run's
+ * summed input/output tokens.
+ *
+ * ## Never rejects
+ *
+ * `SubagentRunner.run` NEVER rejects — every outcome, including unexpected
+ * internal failures, resolves into this contract (ADR-0018 semantics extended
+ * to the dispatch composite, ADR-0050 D4).
+ */
+export interface SubagentDispatchResult {
+  /** The run's conversation id, or `null` when no run was created. */
+  readonly runId: string | null;
+  readonly status:
+    | "completed"
+    | "aborted"
+    | "stopped"
+    | "error"
+    | "unconfigured";
+  readonly finalMessage: string;
+  readonly usage: { readonly input: number; readonly output: number };
+}
+
+/**
+ * The app-side dispatch capability behind the `dispatch_subagent` tool
+ * (ADR-0050 D2/D3/D4). Interface only — same injected-capability pattern as
+ * `planAccess` / `threadLookup` (ADR-0029); the concrete implementation
+ * lives in the conversation-runtime layer (`store.ts`), where it can create
+ * the hidden run conversation, construct the child Agent, and drive it
+ * through the same event machinery as a user send.
+ *
+ * ## Purity
+ *
+ * Pure interface (no React / IPC / logger dependencies). The tools layer
+ * imports TYPES only from here; the runner implementation may freely touch
+ * IPC and the logger on the app side.
+ *
+ * ## Blocking + parallelism
+ *
+ * `run` blocks until the child run resolves (the structural twin of the
+ * consent gate's indefinite blocking execute, ADR-0025). Sibling dispatches
+ * emitted in one step are executed concurrently by the SDK — each `run`
+ * invocation is independent; blocking consumes no step budget (D3).
+ *
+ * ## Abort semantics (D4)
+ *
+ * `abortSignal` is the PARENT run's per-call signal (from
+ * {@link ToolCallOptions}); firing it cascades into the child run's
+ * termination and resolves `status: "aborted"` with partial text. Per-child
+ * stopping goes through {@link SubagentRunner.stop}, which resolves
+ * `status: "stopped"`.
+ */
+export interface SubagentRunner {
+  /**
+   * Dispatch one subagent run. Resolves with the outcome contract — NEVER
+   * rejects (ADR-0018 extended to the composite).
+   */
+  run(
+    input: SubagentDispatchInput,
+    abortSignal: AbortSignal,
+  ): Promise<SubagentDispatchResult>;
+  /**
+   * Stop a single in-flight run by its conversation id (`runId` from a prior
+   * dispatch). No-op when the id is unknown or the run already settled.
+   * Siblings and the parent continue (D4). Reserved for the UI's Stop button
+   * (Unit D).
+   */
+  stop?(runId: string): void;
+}
+
 // ─── Entity image lookup (look_at + ADR-0048) ───────────────────────────────
 
 /**
@@ -326,9 +434,9 @@ export interface ToolContext {
    * The Space's dedicated `"vision"` agent model config, resolved live by
    * the Provider at Agent-construction time (ADR-0045 — same lifecycle as
    * the bound model, ADR-0023/0024). `null` = the seeded `vision`
-   * AgentConfig is unbound → the `look_at` tool is not registered at all
-   * ("configured = enabled", mirroring the `shellToolEnabled`
-   * registration-time gate).
+   * AgentConfig is unbound → the `look_at` tool still runs but returns a
+   * structured `unconfigured` result (ADR-0050 D6 — explicit-fail over
+   * silent-hide; the registration-time gate was removed).
    */
   readonly visionConfig: ResolvedModelConfig | null;
   /**
@@ -345,6 +453,15 @@ export interface ToolContext {
    * IPC-backed — one `get<Entity>Image` read per call.
    */
   readonly entityImageLookup: EntityImageLookup;
+  /**
+   * The subagent dispatch capability behind the `dispatch_subagent` tool
+   * (ADR-0050 D3). Constructed per-conversation in the conversation-runtime
+   * store: the (only) conversational Orchestrator role receives the live
+   * runner bound to that conversation as parent; subagent runs receive a
+   * throwing stub — they never register the dispatch tool (D1's exactly-one
+   * delegation level), so a call would indicate a wiring bug.
+   */
+  readonly subagentRunner: SubagentRunner;
 }
 
 // ─── Per-call options ──────────────────────────────────────────────────────
@@ -362,6 +479,14 @@ export interface ToolContext {
 export interface ToolCallOptions {
   /** Abort signal for the current run — fires on user Stop / termination. */
   readonly abortSignal: AbortSignal;
+  /**
+   * The SDK-assigned id of THIS tool call (threaded from the execute
+   * options — AI SDK v7 always provides it there). Optional at the type
+   * level only because direct `execute` calls in tests omit it. Consumers
+   * needing a stable id (the dispatch tool's `parentToolCallId` anchor)
+   * should fall back to a minted UUID when absent.
+   */
+  readonly toolCallId?: string;
 }
 
 // ─── Declarative tool definition ──────────────────────────────────────────
@@ -407,6 +532,35 @@ export class ToolDeniedError extends Error {
   }
 }
 
+// ─── Consent overrides (ADR-0050 D5) ───────────────────────────────────────
+
+/**
+ * Apply per-role consent-level overrides to a record of {@link ToolDef}s,
+ * returning a NEW record (spread-override per tool — the original defs are
+ * never mutated). Tools named in `overrides` but absent from `defs` are
+ * ignored, so an override table can be carried across refactors safely.
+ *
+ * The role registry declares the overrides (e.g. the writer's
+ * `update_scene` → `"configurable"`); the role builders consume them HERE,
+ * before {@link buildToolSet} compiles the gate wiring — the gate reads
+ * `def.consentLevel` at compile time, so the override must land before
+ * compilation, not after.
+ */
+export function applyConsentOverrides(
+  defs: Record<string, AnyToolDef>,
+  overrides: Readonly<Record<string, ConsentLevel>> | undefined,
+): Record<string, AnyToolDef> {
+  if (!overrides) return defs;
+  const next: Record<string, AnyToolDef> = { ...defs };
+  for (const [name, consentLevel] of Object.entries(overrides)) {
+    const def = next[name];
+    if (def) {
+      next[name] = { ...def, consentLevel };
+    }
+  }
+  return next;
+}
+
 // ─── ToolSet compiler ─────────────────────────────────────────────────────
 
 // The `defineTool` wrapper uses a conditional type (`NeverOptional<OUTPUT>`)
@@ -428,8 +582,9 @@ type AnyToolDef = ToolDef<unknown, unknown>;
  *    The UI shows the pending approval; the user approves or denies.
  * 3. If denied, `ToolDeniedError` is thrown (non-fatal — the model adapts).
  * 4. If approved, the tool's real `execute` runs with the
- * {@link ToolContext} and {@link ToolCallOptions} (the run's abort signal,
- * forwarded from the SDK execute options — ADR-0041 §3).
+ * {@link ToolContext} and {@link ToolCallOptions} (the run's abort signal +
+ * this call's `toolCallId`, forwarded from the SDK execute options —
+ * ADR-0041 §3, widened for ADR-0050 D3's parent-link anchoring).
  *
  * The `ctx` is captured in each tool's closure — built once per conversation
  * at Agent construction time.
@@ -460,7 +615,10 @@ export function buildToolSet(
           throw new ToolDeniedError(name);
         }
       }
-      return def.execute(input, ctx, { abortSignal: options.abortSignal });
+      return def.execute(input, ctx, {
+        abortSignal: options.abortSignal,
+        toolCallId: options.toolCallId,
+      });
     };
 
     tools[name] = defineTool({

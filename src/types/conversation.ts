@@ -16,10 +16,25 @@ import { attachmentInputSchema } from "./attachment";
 export const conversationIdSchema = z.string().brand<"ConversationId">();
 export type ConversationId = z.infer<typeof conversationIdSchema>;
 
-/** Where a Conversation is anchored: the whole world or a single chapter. */
+/**
+ * Where a Conversation is anchored: the whole world, a single chapter, or —
+ * per ADR-0050 D2 — a hidden Subagent Run. A run is a one-shot conversation
+ * created by the `dispatch_subagent` tool at execution time; its `meta`
+ * carries the parent linkage verbatim (`list_conversations` filters non-
+ * `world` kinds, so runs never appear in the chat list).
+ */
 export const conversationMetaSchema = z.union([
   z.object({ kind: z.literal("world") }),
   z.object({ kind: z.literal("chapter"), chapterId: z.string() }),
+  z.object({
+    kind: z.literal("subagent"),
+    /** The dispatching (parent) conversation's id. */
+    parentConversationId: z.string(),
+    /** The `dispatch_subagent` tool-call id that spawned this run. */
+    parentToolCallId: z.string(),
+    /** The dispatched subagent role name (e.g. "writer"). */
+    role: z.string(),
+  }),
 ]);
 export type ConversationMeta = z.infer<typeof conversationMetaSchema>;
 

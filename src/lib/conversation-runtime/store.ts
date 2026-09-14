@@ -42,6 +42,7 @@ import {
   type SessionMessage,
 } from "@/lib/ai";
 import {
+  createConversation as createConversationIpc,
   deleteMessages as deleteMessagesIpc,
   loadMessages as loadMessagesIpc,
   updateMessage as updateMessageIpc,
@@ -58,13 +59,21 @@ import {
 } from "@/api/image";
 import { getSceneImage } from "@/api/scene-image";
 import { createAgentEventLogger } from "@/lib/ai/agent-logging";
-import { getRoleBehavior } from "@/lib/ai-roles";
+import { buildSubagentRosterBlock, getRoleDefinition } from "@/lib/ai-roles";
 import { TauriSessionStore } from "@/lib/ai-store";
 import { base64Encode, sniffImageMime } from "@/lib/image-bytes";
 import { logger } from "@/lib/logger";
 import { notifyToolConsentRequested } from "@/lib/notify";
 import { expandDeleteIds, replaceMessageText } from "./message-mutations";
-import type { ToolContext, ApprovalGate, ConsentLevel, EntityImageKind } from "@/lib/tools/types";
+import type {
+  ToolContext,
+  ApprovalGate,
+  ConsentLevel,
+  EntityImageKind,
+  SubagentDispatchInput,
+  SubagentDispatchResult,
+  SubagentRunner,
+} from "@/lib/tools/types";
 import {
   characterIdSchema,
   eventIdSchema,
@@ -126,9 +135,10 @@ export type ResolvedModel =
       readonly skills: EnabledSkill[];
       /**
        * The Space's dedicated `"vision"` agent model config (ADR-0045),
-       * resolved live by the Provider (Space-scoped, shared by both roles —
-       * unlike the fields above it is NOT per-role). `null` = unbound → the
-       * `look_at` tool is not registered. Takes effect for new
+       * resolved live by the Provider (Space-scoped, shared by every role —
+       * unlike the fields above it is NOT per-role). `null` = unbound →
+       * the always-registered `look_at` tool returns its structured
+       * `unconfigured` result (ADR-0050 D6). Takes effect for new
        * conversations (ADR-0024 agent cache — same lifecycle as
        * `shellToolEnabled`).
        */
@@ -138,8 +148,10 @@ export type ResolvedModel =
   | { readonly status: "unconfigured" };
 
 /**
- * Resolves the bound model for a role name (`"explorer"` / `"writer"`). Built
- * by the Provider from `useResolvedModelConfig`; passed into store actions.
+ * Resolves the bound model for a role name (any registry role — see
+ * `src/lib/ai-roles`; conversational and subagent roles alike). Built by
+ * the Provider from the Space-scoped `AgentConfig` list; passed into store
+ * actions.
  */
 export type ModelResolver = (role: string) => ResolvedModel;
 
@@ -375,6 +387,15 @@ export interface ConversationView {
    * Cleared on the next `send`.
    */
   readonly stopReason: "aborted" | null;
+  /**
+   * The dispatch contract's authoritative terminal status for a subagent
+   * run's slot (ADR-0050 D3): written by the dispatch runtime AFTER
+   * driveRun's finalization so it WINS over the generic `stopReason`
+   * (which cannot tell a user-stop from a parent-cascade abort).
+   * `null` everywhere else — user conversations never set it, and every
+   * new run clears it (driveRun's start-of-run reset).
+   */
+  readonly terminalStatus: SubagentDispatchResult["status"] | null;
   /** Draft text — preserved across conversation switches (ADR-0024). */
   draft: string;
   /**
@@ -520,6 +541,15 @@ export interface ConversationRuntimeState {
   removeConversation: (worldId: string, conversationId: string) => void;
   clearError: (worldId: string, conversationId: string) => void;
   resolveApproval: (worldId: string, conversationId: string, toolCallId: string, approved: boolean) => void;
+  /**
+   * Approve every pending approval of a subagent run's slot in ONE gesture
+   * (ADR-0050 D5 — the subagent block's approve-all affordance, the only
+   * cross-runtime consent surface). Iterates the slot's CURRENT
+   * `pendingApprovals` keys and resolves each through the exact per-id path
+   * as {@link resolveApproval} (resolver consumed + removed, view patched,
+   * gate unblocked). No-op when the slot or its stream is absent.
+   */
+  approveAllForRun: (worldId: string, runId: string) => void;
 }
 
 // ─── Helpers (pure, operate on state) ─────────────────────────────────────
@@ -533,6 +563,7 @@ export const EMPTY_VIEW: ConversationView = {
   isRunning: false,
   error: null,
   stopReason: null,
+  terminalStatus: null,
   draft: "",
   draftAttachments: [],
 };
@@ -613,6 +644,103 @@ function extractTitleText(
     }
   }
   return null;
+}
+
+/**
+ * Slice a subagent run's report: the LAST assistant message carrying text,
+ * scanned from the run result's message array (which includes best-effort
+ * partials for aborted / error terminations — ADR-0018), so interrupted
+ * runs still return whatever partial text exists (ADR-0050 D3). Empty
+ * string when the run produced no assistant text. Reuses the title
+ * extractor's text joiner (trims, skips non-text parts).
+ */
+function lastAssistantText(messages: readonly ModelMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message.role !== "assistant") continue;
+    const text = messageText(message);
+    if (text !== "") return text;
+  }
+  return "";
+}
+
+// ─── Subagent dispatch constants (ADR-0050 D2/D3/D4) ──────────────────────
+
+/**
+ * The abort-reason string marking a USER-initiated stop of a single run.
+ * The child run's `abort` event carries it verbatim
+ * (`AgentRunHandle.abort(reason)` → `AbortSignal.reason` → event), and the
+ * dispatch runtime maps it to `status: "stopped"` — everything else
+ * (including the reason-less aborts of a parent cascade) maps to
+ * `"aborted"` (D4). The store's user-facing `abort` action passes this
+ * constant so stopping a child through its own slot (the Unit D Stop
+ * button path) labels correctly.
+ */
+const SUBAGENT_STOP_REASON = "stopped";
+
+/**
+ * Bounded patience while the child role's model resolution is still
+ * "loading" (see {@link resolveChildModel}). ~1.5s worst case — tiny
+ * relative to a dispatch round-trip, and the state is near-impossible in
+ * practice (all roles gate on the same Space-scoped queries).
+ */
+const SUBAGENT_LOADING_ATTEMPTS = 10;
+const SUBAGENT_LOADING_DELAY_MS = 150;
+
+/**
+ * No-op {@link AutoTitleCallback} for child runs — belt-and-suspenders next
+ * to the `kind: "subagent"` gate in run finalization (Unit B): runs are
+ * hidden machinery and never titled (ADR-0050 D2).
+ */
+const NOOP_AUTO_TITLE: AutoTitleCallback = async () => null;
+
+/**
+ * The never-available runner handed to subagent runs (ADR-0050 D1 — exactly
+ * one delegation level). Subagent roles never register `dispatch_subagent`,
+ * so reaching this stub means a wiring bug; it rejects loudly instead of
+ * silently no-oping. The rejection can only surface inside a tool execute
+ * that should not exist — the dispatch composite's never-reject contract
+ * (D4) applies to the REAL runner, which resolves every outcome.
+ */
+const SUBAGENT_RUNNER_STUB: SubagentRunner = {
+  run: () =>
+    Promise.reject(
+      new Error(
+        "dispatch_subagent is not available on subagent runs — subagents never dispatch (ADR-0050 D1).",
+      ),
+    ),
+};
+
+/** Zeroed usage for dispatch outcomes that never reached a model call. */
+const ZERO_DISPATCH_USAGE = { input: 0, output: 0 } as const;
+
+/**
+ * Resolve the child role's bound model, tolerating a transient "loading".
+ *
+ * In practice the child resolver cannot still be `"loading"` at dispatch
+ * time: the Provider's `modelResolver` gates EVERY role on the SAME
+ * Space-scoped queries (agent configs + credentials + catalog + skills —
+ * see provider.tsx), so a running Orchestrator implies settled queries and
+ * the child resolves `"ready"` or `"unconfigured"` immediately. The bounded
+ * retry below is defense for contract drift (e.g. per-role query
+ * splitting): a few short abort-aware polls, after which the caller
+ * surfaces an `error` result asking the Orchestrator to retry — NOT a
+ * silent `"unconfigured"`, which would send the user to Settings for a
+ * model that is actually bound (explicit-fail discipline, D6).
+ */
+async function resolveChildModel(
+  role: string,
+  modelResolver: ModelResolver,
+  abortSignal: AbortSignal,
+): Promise<ResolvedModel> {
+  let resolved = modelResolver(role);
+  for (let attempt = 0; attempt < SUBAGENT_LOADING_ATTEMPTS; attempt++) {
+    if (resolved.status !== "loading") return resolved;
+    if (abortSignal.aborted) return resolved;
+    await new Promise((resolve) => setTimeout(resolve, SUBAGENT_LOADING_DELAY_MS));
+    resolved = modelResolver(role);
+  }
+  return resolved;
 }
 
 function getData(
@@ -809,14 +937,15 @@ function fetchEntityImageBytes(
 
 /**
  * The `<image_access>` block appended to the effective system prompt at
- * Agent construction when the `look_at` tool is registered (ADR-0045) —
- * the prompt must never advertise a tool that cannot run, so the teaching
- * rides the SAME registration-time gate as the tool itself
- * (`visionConfig != null`), exactly like the `<available_skills>` catalog
- * below. Wording covers BOTH attachment paths: a non-vision bound model
- * sees NOT-delivered downgrade markers (ADR-0044 D9), a vision-capable one
- * sees the pixels plus a delivered companion annotation (ADR-0048) — the
- * teaching must tell the model how to tell the two markers apart.
+ * Agent construction (ADR-0045). Since ADR-0050 D6 the `look_at` tool is
+ * registered UNCONDITIONALLY (explicit-fail over silent-hide — an unbound
+ * vision config surfaces as a structured `unconfigured` tool result), so
+ * the teaching rides the same always-on registration: the prompt may
+ * always advertise the tool. Wording covers BOTH attachment paths: a
+ * non-vision bound model sees NOT-delivered downgrade markers
+ * (ADR-0044 D9), a vision-capable one sees the pixels plus a delivered
+ * companion annotation (ADR-0048) — the teaching must tell the model how
+ * to tell the two markers apart.
  */
 const LOOK_AT_PROMPT_BLOCK = [
   "<image_access>",
@@ -828,9 +957,10 @@ const LOOK_AT_PROMPT_BLOCK = [
 
 /**
  * Construct a stateful {@link Agent} for a conversation. Resolves the role
- * behavior, builds a `TauriSessionStore` + `AgentLoop`, and loads history via
- * the async `Agent.open` factory. Throws if the role is unknown or the store
- * rejects — callers handle errors and surface them into `view.error`.
+ * definition from the registry (ADR-0050 D1), builds a `TauriSessionStore`
+ * + `AgentLoop`, and loads history via the async `Agent.open` factory.
+ * Throws if the role is unknown or the store rejects — callers handle
+ * errors and surface them into `view.error`.
  */
 async function constructAgent(
   conversation: Conversation,
@@ -845,11 +975,12 @@ async function constructAgent(
   systemPromptOverride: string,
   skills: EnabledSkill[],
   visionConfig: ResolvedModelConfig | null,
+  subagentRunner: SubagentRunner,
 ): Promise<Agent> {
-  const roleBehavior = getRoleBehavior(conversation.agentConfigName);
-  if (!roleBehavior) {
+  const roleDefinition = getRoleDefinition(conversation.agentConfigName);
+  if (!roleDefinition) {
     throw new Error(
-      `constructAgent: unknown agent config "${conversation.agentConfigName}" — no RoleBehavior registered.`,
+      `constructAgent: unknown agent config "${conversation.agentConfigName}" — no RoleDefinition registered.`,
     );
   }
 
@@ -914,8 +1045,9 @@ async function constructAgent(
     activatedSkills: new Set(),
     // `look_at` (ADR-0045): the Space's dedicated one-shot vision agent
     // config. `null` = the seeded `vision` AgentConfig is unbound → the
-    // role builders skip registering the tool entirely (registration-time
-    // gate, same idea as `shellToolEnabled` above).
+    // tool stays registered and returns a structured `unconfigured`
+    // result at execute time (ADR-0050 D6 — the registration-time gate
+    // was removed; explicit-fail over silent-hide).
     visionConfig,
     // `look_at` (ADR-0045): resolves an in-conversation image attachment by
     // filename from the Persisted Thread — the reverse channel for the
@@ -970,33 +1102,48 @@ async function constructAgent(
         };
       },
     },
+    // `dispatch_subagent` (ADR-0050 D3): the app-side dispatch capability.
+    // Built by the CALLER (resolveAgent) because it needs the live
+    // modelResolver + this conversation's identity as the parent link —
+    // conversational (Orchestrator) conversations get the real runner,
+    // subagent runs get the throwing stub (they never register the tool,
+    // D1's exactly-one delegation level).
+    subagentRunner,
   };
 
-  const tools = roleBehavior.buildTools(ctx);
+  const tools = roleDefinition.buildTools(ctx);
   // Apply the DB-stored system prompt override. Empty string = use the code
-  // default from ROLE_BEHAVIOR. This lets users customize per-role prompts
-  // from the Space config page without code changes.
-  const baseSystemPrompt = systemPromptOverride.trim() || roleBehavior.systemPrompt;
-  // ADR-0045 — the look_at teaching is appended ONLY when the tool is
-  // registered (`visionConfig` bound): additive machinery like the skills
-  // catalog below, so a systemPrompt override still receives it. Absent
-  // otherwise — the prompt never advertises a tool that cannot run.
+  // default from the role registry (ai-roles/index.ts). This lets users
+  // customize per-role prompts from the Space config page without code
+  // changes.
+  const baseSystemPrompt = systemPromptOverride.trim() || roleDefinition.systemPrompt;
+  // ADR-0050 D3 — the orchestrator's roster block is appended AFTER the
+  // base prompt (override or default): additive machinery like the skills
+  // catalog below, so a systemPrompt override still receives it (the
+  // orchestrator NEEDS the roster to dispatch coherently). Skipped for
+  // subagents — they never see the dispatch tool (D1).
+  // ADR-0045 — the look_at teaching is appended unconditionally since
+  // ADR-0050 D6 (the tool is always registered; unbound vision surfaces
+  // as a structured `unconfigured` result instead of silence).
   // ADR-0043 §3 catalog — appended AFTER the role/override prompt. It is
   // additive machinery, not user content: a systemPrompt override still
   // receives the catalog (the skill tools reference it by name). Skipped
   // entirely when the role has no enabled skills.
   const effectiveSystemPrompt = [
     baseSystemPrompt,
-    ...(visionConfig ? [LOOK_AT_PROMPT_BLOCK] : []),
+    ...(roleDefinition.kind === "conversational"
+      ? [buildSubagentRosterBlock()]
+      : []),
+    LOOK_AT_PROMPT_BLOCK,
     ...(skills.length > 0 ? [buildAvailableSkillsBlock(skills)] : []),
   ].join("\n\n");
   const loop = new AgentLoop({
     model,
     systemPrompt: effectiveSystemPrompt,
     tools,
-    maxSteps: roleBehavior.maxSteps,
-    ...(roleBehavior.temperature !== undefined
-      ? { temperature: roleBehavior.temperature }
+    maxSteps: roleDefinition.maxSteps,
+    ...(roleDefinition.temperature !== undefined
+      ? { temperature: roleDefinition.temperature }
       : {}),
   });
   const store = new TauriSessionStore({ spaceId, worldId, conversation });
@@ -1128,6 +1275,904 @@ export function createConversationRuntimeStore(
     }
 
     /**
+     * Resolve one pending approval on a slot — the shared per-id body of
+     * `resolveApproval` and `approveAllForRun` (identical semantics:
+     * consume the resolver, drop the entry from `stream.pendingApprovals`,
+     * then unblock the gate's execute).
+     */
+    const resolveApprovalInSlot = (
+      worldId: string,
+      conversationId: string,
+      toolCallId: string,
+      approved: boolean,
+    ): void => {
+      const resolver = approvalResolvers.get(toolCallId);
+      if (!resolver) return;
+      approvalResolvers.delete(toolCallId);
+      patchData(worldId, conversationId, (d) => {
+        if (!d.view.stream) return d;
+        const rest = { ...d.view.stream.pendingApprovals };
+        delete rest[toolCallId];
+        return {
+          ...d,
+          view: {
+            ...d.view,
+            stream: { ...d.view.stream, pendingApprovals: rest },
+          },
+        };
+      });
+      resolver(approved);
+    };
+    // ── Shared run driver (send + subagent dispatch, ADR-0050 D3) ────────
+    //
+    // ONE event-handling code path for every AgentLoop run this store
+    // drives: the user-facing `send` action AND the subagent dispatch
+    // runtime below. Owns the running-state patch, the streaming batch
+    // buffer, `handleEvent` (StreamState mutation), and run finalization
+    // (message refresh, per-turn usage, auto-title). A subagent run is
+    // "just another conversation id in the two-level map" (D2) — its events
+    // flow through here unchanged, so the drill-in UI (Unit D) reads the
+    // child slot's live view exactly like a user conversation's.
+    //
+    // Returns the run handle (for the caller's abort bookkeeping), or
+    // `null` when `agent.run` threw synchronously (ConfigError — already
+    // running; `view.error` is patched and nothing else is mutated).
+    const driveRun = (
+      worldId: string,
+      conversationId: string,
+      agent: Agent,
+      content: UserContent,
+      options: {
+        /** Per-run vision capability for the bound model (ADR-0044 §D9). */
+        imageInputSupported?: boolean;
+        /**
+         * Silent auto-title callback (ADR-0040). Already double-gated for
+         * child runs: the finalization kind check skips `kind: "subagent"`
+         * AND the subagent path passes a no-op.
+         */
+        autoTitle: AutoTitleCallback;
+      },
+    ): AgentRunHandle | null => {
+      // Clear error + flip to running. Stream is set after we have the runId.
+      // `lastTurnUsage` is reset here so the previous turn's value does not
+      // linger while the new run is in-flight (ADR-0030 — it gets re-set on
+      // finalization). The staged attachments leave with this turn — they
+      // are now part of `content` (ADR-0044 §D8; user sends only — a child
+      // run's slot never stages any).
+      patchData(worldId, conversationId, (d) => ({
+        ...d,
+        view: {
+          ...d.view,
+          error: null,
+          isRunning: true,
+          stream: null,
+          stopReason: null,
+          // Stale terminal status from a previous run dies with the new
+          // one (subagent slots are single-run today, but the reset keeps
+          // the field honest for any re-driven slot).
+          terminalStatus: null,
+          lastTurnUsage: undefined,
+          lastStepInputTokens: undefined,
+          draftAttachments: [],
+        },
+      }));
+
+      let handle: AgentRunHandle;
+      // Build the run options conditionally so the argument object stays
+      // key-identical to the historical user-send call shape (an explicit
+      // `undefined` value would be observably different to strict spies).
+      const runOptions: { imageInputSupported?: boolean } = {};
+      if (options.imageInputSupported !== undefined) {
+        runOptions.imageInputSupported = options.imageInputSupported;
+      }
+      try {
+        handle = agent.run(content, runOptions);
+      } catch (e) {
+        // ConfigError (already running) or other synchronous failure.
+        patchData(worldId, conversationId, (d) => ({
+          ...d,
+          view: {
+            ...d.view,
+            isRunning: false,
+            error: {
+              code: "RUN_FAILED",
+              message: e instanceof Error ? e.message : String(e),
+            },
+          },
+        }));
+        return null;
+      }
+
+      const roleName =
+        getData(get(), worldId, conversationId)?.conversation.agentConfigName ??
+        "unknown";
+
+      // Record the handle + initialize the live stream view.
+      patchData(worldId, conversationId, (d) => ({
+        ...d,
+        runHandle: handle,
+        view: {
+          ...d.view,
+          stream: {
+            runId: handle.runId,
+            segments: [],
+            pendingInputDraft: "",
+            pendingApprovals: {},
+          },
+        },
+      }));
+
+      // ── Streaming batch buffer ──────────────────────────────────────
+      // High-frequency deltas (text / reasoning / tool-input) are buffered
+      // here as chunk arrays and flushed ONCE per animation frame via a
+      // single patchData call. This collapses O(tokens) per-delta string
+      // concatenations + zustand state-tree rebuilds + React re-renders
+      // into O(frames) batch flushes — the core memory/CPU fix for
+      // autonomous multi-step runs where thousands of deltas stream across
+      // many steps (reasoning models especially).
+      //
+      // **Chunk arrays, not incremental concat**: each delta is pushed as
+      // an array element (O(1)). The array is `.join("")`-ed once per flush,
+      // producing a SINGLE string allocation per frame instead of the O(N²)
+      // allocation of per-delta `text += delta`.
+      //
+      // **Structural events flush immediately**: step_start, tool_call,
+      // tool_result, tool_error, error, and abort each call flushBatch()
+      // BEFORE their own patchData. This guarantees segment ordering (a
+      // tool card appears AFTER all preceding text) and completeness.
+      //
+      // **Safety valve**: if the batch exceeds FLUSH_THRESHOLD chunks (rAF
+      // throttled by a hidden window — ADR-0024 in-flight survival), a
+      // timer-based flush fires to prevent unbounded growth.
+      const FLUSH_THRESHOLD = 500;
+      const batch = {
+        text: { stepNumber: -1, chunks: [] as string[] },
+        reasoning: { stepNumber: -1, chunks: [] as string[] },
+        inputDraftChunks: [] as string[],
+        rafId: null as number | null,
+        timeoutId: null as number | null,
+      };
+
+      /**
+       * Flush all pending batch buffers into a single patchData call.
+       * Cancels any pending rAF and safety-valve timer. Resets the batch
+       * arrays. No-op when all buffers are empty. Idempotent (safe to call
+       * from structural events, finalization, rAF callback, and the safety
+       * valve re-entrantly).
+       */
+      const flushBatch = (): void => {
+        if (batch.rafId !== null) {
+          cancelAnimationFrame(batch.rafId);
+          batch.rafId = null;
+        }
+        if (batch.timeoutId !== null) {
+          clearTimeout(batch.timeoutId);
+          batch.timeoutId = null;
+        }
+        // Snapshot + reset BEFORE patchData — avoids re-entrancy issues if
+        // a subscriber somehow triggers another flush.
+        const tChunks = batch.text.chunks;
+        const tStep = batch.text.stepNumber;
+        const rChunks = batch.reasoning.chunks;
+        const rStep = batch.reasoning.stepNumber;
+        const iChunks = batch.inputDraftChunks;
+        batch.text.chunks = [];
+        batch.reasoning.chunks = [];
+        batch.inputDraftChunks = [];
+
+        if (
+          tChunks.length === 0 &&
+          rChunks.length === 0 &&
+          iChunks.length === 0
+        ) {
+          return;
+        }
+
+        const tBatch = tChunks.length > 0 ? tChunks.join("") : null;
+        const rBatch = rChunks.length > 0 ? rChunks.join("") : null;
+        const iBatch = iChunks.length > 0 ? iChunks.join("") : null;
+
+        patchData(worldId, conversationId, (d) => {
+          if (!d.view.stream) return d;
+          let segments = d.view.stream.segments;
+          if (tBatch !== null) {
+            segments = appendDelta(segments, "text", tStep, tBatch);
+          }
+          if (rBatch !== null) {
+            segments = appendDelta(segments, "reasoning", rStep, rBatch);
+          }
+          return {
+            ...d,
+            view: {
+              ...d.view,
+              stream: {
+                ...d.view.stream,
+                segments,
+                pendingInputDraft:
+                  iBatch !== null
+                    ? d.view.stream.pendingInputDraft + iBatch
+                    : d.view.stream.pendingInputDraft,
+              },
+            },
+          };
+        });
+      };
+
+      /**
+       * Schedule a rAF flush if not already pending. Safety valve: if the
+       * batch exceeds FLUSH_THRESHOLD chunks, flush via setTimeout(0)
+       * instead (works when rAF is throttled by a hidden window).
+       */
+      const scheduleFlush = (): void => {
+        const total =
+          batch.text.chunks.length +
+          batch.reasoning.chunks.length +
+          batch.inputDraftChunks.length;
+        if (total >= FLUSH_THRESHOLD) {
+          if (batch.rafId !== null) {
+            cancelAnimationFrame(batch.rafId);
+            batch.rafId = null;
+          }
+          // Only schedule one timer at a time — prevents pile-up when the
+          // buffer stays above threshold under sustained fast streaming.
+          if (batch.timeoutId === null) {
+            batch.timeoutId = setTimeout(flushBatch, 0);
+          }
+          return;
+        }
+        if (batch.rafId === null) {
+          batch.rafId = requestAnimationFrame(flushBatch);
+        }
+      };
+
+      // ── Event handler — mutates view.stream per AgentEvent ──
+      // Registered synchronously after run(); the loop starts on the next
+      // microtask, so this listener is attached before `run_start` fires.
+      const handleEvent = (event: AgentEvent): void => {
+        switch (event.type) {
+          case "run_start":
+            // Stream already initialized above; nothing to add.
+            return;
+
+          case "run_end":
+            // The result.then() below owns message refresh + stream clear.
+            return;
+
+          case "step_start":
+            flushBatch();
+            // One divider per step — `step_start` fires once per loop step.
+            patchData(worldId, conversationId, (d) => {
+              if (!d.view.stream) return d;
+              return {
+                ...d,
+                view: {
+                  ...d.view,
+                  stream: {
+                    ...d.view.stream,
+                    segments: [
+                      ...d.view.stream.segments,
+                      { kind: "step", stepNumber: event.stepNumber },
+                    ],
+                  },
+                },
+              };
+            });
+            return;
+
+          case "step_end":
+            // Usage/latency logged by createAgentEventLogger; no view change.
+            return;
+
+          case "text_delta":
+            // Flush pending reasoning to preserve arrival order (reasoning
+            // → text interleaving within a step is uncommon but possible).
+            if (batch.reasoning.chunks.length > 0) {
+              flushBatch();
+            }
+            // Step boundary → flush previous step's batch so segments stay
+            // in arrival order, then start accumulating for the new step.
+            if (batch.text.stepNumber !== event.stepNumber) {
+              flushBatch();
+              batch.text.stepNumber = event.stepNumber;
+            }
+            batch.text.chunks.push(event.delta);
+            scheduleFlush();
+            return;
+
+          case "reasoning_delta":
+            // Flush pending text to preserve arrival order.
+            if (batch.text.chunks.length > 0) {
+              flushBatch();
+            }
+            if (batch.reasoning.stepNumber !== event.stepNumber) {
+              flushBatch();
+              batch.reasoning.stepNumber = event.stepNumber;
+            }
+            batch.reasoning.chunks.push(event.delta);
+            scheduleFlush();
+            return;
+
+          case "tool_input_delta":
+            // The event carries no toolCallId (the loop strips it); buffer
+            // into the pending draft and transfer on the next tool_call.
+            // tool_call flushes the batch first, so the full accumulated
+            // draft is available when the tool segment is created.
+            batch.inputDraftChunks.push(event.delta);
+            scheduleFlush();
+            return;
+
+          case "tool_call":
+            flushBatch();
+            patchData(worldId, conversationId, (d) => {
+              if (!d.view.stream) return d;
+              const inputDraft = d.view.stream.pendingInputDraft;
+              return {
+                ...d,
+                view: {
+                  ...d.view,
+                  stream: {
+                    ...d.view.stream,
+                    // Hand the buffered draft to this call, then reset.
+                    pendingInputDraft: "",
+                    segments: [
+                      ...d.view.stream.segments,
+                      {
+                        kind: "tool",
+                        toolCallId: event.toolCallId,
+                        toolName: event.toolName,
+                        inputDraft,
+                        input: event.input,
+                        status: "running",
+                        output: undefined,
+                        error: null,
+                      },
+                    ],
+                  },
+                },
+              };
+            });
+            return;
+
+          case "tool_result":
+            flushBatch();
+            patchData(worldId, conversationId, (d) => {
+              if (!d.view.stream) return d;
+              return {
+                ...d,
+                view: {
+                  ...d.view,
+                  stream: {
+                    ...d.view.stream,
+                    segments: patchToolSegment(
+                      d.view.stream.segments,
+                      event.toolCallId,
+                      { toolName: event.toolName, status: "done", output: event.output },
+                    ),
+                  },
+                },
+              };
+            });
+            return;
+
+          case "tool_error":
+            flushBatch();
+            patchData(worldId, conversationId, (d) => {
+              if (!d.view.stream) return d;
+              return {
+                ...d,
+                view: {
+                  ...d.view,
+                  stream: {
+                    ...d.view.stream,
+                    segments: patchToolSegment(
+                      d.view.stream.segments,
+                      event.toolCallId,
+                      {
+                        toolName: event.toolName,
+                        status: "error",
+                        error: { code: event.error.code, message: event.error.message },
+                      },
+                    ),
+                  },
+                },
+              };
+            });
+            return;
+
+          case "error":
+            flushBatch();
+            // Stream-terminating error: surface immediately. The run will
+            // resolve shortly and the result.then() does final cleanup
+            // (stream clear + message refresh); view.error survives the
+            // spread there.
+            patchData(worldId, conversationId, (d) => ({
+              ...d,
+              view: {
+                ...d.view,
+                isRunning: false,
+                error: { code: event.error.code, message: event.error.message },
+              },
+            }));
+            return;
+
+          case "abort":
+            flushBatch();
+            // Immediate "stopped" feedback; result.then() finalizes.
+            // Also clear any pending approvals — the gate's abort listener
+            // should have already resolved them, but this is defensive.
+            // stopReason is set here so the "Stopped" marker shows instantly
+            // (even before finalization refreshes view.messages), and is
+            // re-asserted by the finalization .then() so it survives the
+            // stream → null transition.
+            patchData(worldId, conversationId, (d) => {
+              if (!d.view.stream) {
+                return {
+                  ...d,
+                  view: { ...d.view, isRunning: false, stopReason: "aborted" },
+                };
+              }
+              return {
+                ...d,
+                view: {
+                  ...d.view,
+                  isRunning: false,
+                  stopReason: "aborted",
+                  stream: { ...d.view.stream, pendingApprovals: {} },
+                },
+              };
+            });
+            return;
+
+          default: {
+            // Exhaustiveness guard — a new AgentEvent variant forces a
+            // handling decision here (matches createAgentEventLogger).
+            const _exhaustive: never = event;
+            void _exhaustive;
+            return;
+          }
+        }
+      };
+
+      // Capture both unsubscribe functions. The per-run emitter owns its
+      // subscriber set, and while `runHandle: null` (set in finalization
+      // below) SHOULD release the handle + emitter, V8/WebView2 is
+      // conservative about GC-ing Promise chains — the discarded closures
+      // (`handleEvent` captures `patchData` → zustand `set`/`get`) can stay
+      // pinned longer than expected after a run. Calling both unsubscribes
+      // deterministically in EVERY termination path (ADR-0018 — all runs
+      // resolve, never reject) is the robust fix. Idempotent (events.ts).
+      const unsubView = handle.subscribe(handleEvent);
+      const unsubLogger = handle.subscribe(createAgentEventLogger(roleName));
+      const detachRunListeners = (): void => {
+        unsubView();
+        unsubLogger();
+      };
+
+      // ── Run finalization ──
+      // The Agent registers its OWN handle.result.then() inside run() (it
+      // persists the delta + updates agent.messages). Our .then() runs AFTER
+      // it (promise callbacks fire in registration order), so
+      // agent.getMessages() here already reflects the appended response.
+      // The result NEVER rejects (ADR-0018); the .catch is defensive.
+      void handle.result
+        .then((result) => {
+          flushBatch();
+          detachRunListeners();
+          // ADR-0030 — surface per-turn usage two ways:
+          //   1. `lastTurnUsage` = the full LanguageModelUsage (with
+          //      cache/reasoning breakdowns) for ephemeral live display.
+          //   2. `messageUsages[lastAssistantId]` = the persisted
+          //      input/output pair, attached to the turn's last assistant
+          //      message id. `undefined → null` per §4. Existing entries
+          //      for earlier messages are preserved (incremental update).
+          patchData(worldId, conversationId, (d) => {
+            const updatedMessages = [...agent.getMessages()];
+            const lastAssistantId = lastAssistantMessageId(updatedMessages);
+            const nextMessageUsages: Record<string, MessageUsage> = {
+              ...d.view.messageUsages,
+            };
+            if (lastAssistantId !== null) {
+              nextMessageUsages[lastAssistantId] = {
+                inputTokens: result.totalUsage.inputTokens ?? null,
+                outputTokens: result.totalUsage.outputTokens ?? null,
+              };
+            }
+            return {
+              ...d,
+              runHandle: null,
+              view: {
+                ...d.view,
+                messages: updatedMessages,
+                messageUsages: nextMessageUsages,
+                lastTurnUsage: result.totalUsage,
+                lastStepInputTokens:
+                  result.steps[result.steps.length - 1]?.usage?.inputTokens,
+                isRunning: false,
+                stream: null,
+                stopReason: result.finishReason === "aborted" ? "aborted" : null,
+              },
+            };
+          });
+
+          // ── Auto-title (ADR-0040, fire-and-forget) ──────────────────
+          // After the FIRST completed assistant run on an untitled
+          // conversation, silently ask the "namer" agent for a short
+          // title. Never blocks the finalization path above; every
+          // rejection is swallowed (the callback never rejects by
+          // contract — the .catch is defensive).
+          // Gated per ADR-0040 "first completed run"; aborts/errors resolve too (ADR-0018) but must not trigger titling.
+          // ADR-0050 D2 — subagent runs are hidden machinery, never
+          // user-facing list rows: auto-titling is suppressed for
+          // `kind: "subagent"` (the namer keeps its silent-skip
+          // exception while look_at went explicit-fail — D6).
+          const slot = getData(get(), worldId, conversationId);
+          const conversation = slot?.conversation;
+          if (
+            slot &&
+            conversation &&
+            conversation.meta.kind !== "subagent" &&
+            conversation.title === null &&
+            !slot.autoTitlePending &&
+            result.finishReason !== "aborted" &&
+            result.finishReason !== "error"
+          ) {
+            const userText = extractTitleText(agent.getMessages());
+            if (userText !== null) {
+              patchData(worldId, conversationId, (d) => ({
+                ...d,
+                autoTitlePending: true,
+              }));
+              void options.autoTitle({
+                worldId: worldId as WorldId,
+                conversationId: conversation.id,
+                userText,
+              })
+                .then((title) => {
+                  patchData(worldId, conversationId, (d) => ({
+                    ...d,
+                    autoTitlePending: false,
+                    // Cache the title so the NEXT finalization's
+                    // `title === null` check doesn't re-trigger.
+                    ...(title
+                      ? { conversation: { ...d.conversation, title } }
+                      : {}),
+                  }));
+                })
+                .catch((e: unknown) => {
+                  // Defensive — autoTitle resolves (never rejects) by
+                  // contract; this guards against contract violations.
+                  logger.warn("chat.auto_title.failed", {
+                    conversation_id: conversationId,
+                    world_id: worldId,
+                    error: String(e),
+                  });
+                  patchData(worldId, conversationId, (d) => ({
+                    ...d,
+                    autoTitlePending: false,
+                  }));
+                });
+            }
+          }
+        })
+        .catch((e) => {
+          flushBatch();
+          detachRunListeners();
+          patchData(worldId, conversationId, (d) => ({
+            ...d,
+            runHandle: null,
+            view: {
+              ...d.view,
+              isRunning: false,
+              stream: null,
+              error: {
+                code: "RUN_FAILED",
+                message: e instanceof Error ? e.message : String(e),
+              },
+            },
+          }));
+        });
+
+      return handle;
+    };
+
+    // ── Subagent dispatch runtime (ADR-0050 D2/D3/D4) ────────────────────
+    //
+    // The live SubagentRunner bound to one parent (Orchestrator)
+    // conversation. Each run():
+    //
+    // 1. resolves the child role's model (tri-state; "unconfigured"
+    //    short-circuits with guidance and NO conversation — D6);
+    // 2. creates the hidden `kind: "subagent"` conversation carrying the
+    //    parent linkage (D2) via the flat create-conversation fields
+    //    (Rust builds `meta` server-side);
+    // 3. constructs the child Agent through the SAME resolveAgent path as
+    //    a user conversation — own AgentLoop, own approval gate (D5), own
+    //    runtime slot keyed by the run's conversation id in the two-level
+    //    map (nothing blocks two live slots in one world: sibling
+    //    dispatches are independent map entries);
+    // 4. drives it with the shared driveRun machinery (one event path —
+    //    the child's stream is live in its own slot for the drill-in UI);
+    // 5. resolves the DispatchResult contract: status mapping via
+    //    finishReason + the abort-source listener, finalMessage = last
+    //    assistant text (partials included, ADR-0018), usage from
+    //    result.totalUsage, runId = the child conversation id.
+    //
+    // Abort semantics (D4): the parent abortSignal is chained MANUALLY (a
+    // plain reason-less handle.abort) so a parent cascade always maps to
+    // status "aborted", while user-initiated single-run stops — runner
+    // .stop() and the store's `abort` action on the child's own slot —
+    // carry the SUBAGENT_STOP_REASON string and map to "stopped".
+    //
+    // Logging: run_started / run_finished / run_stopped with snake_case
+    // fields; the task brief is NEVER logged (ADR-0016 redaction — the
+    // dispatch input carries creative-work instructions).
+    const createSubagentRunner = (
+      worldId: string,
+      parentConversationId: string,
+      modelResolver: ModelResolver,
+      onPersistError: PersistErrorHandler,
+    ): SubagentRunner => {
+      /** Live child run handles, keyed by run conversation id (drives stop). */
+      const liveRuns = new Map<string, AgentRunHandle>();
+
+      const runInner = async (
+        input: SubagentDispatchInput,
+        abortSignal: AbortSignal,
+      ): Promise<SubagentDispatchResult> => {
+        // 1. Child model resolution (tri-state, ADR-0050 D6).
+        const resolved = await resolveChildModel(
+          input.role,
+          modelResolver,
+          abortSignal,
+        );
+        if (abortSignal.aborted) {
+          // Parent died while we were resolving — no run was created.
+          return {
+            runId: null,
+            status: "aborted",
+            finalMessage: "",
+            usage: ZERO_DISPATCH_USAGE,
+          };
+        }
+        if (resolved.status === "unconfigured") {
+          // D6 — explicit-fail over silent-hide: report and suggest the fix;
+          // NO conversation row is created.
+          return {
+            runId: null,
+            status: "unconfigured",
+            finalMessage:
+              `No model is bound for the "${input.role}" agent, so the subagent did not run. ` +
+              'Tell the user to bind a model for this role in Settings (AI configuration) and ask how to proceed.',
+            usage: ZERO_DISPATCH_USAGE,
+          };
+        }
+        if (resolved.status === "loading") {
+          // Bounded patience exhausted (see resolveChildModel) — surface as
+          // a retryable error, NOT as "unconfigured" (the model may well be
+          // bound; sending the user to Settings would be a wrong diagnosis).
+          return {
+            runId: null,
+            status: "error",
+            finalMessage: `The AI configuration for "${input.role}" is still loading. Retry the dispatch in a moment.`,
+            usage: ZERO_DISPATCH_USAGE,
+          };
+        }
+
+        // 2. Hidden run conversation (D2). Flat linkage fields — the Rust
+        //    command builds the persisted `meta` server-side. The
+        //    parentToolCallId anchor comes from the dispatch tool's call
+        //    options (SDK-assigned); the UUID fallback only fires on direct
+        //    execute calls that could not provide one.
+        let conversation: Conversation;
+        try {
+          conversation = await createConversationIpc(
+            spaceId,
+            worldId as WorldId,
+            {
+              agentConfigName: input.role,
+              kind: "subagent",
+              parentConversationId,
+              parentToolCallId: input.parentToolCallId ?? crypto.randomUUID(),
+              role: input.role,
+            },
+          );
+        } catch (e) {
+          return {
+            runId: null,
+            status: "error",
+            finalMessage: `could not create the subagent run: ${e instanceof Error ? e.message : String(e)}`,
+            usage: ZERO_DISPATCH_USAGE,
+          };
+        }
+
+        logger.info("subagent.run_started", {
+          role: input.role,
+          run_id: conversation.id,
+          parent_conversation_id: parentConversationId,
+          world_id: worldId,
+        });
+
+        // 3. Own runtime slot + own Agent (same path as a user
+        //    conversation — the two-level map takes any number of live
+        //    children per world).
+        set((state) => ({ worlds: ensureSlot(state, worldId, conversation) }));
+        const childData = getData(get(), worldId, conversation.id);
+        if (!childData) {
+          // Defensive — ensureSlot just created it.
+          return {
+            runId: conversation.id,
+            status: "error",
+            finalMessage: "the subagent run slot could not be created",
+            usage: ZERO_DISPATCH_USAGE,
+          };
+        }
+        const childAgent = await resolveAgent(
+          childData,
+          modelResolver,
+          onPersistError,
+          worldId,
+          conversation.id,
+        );
+        if (!childAgent) {
+          // resolveAgent patched view.error on the child slot — surface it.
+          const failure = getData(get(), worldId, conversation.id)?.view.error;
+          return {
+            runId: conversation.id,
+            status: "error",
+            finalMessage: `the subagent runtime failed to initialize: ${failure?.message ?? "unknown error"}`,
+            usage: ZERO_DISPATCH_USAGE,
+          };
+        }
+
+        // 4. Drive through the shared machinery (one event path, D3). The
+        //    child's ToolContext carries the dispatch STUB — subagents
+        //    never dispatch (D1) — so no recursion is possible.
+        const handle = driveRun(
+          worldId,
+          conversation.id,
+          childAgent,
+          input.task,
+          { autoTitle: NOOP_AUTO_TITLE },
+        );
+        if (!handle) {
+          // agent.run threw synchronously (ConfigError) — driveRun patched
+          // view.error on the child slot. Evict the cached childAgent (F3)
+          // and stamp the authoritative error status (F1) before bailing.
+          patchData(worldId, conversation.id, (d) => ({
+            ...d,
+            agent: null,
+            view: { ...d.view, terminalStatus: "error" },
+          }));
+          const failure = getData(get(), worldId, conversation.id)?.view.error;
+          return {
+            runId: conversation.id,
+            status: "error",
+            finalMessage: `the subagent run failed to start: ${failure?.message ?? "unknown error"}`,
+            usage: ZERO_DISPATCH_USAGE,
+          };
+        }
+        liveRuns.set(conversation.id, handle);
+
+        // 5. Abort wiring (D4). The source listener reads the child's
+        //    `abort` EVENT reason: only SUBAGENT_STOP_REASON ("stopped",
+        //    set by stop() below and by the store's user-facing abort
+        //    action on the child's own slot) maps to "stopped"; the parent
+        //    cascade below aborts reason-less → "aborted". Fires exactly
+        //    once per aborted run, whichever path triggered it.
+        let abortSource: "aborted" | "stopped" = "aborted";
+        const unsubSource = handle.subscribe((event) => {
+          if (event.type === "abort") {
+            abortSource =
+              event.reason === SUBAGENT_STOP_REASON ? "stopped" : "aborted";
+            logger.info("subagent.run_stopped", {
+              run_id: conversation.id,
+              source: abortSource,
+            });
+          }
+        });
+        // Parent cascade: manual chaining (NOT agent.run's abortSignal
+        // option, which would forward the parent's own abort reason into
+        // the child's signal and pollute the source mapping above).
+        const onParentAbort = (): void => handle.abort();
+        if (abortSignal.aborted) {
+          onParentAbort();
+        } else {
+          abortSignal.addEventListener("abort", onParentAbort, { once: true });
+        }
+
+        // 6. Resolve + map (handle.result NEVER rejects — ADR-0018).
+        const result = await handle.result;
+        unsubSource();
+        abortSignal.removeEventListener("abort", onParentAbort);
+        liveRuns.delete(conversation.id);
+
+        let status: SubagentDispatchResult["status"];
+        let finalMessage: string;
+        switch (result.finishReason) {
+          case "aborted":
+            status = abortSource;
+            // Partial text: result.messages carries best-effort salvaged
+            // assistant output (D3 — whatever exists plus the status).
+            finalMessage = lastAssistantText(result.messages);
+            break;
+          case "error":
+            status = "error";
+            finalMessage = result.error
+              ? `${result.error.code}: ${result.error.message}`
+              : "the subagent run failed";
+            break;
+          default:
+            // stop / length / max-steps / content-filter / other — the run
+            // finished; the report discipline lives in the role prompts.
+            status = "completed";
+            finalMessage = lastAssistantText(result.messages);
+            break;
+        }
+
+        // F1/F3 — post-settlement slot patch. `terminalStatus` is the
+        // dispatch contract's authoritative terminal state (only this
+        // layer knows "stopped" vs "aborted" — driveRun's generic
+        // stopReason cannot distinguish them); written AFTER driveRun's
+        // finalization so it wins. `agent: null` releases the
+        // SessionStore thread + model handle — a long writing session
+        // would otherwise accumulate one Agent per dispatch for the
+        // window's lifetime. The view + conversation stay for drill-in
+        // replay; nothing re-drives a settled slot (each dispatch creates
+        // a fresh run conversation), and `resolveAgent` already handles
+        // `data.agent` being null if anything ever did.
+        patchData(worldId, conversation.id, (d) => ({
+          ...d,
+          agent: null,
+          view: { ...d.view, terminalStatus: status },
+        }));
+
+        return {
+          runId: conversation.id,
+          status,
+          finalMessage,
+          usage: {
+            input: result.totalUsage.inputTokens ?? 0,
+            output: result.totalUsage.outputTokens ?? 0,
+          },
+        };
+      };
+
+      return {
+        run: async (input, abortSignal) => {
+          const startedAt = performance.now();
+          // ADR-0018 semantics extended to the dispatch composite (D4):
+          // every outcome — including an unexpected internal throw —
+          // resolves into the result contract; the promise never rejects.
+          let outcome: SubagentDispatchResult;
+          try {
+            outcome = await runInner(input, abortSignal);
+          } catch (e) {
+            outcome = {
+              runId: null,
+              status: "error",
+              finalMessage: `subagent dispatch failed unexpectedly: ${e instanceof Error ? e.message : String(e)}`,
+              usage: ZERO_DISPATCH_USAGE,
+            };
+          }
+          logger.info("subagent.run_finished", {
+            role: input.role,
+            run_id: outcome.runId,
+            status: outcome.status,
+            latency_ms: Math.round(performance.now() - startedAt),
+            usage_input: outcome.usage.input,
+            usage_output: outcome.usage.output,
+          });
+          return outcome;
+        },
+        stop: (runId) => {
+          // Reason-marked abort → the source listener above maps it to
+          // "stopped" and the dispatch resolves with partial text.
+          liveRuns.get(runId)?.abort(SUBAGENT_STOP_REASON);
+        },
+      };
+    };
+
+    /**
      * Resolve a usable Agent for a conversation: return the cached one, or
      * construct it lazily (persisting the new instance into the slot). Returns
      * `null` + sets the appropriate `view.error` when construction is impossible
@@ -1166,6 +2211,24 @@ export function createConversationRuntimeStore(
 
       const { model, autoExecuteDangerousTools, shellToolEnabled, contextCompaction, systemPrompt, skills, visionConfig } = resolved;
       const gate = createGate(worldId, conversationId);
+      // ADR-0050 D3 — the dispatch capability riding the ToolContext. The
+      // (only) conversational role — the Orchestrator — gets the LIVE
+      // runner bound to THIS conversation as the parent link; subagent runs
+      // (and any non-conversational kind) get the throwing stub: they never
+      // register dispatch_subagent (D1's exactly-one delegation level).
+      // Like the bound model, the runner closes over the modelResolver
+      // captured at Agent-construction time — a Settings change takes
+      // effect for the next Space window (same ADR-0024 cache lifecycle).
+      const subagentRunner =
+        getRoleDefinition(data.conversation.agentConfigName)?.kind ===
+        "conversational"
+          ? createSubagentRunner(
+              worldId,
+              conversationId,
+              modelResolver,
+              onPersistError,
+            )
+          : SUBAGENT_RUNNER_STUB;
       patchData(worldId, conversationId, (d) => ({ ...d, agentLoading: true }));
       try {
         const agent = await constructAgent(
@@ -1181,6 +2244,7 @@ export function createConversationRuntimeStore(
           systemPrompt,
           skills,
           visionConfig,
+          subagentRunner,
         );
         // ADR-0030 read path — pull the persisted Message rows (with usage
         // columns) STRAIGHT from the IPC, bypassing TauriSessionStore
@@ -1383,525 +2447,17 @@ export function createConversationRuntimeStore(
           data.conversation.agentConfigName,
         );
 
-        // Clear error + flip to running. Stream is set after we have the runId.
-        // `lastTurnUsage` is reset here so the previous turn's value does not
-        // linger while the new run is in-flight (ADR-0030 — it gets re-set on
-        // finalization). The staged attachments leave with this turn — they
-        // are now part of `content` (ADR-0044 §D8: clear happens in send).
-        patchData(worldId, conversationId, (d) => ({
-          ...d,
-          view: {
-            ...d.view,
-            error: null,
-            isRunning: true,
-            stream: null,
-            stopReason: null,
-            lastTurnUsage: undefined,
-            lastStepInputTokens: undefined,
-            draftAttachments: [],
-          },
-        }));
-
-        let handle: AgentRunHandle;
-        try {
-          handle = agent.run(content, { imageInputSupported });
-        } catch (e) {
-          // ConfigError (already running) or other synchronous failure.
-          patchData(worldId, conversationId, (d) => ({
-            ...d,
-            view: {
-              ...d.view,
-              isRunning: false,
-              error: {
-                code: "RUN_FAILED",
-                message: e instanceof Error ? e.message : String(e),
-              },
-            },
-          }));
-          return;
-        }
-
-        const roleName = data.conversation.agentConfigName;
-
-        // Record the handle + initialize the live stream view.
-        patchData(worldId, conversationId, (d) => ({
-          ...d,
-          runHandle: handle,
-          view: {
-            ...d.view,
-            stream: {
-              runId: handle.runId,
-              segments: [],
-              pendingInputDraft: "",
-              pendingApprovals: {},
-            },
-          },
-        }));
-
-        // ── Streaming batch buffer ──────────────────────────────────────
-        // High-frequency deltas (text / reasoning / tool-input) are buffered
-        // here as chunk arrays and flushed ONCE per animation frame via a
-        // single patchData call. This collapses O(tokens) per-delta string
-        // concatenations + zustand state-tree rebuilds + React re-renders
-        // into O(frames) batch flushes — the core memory/CPU fix for
-        // autonomous multi-step runs where thousands of deltas stream across
-        // many steps (reasoning models especially).
-        //
-        // **Chunk arrays, not incremental concat**: each delta is pushed as
-        // an array element (O(1)). The array is `.join("")`-ed once per flush,
-        // producing a SINGLE string allocation per frame instead of the O(N²)
-        // allocation of per-delta `text += delta`.
-        //
-        // **Structural events flush immediately**: step_start, tool_call,
-        // tool_result, tool_error, error, and abort each call flushBatch()
-        // BEFORE their own patchData. This guarantees segment ordering (a
-        // tool card appears AFTER all preceding text) and completeness.
-        //
-        // **Safety valve**: if the batch exceeds FLUSH_THRESHOLD chunks (rAF
-        // throttled by a hidden window — ADR-0024 in-flight survival), a
-        // timer-based flush fires to prevent unbounded growth.
-        const FLUSH_THRESHOLD = 500;
-        const batch = {
-          text: { stepNumber: -1, chunks: [] as string[] },
-          reasoning: { stepNumber: -1, chunks: [] as string[] },
-          inputDraftChunks: [] as string[],
-          rafId: null as number | null,
-          timeoutId: null as number | null,
-        };
-
-        /**
-         * Flush all pending batch buffers into a single patchData call.
-         * Cancels any pending rAF and safety-valve timer. Resets the batch
-         * arrays. No-op when all buffers are empty. Idempotent (safe to call
-         * from structural events, finalization, rAF callback, and the safety
-         * valve re-entrantly).
-         */
-        const flushBatch = (): void => {
-          if (batch.rafId !== null) {
-            cancelAnimationFrame(batch.rafId);
-            batch.rafId = null;
-          }
-          if (batch.timeoutId !== null) {
-            clearTimeout(batch.timeoutId);
-            batch.timeoutId = null;
-          }
-          // Snapshot + reset BEFORE patchData — avoids re-entrancy issues if
-          // a subscriber somehow triggers another flush.
-          const tChunks = batch.text.chunks;
-          const tStep = batch.text.stepNumber;
-          const rChunks = batch.reasoning.chunks;
-          const rStep = batch.reasoning.stepNumber;
-          const iChunks = batch.inputDraftChunks;
-          batch.text.chunks = [];
-          batch.reasoning.chunks = [];
-          batch.inputDraftChunks = [];
-
-          if (
-            tChunks.length === 0 &&
-            rChunks.length === 0 &&
-            iChunks.length === 0
-          ) {
-            return;
-          }
-
-          const tBatch = tChunks.length > 0 ? tChunks.join("") : null;
-          const rBatch = rChunks.length > 0 ? rChunks.join("") : null;
-          const iBatch = iChunks.length > 0 ? iChunks.join("") : null;
-
-          patchData(worldId, conversationId, (d) => {
-            if (!d.view.stream) return d;
-            let segments = d.view.stream.segments;
-            if (tBatch !== null) {
-              segments = appendDelta(segments, "text", tStep, tBatch);
-            }
-            if (rBatch !== null) {
-              segments = appendDelta(segments, "reasoning", rStep, rBatch);
-            }
-            return {
-              ...d,
-              view: {
-                ...d.view,
-                stream: {
-                  ...d.view.stream,
-                  segments,
-                  pendingInputDraft:
-                    iBatch !== null
-                      ? d.view.stream.pendingInputDraft + iBatch
-                      : d.view.stream.pendingInputDraft,
-                },
-              },
-            };
-          });
-        };
-
-        /**
-         * Schedule a rAF flush if not already pending. Safety valve: if the
-         * batch exceeds FLUSH_THRESHOLD chunks, flush via setTimeout(0)
-         * instead (works when rAF is throttled by a hidden window).
-         */
-        const scheduleFlush = (): void => {
-          const total =
-            batch.text.chunks.length +
-            batch.reasoning.chunks.length +
-            batch.inputDraftChunks.length;
-          if (total >= FLUSH_THRESHOLD) {
-            if (batch.rafId !== null) {
-              cancelAnimationFrame(batch.rafId);
-              batch.rafId = null;
-            }
-            // Only schedule one timer at a time — prevents pile-up when the
-            // buffer stays above threshold under sustained fast streaming.
-            if (batch.timeoutId === null) {
-              batch.timeoutId = setTimeout(flushBatch, 0);
-            }
-            return;
-          }
-          if (batch.rafId === null) {
-            batch.rafId = requestAnimationFrame(flushBatch);
-          }
-        };
-
-        // ── Event handler — mutates view.stream per AgentEvent ──
-        // Registered synchronously after run(); the loop starts on the next
-        // microtask, so this listener is attached before `run_start` fires.
-        const handleEvent = (event: AgentEvent): void => {
-          switch (event.type) {
-            case "run_start":
-              // Stream already initialized in send(); nothing to add.
-              return;
-
-            case "run_end":
-              // The result.then() below owns message refresh + stream clear.
-              return;
-
-            case "step_start":
-              flushBatch();
-              // One divider per step — `step_start` fires once per loop step.
-              patchData(worldId, conversationId, (d) => {
-                if (!d.view.stream) return d;
-                return {
-                  ...d,
-                  view: {
-                    ...d.view,
-                    stream: {
-                      ...d.view.stream,
-                      segments: [
-                        ...d.view.stream.segments,
-                        { kind: "step", stepNumber: event.stepNumber },
-                      ],
-                    },
-                  },
-                };
-              });
-              return;
-
-            case "step_end":
-              // Usage/latency logged by createAgentEventLogger; no view change.
-              return;
-
-            case "text_delta":
-              // Flush pending reasoning to preserve arrival order (reasoning
-              // → text interleaving within a step is uncommon but possible).
-              if (batch.reasoning.chunks.length > 0) {
-                flushBatch();
-              }
-              // Step boundary → flush previous step's batch so segments stay
-              // in arrival order, then start accumulating for the new step.
-              if (batch.text.stepNumber !== event.stepNumber) {
-                flushBatch();
-                batch.text.stepNumber = event.stepNumber;
-              }
-              batch.text.chunks.push(event.delta);
-              scheduleFlush();
-              return;
-
-            case "reasoning_delta":
-              // Flush pending text to preserve arrival order.
-              if (batch.text.chunks.length > 0) {
-                flushBatch();
-              }
-              if (batch.reasoning.stepNumber !== event.stepNumber) {
-                flushBatch();
-                batch.reasoning.stepNumber = event.stepNumber;
-              }
-              batch.reasoning.chunks.push(event.delta);
-              scheduleFlush();
-              return;
-
-            case "tool_input_delta":
-              // The event carries no toolCallId (the loop strips it); buffer
-              // into the pending draft and transfer on the next tool_call.
-              // tool_call flushes the batch first, so the full accumulated
-              // draft is available when the tool segment is created.
-              batch.inputDraftChunks.push(event.delta);
-              scheduleFlush();
-              return;
-
-            case "tool_call":
-              flushBatch();
-              patchData(worldId, conversationId, (d) => {
-                if (!d.view.stream) return d;
-                const inputDraft = d.view.stream.pendingInputDraft;
-                return {
-                  ...d,
-                  view: {
-                    ...d.view,
-                    stream: {
-                      ...d.view.stream,
-                      // Hand the buffered draft to this call, then reset.
-                      pendingInputDraft: "",
-                      segments: [
-                        ...d.view.stream.segments,
-                        {
-                          kind: "tool",
-                          toolCallId: event.toolCallId,
-                          toolName: event.toolName,
-                          inputDraft,
-                          input: event.input,
-                          status: "running",
-                          output: undefined,
-                          error: null,
-                        },
-                      ],
-                    },
-                  },
-                };
-              });
-              return;
-
-            case "tool_result":
-              flushBatch();
-              patchData(worldId, conversationId, (d) => {
-                if (!d.view.stream) return d;
-                return {
-                  ...d,
-                  view: {
-                    ...d.view,
-                    stream: {
-                      ...d.view.stream,
-                      segments: patchToolSegment(
-                        d.view.stream.segments,
-                        event.toolCallId,
-                        { toolName: event.toolName, status: "done", output: event.output },
-                      ),
-                    },
-                  },
-                };
-              });
-              return;
-
-            case "tool_error":
-              flushBatch();
-              patchData(worldId, conversationId, (d) => {
-                if (!d.view.stream) return d;
-                return {
-                  ...d,
-                  view: {
-                    ...d.view,
-                    stream: {
-                      ...d.view.stream,
-                      segments: patchToolSegment(
-                        d.view.stream.segments,
-                        event.toolCallId,
-                        {
-                          toolName: event.toolName,
-                          status: "error",
-                          error: { code: event.error.code, message: event.error.message },
-                        },
-                      ),
-                    },
-                  },
-                };
-              });
-              return;
-
-            case "error":
-              flushBatch();
-              // Stream-terminating error: surface immediately. The run will
-              // resolve shortly and the result.then() does final cleanup
-              // (stream clear + message refresh); view.error survives the
-              // spread there.
-              patchData(worldId, conversationId, (d) => ({
-                ...d,
-                view: {
-                  ...d.view,
-                  isRunning: false,
-                  error: { code: event.error.code, message: event.error.message },
-                },
-              }));
-              return;
-
-            case "abort":
-              flushBatch();
-              // Immediate "stopped" feedback; result.then() finalizes.
-              // Also clear any pending approvals — the gate's abort listener
-              // should have already resolved them, but this is defensive.
-              // stopReason is set here so the "Stopped" marker shows instantly
-              // (even before finalization refreshes view.messages), and is
-              // re-asserted by the finalization .then() so it survives the
-              // stream → null transition.
-              patchData(worldId, conversationId, (d) => {
-                if (!d.view.stream) {
-                  return {
-                    ...d,
-                    view: { ...d.view, isRunning: false, stopReason: "aborted" },
-                  };
-                }
-                return {
-                  ...d,
-                  view: {
-                    ...d.view,
-                    isRunning: false,
-                    stopReason: "aborted",
-                    stream: { ...d.view.stream, pendingApprovals: {} },
-                  },
-                };
-              });
-              return;
-
-            default: {
-              // Exhaustiveness guard — a new AgentEvent variant forces a
-              // handling decision here (matches createAgentEventLogger).
-              const _exhaustive: never = event;
-              void _exhaustive;
-              return;
-            }
-          }
-        };
-
-        // Capture both unsubscribe functions. The per-run emitter owns its
-        // subscriber set, and while `runHandle: null` (set in finalization
-        // below) SHOULD release the handle + emitter, V8/WebView2 is
-        // conservative about GC-ing Promise chains — the discarded closures
-        // (`handleEvent` captures `patchData` → zustand `set`/`get`) can stay
-        // pinned longer than expected after a run. Calling both unsubscribes
-        // deterministically in EVERY termination path (ADR-0018 — all runs
-        // resolve, never reject) is the robust fix. Idempotent (events.ts).
-        const unsubView = handle.subscribe(handleEvent);
-        const unsubLogger = handle.subscribe(createAgentEventLogger(roleName));
-        const detachRunListeners = (): void => {
-          unsubView();
-          unsubLogger();
-        };
-
-        // ── Run finalization ──
-        // The Agent registers its OWN handle.result.then() inside run() (it
-        // persists the delta + updates agent.messages). Our .then() runs AFTER
-        // it (promise callbacks fire in registration order), so
-        // agent.getMessages() here already reflects the appended response.
-        // The result NEVER rejects (ADR-0018); the .catch is defensive.
-        void handle.result
-          .then((result) => {
-            flushBatch();
-            detachRunListeners();
-            // ADR-0030 — surface per-turn usage two ways:
-            //   1. `lastTurnUsage` = the full LanguageModelUsage (with
-            //      cache/reasoning breakdowns) for ephemeral live display.
-            //   2. `messageUsages[lastAssistantId]` = the persisted
-            //      input/output pair, attached to the turn's last assistant
-            //      message id. `undefined → null` per §4. Existing entries
-            //      for earlier messages are preserved (incremental update).
-            patchData(worldId, conversationId, (d) => {
-              const updatedMessages = [...agent.getMessages()];
-              const lastAssistantId = lastAssistantMessageId(updatedMessages);
-              const nextMessageUsages: Record<string, MessageUsage> = {
-                ...d.view.messageUsages,
-              };
-              if (lastAssistantId !== null) {
-                nextMessageUsages[lastAssistantId] = {
-                  inputTokens: result.totalUsage.inputTokens ?? null,
-                  outputTokens: result.totalUsage.outputTokens ?? null,
-                };
-              }
-              return {
-                ...d,
-                runHandle: null,
-                view: {
-                  ...d.view,
-                  messages: updatedMessages,
-                  messageUsages: nextMessageUsages,
-                  lastTurnUsage: result.totalUsage,
-                  lastStepInputTokens:
-                    result.steps[result.steps.length - 1]?.usage?.inputTokens,
-                  isRunning: false,
-                  stream: null,
-                  stopReason: result.finishReason === "aborted" ? "aborted" : null,
-                },
-              };
-            });
-
-            // ── Auto-title (ADR-0040, fire-and-forget) ──────────────────
-            // After the FIRST completed assistant run on an untitled
-            // conversation, silently ask the "namer" agent for a short
-            // title. Never blocks the finalization path above; every
-            // rejection is swallowed (the callback never rejects by
-            // contract — the .catch is defensive).
-            // Gated per ADR-0040 "first completed run"; aborts/errors resolve too (ADR-0018) but must not trigger titling.
-            const slot = getData(get(), worldId, conversationId);
-            const conversation = slot?.conversation;
-            if (
-              slot &&
-              conversation &&
-              conversation.title === null &&
-              !slot.autoTitlePending &&
-              result.finishReason !== "aborted" &&
-              result.finishReason !== "error"
-            ) {
-              const userText = extractTitleText(agent.getMessages());
-              if (userText !== null) {
-                patchData(worldId, conversationId, (d) => ({
-                  ...d,
-                  autoTitlePending: true,
-                }));
-                void autoTitle({
-                  worldId: worldId as WorldId,
-                  conversationId: conversation.id,
-                  userText,
-                })
-                  .then((title) => {
-                    patchData(worldId, conversationId, (d) => ({
-                      ...d,
-                      autoTitlePending: false,
-                      // Cache the title so the NEXT finalization's
-                      // `title === null` check doesn't re-trigger.
-                      ...(title
-                        ? { conversation: { ...d.conversation, title } }
-                        : {}),
-                    }));
-                  })
-                  .catch((e: unknown) => {
-                    // Defensive — autoTitle resolves (never rejects) by
-                    // contract; this guards against contract violations.
-                    logger.warn("chat.auto_title.failed", {
-                      conversation_id: conversationId,
-                      world_id: worldId,
-                      error: String(e),
-                    });
-                    patchData(worldId, conversationId, (d) => ({
-                      ...d,
-                      autoTitlePending: false,
-                    }));
-                  });
-              }
-            }
-          })
-          .catch((e) => {
-            flushBatch();
-            detachRunListeners();
-            patchData(worldId, conversationId, (d) => ({
-              ...d,
-              runHandle: null,
-              view: {
-                ...d.view,
-                isRunning: false,
-                stream: null,
-                error: {
-                  code: "RUN_FAILED",
-                  message: e instanceof Error ? e.message : String(e),
-                },
-              },
-            }));
-          });
+        // One event path for BOTH user sends and subagent runs (ADR-0050
+        // D3): the shared run driver (`driveRun`, defined above the action
+        // map) owns the running-state patch, the streaming batch buffer,
+        // handleEvent, and run finalization. The subagent dispatch runtime
+        // drives child runs through the same function — the drill-in UI
+        // reads the child slot's live stream exactly like a user
+        // conversation's.
+        driveRun(worldId, conversationId, agent, content, {
+          imageInputSupported,
+          autoTitle,
+        });
       },
 
       // ── deleteMessage (ADR-0047) ──
@@ -2082,8 +2638,16 @@ export function createConversationRuntimeStore(
 
       // ── abort ──
       abort: (worldId, conversationId) => {
-        // Idempotent — AgentRunHandle.abort no-ops if already settled.
-        getData(get(), worldId, conversationId)?.runHandle?.abort();
+        // Idempotent — AgentRunHandle.abort no-ops if already settled. The
+        // SUBAGENT_STOP_REASON string marks user-initiated stops: when the
+        // target is a subagent run's slot (the Unit D Stop button path),
+        // the dispatch runtime's source listener maps it to status
+        // "stopped", while parent-cascade aborts (which abort the child
+        // reason-less) map to "aborted" (ADR-0050 D4). Harmless elsewhere —
+        // the reason only rides the abort event.
+        getData(get(), worldId, conversationId)?.runHandle?.abort(
+          SUBAGENT_STOP_REASON,
+        );
       },
 
       // ── setDraft ──
@@ -2131,13 +2695,28 @@ export function createConversationRuntimeStore(
 
       // ── removeConversation ──
       removeConversation: (worldId, conversationId) => {
+        /** True for hidden subagent run slots parented by `conversationId`. */
+        const isChildRunOf = (d: ConversationRuntimeData): boolean =>
+          d.conversation.meta.kind === "subagent" &&
+          d.conversation.meta.parentConversationId === conversationId;
         // Abort any in-flight run BEFORE dropping the slot, so the pending
-        // result.then() finds no data and no-ops.
+        // result.then() finds no data and no-ops. Hidden child run slots go
+        // with the parent: Rust's delete_conversation now cascades the
+        // hidden run rows (F4-Rust), and the in-memory map must stay
+        // consistent with the DB — a stale slot would linger as a drill-in
+        // ghost. Aborting the children is defensive (the dispatch cascade
+        // normally settles them before the parent can be deleted).
+        for (const d of get().worlds.get(worldId)?.values() ?? []) {
+          if (isChildRunOf(d)) d.runHandle?.abort();
+        }
         getData(get(), worldId, conversationId)?.runHandle?.abort();
         set((state) => {
           const worldMap = state.worlds.get(worldId);
           if (!worldMap) return {};
           const newWorldMap = new Map(worldMap);
+          for (const [id, d] of worldMap) {
+            if (isChildRunOf(d)) newWorldMap.delete(id);
+          }
           newWorldMap.delete(conversationId);
           const newWorlds = new Map(state.worlds);
           if (newWorldMap.size === 0) {
@@ -2160,22 +2739,20 @@ export function createConversationRuntimeStore(
 
       // ── resolveApproval ──
       resolveApproval: (worldId, conversationId, toolCallId, approved) => {
-        const resolver = approvalResolvers.get(toolCallId);
-        if (!resolver) return;
-        approvalResolvers.delete(toolCallId);
-        patchData(worldId, conversationId, (d) => {
-          if (!d.view.stream) return d;
-          const rest = { ...d.view.stream.pendingApprovals };
-          delete rest[toolCallId];
-          return {
-            ...d,
-            view: {
-              ...d.view,
-              stream: { ...d.view.stream, pendingApprovals: rest },
-            },
-          };
-        });
-        resolver(approved);
+        resolveApprovalInSlot(worldId, conversationId, toolCallId, approved);
+      },
+
+      // ── approveAllForRun (ADR-0050 D5) ──
+      approveAllForRun: (worldId, runId) => {
+        const pending = getData(get(), worldId, runId)?.view.stream?.pendingApprovals;
+        if (!pending) return;
+        // Snapshot the keys first: each resolution patches the record, and
+        // approvals that land mid-loop are NOT auto-approved (the next
+        // gesture picks them up — same one-shot semantics as the banner's
+        // approve-all).
+        for (const toolCallId of Object.keys(pending)) {
+          resolveApprovalInSlot(worldId, runId, toolCallId, true);
+        }
       },
     };
   });

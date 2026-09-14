@@ -87,12 +87,22 @@ export type UpdateSceneInput = SceneFields;
 // entity `Pick`. Mirrors the Rust `CreateConversationInput` struct
 // (camelCase deserialized): `chapterId` is required only when
 // `kind === "chapter"`, but kept optional here so the shape is permissive.
+// `kind: "subagent"` (ADR-0050 D2) carries the parent linkage as FLAT
+// optional fields — the server builds `meta` from `kind` + these fields
+// (the client never sends raw `meta`; serde would ignore a nested object
+// and the command would reject the unparented run). `parentConversationId`
+// is required by Rust when `kind === "subagent"`; the dispatch runtime
+// (conversation-runtime store) is the only caller of that variant.
 
 type ConversationCreateFields = {
   agentConfigName: string;
-  kind: "world" | "chapter";
+  kind: "world" | "chapter" | "subagent";
   chapterId?: string;
   title?: string;
+  /** Parent linkage for `kind: "subagent"` runs (ignored otherwise). */
+  parentConversationId?: string;
+  parentToolCallId?: string;
+  role?: string;
 };
 
 export type CreateConversationInput = ConversationCreateFields;

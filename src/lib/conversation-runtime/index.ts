@@ -26,6 +26,7 @@
 export {
   ConversationRuntimeProvider,
   useAbort,
+  useApproveAllForRun,
   useConversationStore,
   useConversationView,
   useDeleteMessage,

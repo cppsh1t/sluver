@@ -10,6 +10,12 @@
  * `editMessage` (in-place edit: raw-body surgery preserving
  * `attachment://` refs, durable-first, in-flight guard, memory/DB drift).
  *
+ * Plus the subagent dispatch runtime (ADR-0050 D2/D3/D4): hidden run
+ * conversation creation with parent linkage, the shared event path driving
+ * the child, the DispatchResult contract mapping (completed / unconfigured
+ * / loading-retry), parent-abort cascade → "aborted", and per-child stop →
+ * "stopped" via the abort-reason channel.
+ *
  * The heavy collaborators are mocked at their module boundaries
  * (`@/lib/ai`, `@/lib/ai-store`, `@/lib/ai-roles`, `@/api/conversation`,
  * `@/lib/notify`, `@/lib/logger`); the store under test is REAL.
@@ -21,13 +27,20 @@ import type { LanguageModelUsage, ModelMessage, UserContent } from "ai";
 import {
   createConversationRuntimeStore,
   MAX_DRAFT_ATTACHMENTS,
+  type AutoTitleCallback,
   type ConversationView,
   type DraftAttachment,
   type ModelResolver,
   type PersistErrorHandler,
 } from "./store";
-import type { LanguageModel, SessionMessage } from "@/lib/ai";
+import type {
+  AgentLoopRunResult,
+  LanguageModel,
+  SessionMessage,
+} from "@/lib/ai";
+import type { SubagentRunner, ToolContext } from "@/lib/tools/types";
 import {
+  createConversation as createConversationIpc,
   deleteMessages as deleteMessagesIpc,
   loadMessages as loadMessagesIpc,
   updateMessage as updateMessageIpc,
@@ -46,12 +59,16 @@ import {
  * + options; `getMessages` feeds finalization (empty ⇒ no auto-title);
  * `removeMessages` / `replaceMessage` back ADR-0047 mutations (tests wire
  * them to a local `thread` array so the view refresh reflects the change).
+ * `contexts` captures every ToolContext handed to the (registry-mocked)
+ * `buildTools` — the dispatch tests reach the live SubagentRunner through
+ * the Orchestrator conversation's captured context.
  */
 const agentMocks = vi.hoisted(() => ({
   run: vi.fn(),
   getMessages: vi.fn((): SessionMessage[] => []),
   removeMessages: vi.fn(),
   replaceMessage: vi.fn(),
+  contexts: [] as ToolContext[],
 }));
 
 vi.mock("@/lib/ai", () => ({
@@ -71,11 +88,21 @@ vi.mock("@/lib/ai-store", () => ({
 }));
 
 vi.mock("@/lib/ai-roles", () => ({
-  getRoleBehavior: vi.fn(() => ({
+  // Name-aware: "orchestrator" is the (only) conversational role and gets
+  // the live dispatch runner; every other name is a subagent kind and gets
+  // the throwing stub — mirroring the real registry's kind split so the
+  // store's runner wiring is exercised exactly as in production.
+  getRoleDefinition: vi.fn((name: string) => ({
+    name,
+    kind: name === "orchestrator" ? "conversational" : "subagent",
     systemPrompt: "stub role prompt",
     maxSteps: 3,
-    buildTools: () => ({}),
+    buildTools: (ctx: ToolContext) => {
+      agentMocks.contexts.push(ctx);
+      return {};
+    },
   })),
+  buildSubagentRosterBlock: vi.fn(() => "<subagent_roster>stub</subagent_roster>"),
 }));
 
 vi.mock("@/lib/ai/agent-logging", () => ({
@@ -95,6 +122,8 @@ vi.mock("@/api/conversation", () => ({
   // ADR-0047 — message-mutation IPC (durable-first).
   deleteMessages: vi.fn(async () => {}),
   updateMessage: vi.fn(async () => {}),
+  // ADR-0050 D2 — hidden subagent run creation (flat linkage fields).
+  createConversation: vi.fn(),
 }));
 
 // ─── Fixtures ──────────────────────────────────────────────────────────────
@@ -103,12 +132,15 @@ const WORLD_ID = "w1";
 const NOW = "2026-01-01T00:00:00.000Z";
 const SPACE_ID = spaceIdSchema.parse("space-1");
 
-function makeConversation(id: string): Conversation {
+function makeConversation(
+  id: string,
+  meta: Conversation["meta"] = { kind: "world" },
+): Conversation {
   return conversationSchema.parse({
     id,
-    agentConfigName: "explorer",
+    agentConfigName: "orchestrator",
     title: null,
-    meta: { kind: "world" },
+    meta,
     createdAt: NOW,
     updatedAt: NOW,
   });
@@ -226,7 +258,27 @@ beforeEach(() => {
   agentMocks.getMessages.mockReturnValue([]);
   agentMocks.removeMessages.mockReset();
   agentMocks.replaceMessage.mockReset();
+  agentMocks.contexts.length = 0;
   runCounter = 0;
+  // Default createConversation: a valid kind=subagent row with a fresh id
+  // (individual tests may override). Mirrors the Rust command's read-back.
+  let convCounter = 0;
+  vi.mocked(createConversationIpc).mockImplementation(
+    async (_spaceId, _worldId, input) =>
+      conversationSchema.parse({
+        id: `run-conv-${++convCounter}`,
+        agentConfigName: input.agentConfigName,
+        title: null,
+        meta: {
+          kind: "subagent",
+          parentConversationId: input.parentConversationId ?? "conv-parent",
+          parentToolCallId: input.parentToolCallId ?? "tc-0",
+          role: input.role ?? input.agentConfigName,
+        },
+        createdAt: NOW,
+        updatedAt: NOW,
+      }) satisfies Conversation,
+  );
 });
 
 // ─── Draft attachments (ADR-0044 §D8) ──────────────────────────────────────
@@ -739,5 +791,547 @@ describe("editMessage", () => {
     expect(vi.mocked(updateMessageIpc)).toHaveBeenCalledTimes(1);
     expect(agentMocks.replaceMessage).not.toHaveBeenCalled();
     expect(viewOf(store, "conv-m").messages).toBe(before.messages);
+  });
+});
+
+// ─── Auto-title gating (ADR-0040 + ADR-0050 D2) ────────────────────────────
+
+describe("auto-title gating", () => {
+  /** Seed a store + completed run over a conversation with extractable user text. */
+  async function runOnce(
+    conv: Conversation,
+    autoTitle: AutoTitleCallback,
+  ): Promise<void> {
+    agentMocks.getMessages.mockImplementation(() => [
+      sess("u1", { role: "user", content: "first question" }),
+      sess("a1", { role: "assistant", content: "first answer" }),
+    ]);
+    const store = createConversationRuntimeStore(SPACE_ID);
+    await store
+      .getState()
+      .ensureRuntime(WORLD_ID, conv, readyResolver, noopPersistError);
+    await flush(); // let Agent.open + view patch settle
+    agentMocks.run.mockReturnValue(makeRunHandle());
+    await store
+      .getState()
+      .send(
+        WORLD_ID,
+        conv.id,
+        "hi",
+        readyResolver,
+        noopPersistError,
+        autoTitle,
+        visionUnknown,
+      );
+    await flush();
+    await flush(); // run finalization is a .then chain
+  }
+
+  it("triggers autoTitle after the first completed run on an untitled world conversation", async () => {
+    const autoTitle = vi.fn(async (_input: unknown) => "A Title");
+    await runOnce(makeConversation("conv-t"), autoTitle);
+
+    expect(autoTitle).toHaveBeenCalledTimes(1);
+    expect(autoTitle).toHaveBeenCalledWith({
+      worldId: WORLD_ID,
+      conversationId: "conv-t",
+      userText: "first question",
+    });
+  });
+
+  it("skips autoTitle for kind=subagent conversations (hidden runs, ADR-0050 D2)", async () => {
+    const autoTitle = vi.fn(async (_input: unknown) => "A Title");
+    await runOnce(
+      makeConversation("conv-run", {
+        kind: "subagent",
+        parentConversationId: "conv-parent",
+        parentToolCallId: "tc-77",
+        role: "writer",
+      }),
+      autoTitle,
+    );
+
+    expect(autoTitle).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Subagent dispatch runtime (ADR-0050 D2/D3/D4) ────────────────────────
+
+/**
+ * A scripted run handle: `result` resolves only when the test says so, and
+ * `abort(reason)` delivers an `{type: "abort", reason}` event to every
+ * subscriber — mimicking the real loop's reason propagation
+ * (`AgentRunHandle.abort(reason)` → `AbortSignal.reason` → abort event) so
+ * the dispatch runtime's source mapping is exercised faithfully.
+ */
+function makeScriptedHandle() {
+  const listeners: Array<(event: unknown) => void> = [];
+  let resolveResult!: (value: unknown) => void;
+  const result = new Promise((resolve) => {
+    resolveResult = resolve;
+  });
+  return {
+    runId: `run-${++runCounter}`,
+    subscribe: vi.fn((listener: (event: unknown) => void) => {
+      listeners.push(listener);
+      return () => {};
+    }),
+    abort: vi.fn((reason?: string) => {
+      for (const listener of listeners) listener({ type: "abort", reason });
+    }),
+    result,
+    resolveResult,
+  };
+}
+
+/** Build a minimal AgentLoopRunResult for handle.result resolution. */
+function runResult(
+  finishReason: AgentLoopRunResult["finishReason"],
+  messages: ModelMessage[],
+  totalUsage: { inputTokens: number; outputTokens: number },
+): AgentLoopRunResult {
+  return {
+    runId: "run-x",
+    finishReason,
+    messages,
+    finalText: "",
+    totalUsage: totalUsage as unknown as LanguageModelUsage,
+    steps: [],
+  };
+}
+
+/**
+ * Seed a store + an Orchestrator conversation whose (mocked) buildTools
+ * captured the live ToolContext — the dispatch tests drive
+ * `ctx.subagentRunner`, the real production surface.
+ */
+async function seedOrchestrator(
+  resolver: ModelResolver = readyResolver,
+): Promise<{ store: ReturnType<typeof createConversationRuntimeStore>; runner: SubagentRunner }> {
+  const store = createConversationRuntimeStore(SPACE_ID);
+  await store
+    .getState()
+    .ensureRuntime(WORLD_ID, makeConversation("conv-parent"), resolver, noopPersistError);
+  await flush(); // let Agent.open + view patch settle
+  const ctx = agentMocks.contexts[agentMocks.contexts.length - 1];
+  if (!ctx) throw new Error("no ToolContext captured — buildTools was not called");
+  return { store, runner: ctx.subagentRunner };
+}
+
+describe("subagent dispatch runtime", () => {
+  it("creates the hidden run conversation with parent linkage, drives the child with the task, and resolves the contract", async () => {
+    const { store, runner } = await seedOrchestrator();
+    const handle = makeScriptedHandle();
+    agentMocks.run.mockReturnValue(handle);
+
+    const promise = runner.run(
+      { role: "writer", task: "write the scene", parentToolCallId: "tc-9" },
+      new AbortController().signal,
+    );
+    await flush();
+
+    // Hidden conversation created with the FLAT linkage fields (Rust builds
+    // meta server-side) + the child Agent driven with the bare task brief.
+    expect(vi.mocked(createConversationIpc)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(createConversationIpc)).toHaveBeenCalledWith(
+      SPACE_ID,
+      WORLD_ID,
+      {
+        agentConfigName: "writer",
+        kind: "subagent",
+        parentConversationId: "conv-parent",
+        parentToolCallId: "tc-9",
+        role: "writer",
+      },
+    );
+    expect(agentMocks.run).toHaveBeenCalledTimes(1);
+    expect(agentMocks.run).toHaveBeenCalledWith("write the scene", {});
+    // The child got its own runtime slot and is live in it (shared event
+    // path — its stream state is the drill-in surface).
+    expect(
+      store.getState().worlds.get(WORLD_ID)?.get("run-conv-1")?.view.isRunning,
+    ).toBe(true);
+
+    handle.resolveResult(
+      runResult(
+        "stop",
+        [
+          { role: "user", content: "write the scene" },
+          { role: "assistant", content: "Scene written (812 words)." },
+        ],
+        { inputTokens: 11, outputTokens: 7 },
+      ),
+    );
+    await flush();
+    await flush();
+
+    await expect(promise).resolves.toEqual({
+      runId: "run-conv-1",
+      status: "completed",
+      finalMessage: "Scene written (812 words).",
+      usage: { input: 11, output: 7 },
+    });
+    // Finalization settled the child slot.
+    expect(
+      store.getState().worlds.get(WORLD_ID)?.get("run-conv-1")?.view.isRunning,
+    ).toBe(false);
+
+    // The CHILD's ToolContext carries the dispatch STUB (D1 — subagents
+    // never dispatch); calling it rejects loudly.
+    expect(agentMocks.contexts.length).toBe(2); // parent + child
+    const childCtx = agentMocks.contexts[1];
+    await expect(
+      childCtx.subagentRunner.run(
+        { role: "scribe", task: "recursive dispatch" },
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("ADR-0050 D1");
+  });
+
+  it("returns unconfigured guidance WITHOUT creating a conversation when the child role's model is unbound (D6)", async () => {
+    const unconfiguredWriter: ModelResolver = (role) =>
+      role === "writer" ? { status: "unconfigured" } : readyResolver(role);
+    const { runner } = await seedOrchestrator(unconfiguredWriter);
+
+    const got = await runner.run(
+      { role: "writer", task: "write the scene", parentToolCallId: "tc-1" },
+      new AbortController().signal,
+    );
+
+    expect(got.runId).toBeNull();
+    expect(got.status).toBe("unconfigured");
+    expect(got.finalMessage).toContain("writer");
+    expect(got.usage).toEqual({ input: 0, output: 0 });
+    expect(vi.mocked(createConversationIpc)).not.toHaveBeenCalled();
+    expect(agentMocks.run).not.toHaveBeenCalled();
+  });
+
+  it("retries a transient loading resolution and proceeds once the config lands", async () => {
+    let writerCalls = 0;
+    const slowResolver: ModelResolver = (role) => {
+      if (role === "writer") {
+        writerCalls += 1;
+        return writerCalls <= 1 ? { status: "loading" } : readyResolver(role);
+      }
+      return readyResolver(role);
+    };
+    const { runner } = await seedOrchestrator(slowResolver);
+    const handle = makeScriptedHandle();
+    agentMocks.run.mockReturnValue(handle);
+
+    const promise = runner.run(
+      { role: "writer", task: "write the scene", parentToolCallId: "tc-2" },
+      new AbortController().signal,
+    );
+    await flush();
+    // Still polling — no conversation yet after the first microtask flush.
+    expect(vi.mocked(createConversationIpc)).not.toHaveBeenCalled();
+
+    await new Promise((resolve) => setTimeout(resolve, 200)); // > one poll interval
+    expect(vi.mocked(createConversationIpc)).toHaveBeenCalledTimes(1);
+    handle.resolveResult(
+      runResult("stop", [{ role: "assistant", content: "done" }], {
+        inputTokens: 1,
+        outputTokens: 1,
+      }),
+    );
+    await expect(promise).resolves.toMatchObject({ status: "completed" });
+  });
+
+  it("maps an errored child run to status error with the AgentError description", async () => {
+    const { runner } = await seedOrchestrator();
+    const handle = makeScriptedHandle();
+    agentMocks.run.mockReturnValue(handle);
+    const promise = runner.run(
+      { role: "curator", task: "tidy the worldbook", parentToolCallId: "tc-3" },
+      new AbortController().signal,
+    );
+    await flush();
+
+    const errored = runResult("error", [], { inputTokens: 2, outputTokens: 0 });
+    (errored as { error?: unknown }).error = {
+      code: "PROVIDER_ERROR",
+      message: "upstream 502",
+    };
+    handle.resolveResult(errored);
+    await flush();
+    await flush();
+
+    await expect(promise).resolves.toMatchObject({
+      status: "error",
+      finalMessage: "PROVIDER_ERROR: upstream 502",
+    });
+  });
+
+  it("cascades a parent abort reason-less and resolves status aborted with the partial text (D4)", async () => {
+    const { store, runner } = await seedOrchestrator();
+    const handle = makeScriptedHandle();
+    agentMocks.run.mockReturnValue(handle);
+    const parentController = new AbortController();
+
+    const promise = runner.run(
+      { role: "explorer", task: "survey the worldbook", parentToolCallId: "tc-4" },
+      parentController.signal,
+    );
+    await flush();
+
+    parentController.abort();
+    // The cascade aborts the child WITHOUT the stop reason — anything else
+    // would mislabel a parent stop as a per-child stop.
+    expect(handle.abort).toHaveBeenCalledTimes(1);
+    expect(handle.abort).toHaveBeenCalledWith();
+
+    handle.resolveResult(
+      runResult(
+        "aborted",
+        [
+          { role: "user", content: "survey the worldbook" },
+          { role: "assistant", content: "Partial findings: 3 characters…" },
+        ],
+        { inputTokens: 5, outputTokens: 2 },
+      ),
+    );
+    await flush();
+    await flush();
+
+    await expect(promise).resolves.toEqual({
+      runId: "run-conv-1",
+      status: "aborted",
+      finalMessage: "Partial findings: 3 characters…",
+      usage: { input: 5, output: 2 },
+    });
+    expect(
+      store.getState().worlds.get(WORLD_ID)?.get("run-conv-1")?.view.isRunning,
+    ).toBe(false);
+  });
+
+  it("stop(runId) aborts with the stop reason and resolves status stopped (D4)", async () => {
+    const { runner } = await seedOrchestrator();
+    const handle = makeScriptedHandle();
+    agentMocks.run.mockReturnValue(handle);
+
+    const promise = runner.run(
+      { role: "writer", task: "write the scene", parentToolCallId: "tc-5" },
+      new AbortController().signal,
+    );
+    await flush();
+
+    runner.stop?.("run-conv-1");
+    expect(handle.abort).toHaveBeenCalledTimes(1);
+    expect(handle.abort).toHaveBeenCalledWith("stopped");
+
+    handle.resolveResult(
+      runResult(
+        "aborted",
+        [{ role: "assistant", content: "Half a scene…" }],
+        { inputTokens: 3, outputTokens: 9 },
+      ),
+    );
+    await flush();
+    await flush();
+
+    await expect(promise).resolves.toMatchObject({
+      status: "stopped",
+      finalMessage: "Half a scene…",
+    });
+  });
+
+  it("never rejects: folds an unexpected internal throw into an error result (ADR-0018 composite)", async () => {
+    const { runner } = await seedOrchestrator();
+    // Conversation creation fails — the runner must resolve, not reject.
+    vi.mocked(createConversationIpc).mockRejectedValueOnce(
+      new Error("ipc down"),
+    );
+
+    await expect(
+      runner.run(
+        { role: "scribe", task: "file the notes", parentToolCallId: "tc-6" },
+        new AbortController().signal,
+      ),
+    ).resolves.toMatchObject({
+      runId: null,
+      status: "error",
+      finalMessage: expect.stringContaining("ipc down"),
+    });
+  });
+
+  // ── Slot settlement (F1 terminalStatus + F3 Agent eviction) ──────────
+
+  it("stamps terminalStatus completed on the child slot and evicts its cached Agent once the run settles (F1/F3)", async () => {
+    const { store, runner } = await seedOrchestrator();
+    const handle = makeScriptedHandle();
+    agentMocks.run.mockReturnValue(handle);
+
+    const promise = runner.run(
+      { role: "writer", task: "write the scene", parentToolCallId: "tc-s1" },
+      new AbortController().signal,
+    );
+    await flush();
+
+    // Mid-run: the child Agent is cached on the slot and no terminal
+    // status exists yet (driveRun's start-of-run reset keeps it null).
+    const live = store.getState().worlds.get(WORLD_ID)?.get("run-conv-1");
+    expect(live?.agent).not.toBeNull();
+    expect(live?.view.terminalStatus).toBeNull();
+
+    handle.resolveResult(
+      runResult("stop", [{ role: "assistant", content: "done" }], {
+        inputTokens: 1,
+        outputTokens: 1,
+      }),
+    );
+    await flush();
+    await flush();
+    await expect(promise).resolves.toMatchObject({ status: "completed" });
+
+    // Settled: authoritative terminal status, Agent released (thread +
+    // model handle), but the slot itself — view + conversation — stays
+    // for drill-in replay.
+    const settled = store.getState().worlds.get(WORLD_ID)?.get("run-conv-1");
+    expect(settled).toBeDefined();
+    expect(settled?.view.terminalStatus).toBe("completed");
+    expect(settled?.agent).toBeNull();
+  });
+
+  it("stamps terminalStatus stopped (not aborted) after a user-initiated stop of the child run (F1)", async () => {
+    const { store, runner } = await seedOrchestrator();
+    const handle = makeScriptedHandle();
+    agentMocks.run.mockReturnValue(handle);
+
+    const promise = runner.run(
+      { role: "writer", task: "write the scene", parentToolCallId: "tc-s2" },
+      new AbortController().signal,
+    );
+    await flush();
+
+    // The Unit D Stop-button path: the store's abort action carrying the
+    // SUBAGENT_STOP_REASON string.
+    store.getState().abort(WORLD_ID, "run-conv-1");
+    expect(handle.abort).toHaveBeenCalledTimes(1);
+    expect(handle.abort).toHaveBeenCalledWith("stopped");
+
+    handle.resolveResult(
+      runResult("aborted", [{ role: "assistant", content: "Half a scene…" }], {
+        inputTokens: 3,
+        outputTokens: 9,
+      }),
+    );
+    await flush();
+    await flush();
+    await expect(promise).resolves.toMatchObject({ status: "stopped" });
+
+    // The dispatch contract's authoritative word wins over driveRun's
+    // generic stopReason, which alone would read "aborted".
+    expect(viewOf(store, "run-conv-1").terminalStatus).toBe("stopped");
+    expect(viewOf(store, "run-conv-1").stopReason).toBe("aborted");
+    expect(
+      store.getState().worlds.get(WORLD_ID)?.get("run-conv-1")?.agent,
+    ).toBeNull();
+  });
+
+  it("removeConversation sweeps the parent slot AND its hidden subagent run slots (F4)", async () => {
+    const { store, runner } = await seedOrchestrator();
+    const handle = makeScriptedHandle();
+    agentMocks.run.mockReturnValue(handle);
+
+    const promise = runner.run(
+      { role: "explorer", task: "survey the worldbook", parentToolCallId: "tc-s3" },
+      new AbortController().signal,
+    );
+    await flush();
+    // Both slots live: parent + in-flight hidden child.
+    expect(store.getState().worlds.get(WORLD_ID)?.has("conv-parent")).toBe(true);
+    expect(store.getState().worlds.get(WORLD_ID)?.has("run-conv-1")).toBe(true);
+
+    store.getState().removeConversation(WORLD_ID, "conv-parent");
+    await flush();
+
+    // Rust cascades the hidden run rows on delete (F4-Rust) — the
+    // in-memory map follows: parent AND child gone, empty bucket dropped.
+    expect(store.getState().worlds.get(WORLD_ID)?.get("conv-parent")).toBeUndefined();
+    expect(store.getState().worlds.get(WORLD_ID)?.get("run-conv-1")).toBeUndefined();
+    expect(store.getState().worlds.has(WORLD_ID)).toBe(false);
+
+    // The defensive child abort fired (reason-less → parent-cascade
+    // semantics) and the dispatch still resolves its contract.
+    expect(handle.abort).toHaveBeenCalledTimes(1);
+    expect(handle.abort).toHaveBeenCalledWith();
+    handle.resolveResult(
+      runResult("aborted", [{ role: "assistant", content: "Partial…" }], {
+        inputTokens: 1,
+        outputTokens: 1,
+      }),
+    );
+    await flush();
+    await flush();
+    await expect(promise).resolves.toMatchObject({ status: "aborted" });
+  });
+
+  // ── approveAllForRun (ADR-0050 D5 — the Unit D approve-all surface) ──
+
+  it("approveAllForRun resolves every pending approval on the child slot in one gesture (D5)", async () => {
+    const { store, runner } = await seedOrchestrator();
+    const handle = makeScriptedHandle();
+    agentMocks.run.mockReturnValue(handle);
+    const promise = runner.run(
+      { role: "curator", task: "tidy the worldbook", parentToolCallId: "tc-7" },
+      new AbortController().signal,
+    );
+    await flush();
+
+    // contexts[1] is the CHILD's ToolContext — its gate is bound to the
+    // child slot, which driveRun has put into streaming state.
+    const childCtx = agentMocks.contexts[1];
+    const reqA = childCtx.approvalGate.request({
+      toolCallId: "tc-child-a",
+      toolName: "create_character",
+      input: {},
+      consentLevel: "always",
+      abortSignal: new AbortController().signal,
+    });
+    const reqB = childCtx.approvalGate.request({
+      toolCallId: "tc-child-b",
+      toolName: "delete_character",
+      input: {},
+      consentLevel: "always",
+      abortSignal: new AbortController().signal,
+    });
+    await flush();
+    expect(
+      Object.keys(viewOf(store, "run-conv-1").stream?.pendingApprovals ?? {}),
+    ).toEqual(["tc-child-a", "tc-child-b"]);
+
+    store.getState().approveAllForRun(WORLD_ID, "run-conv-1");
+    await flush();
+
+    // Every gate request unblocked as approved + the queue drained.
+    await expect(reqA).resolves.toBe(true);
+    await expect(reqB).resolves.toBe(true);
+    expect(
+      Object.keys(viewOf(store, "run-conv-1").stream?.pendingApprovals ?? {}),
+    ).toEqual([]);
+
+    // Settle the child so the dispatch promise resolves (test hygiene).
+    handle.resolveResult(
+      runResult("stop", [{ role: "assistant", content: "done" }], {
+        inputTokens: 1,
+        outputTokens: 1,
+      }),
+    );
+    await flush();
+    await flush();
+    await promise;
+  });
+
+  it("approveAllForRun no-ops on an absent slot or idle stream", async () => {
+    const store = createConversationRuntimeStore(SPACE_ID);
+    // Unknown run id — must not throw.
+    expect(() => store.getState().approveAllForRun(WORLD_ID, "nope")).not.toThrow();
+
+    // Existing slot WITHOUT stream state (idle) — equally a no-op.
+    await store
+      .getState()
+      .ensureRuntime(WORLD_ID, makeConversation("conv-idle"), loadingResolver, noopPersistError);
+    expect(() => store.getState().approveAllForRun(WORLD_ID, "conv-idle")).not.toThrow();
   });
 });

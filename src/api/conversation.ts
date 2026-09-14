@@ -15,6 +15,21 @@ export function listConversations(spaceId: string, worldId: WorldId): Promise<Co
   return call<Conversation[]>('list_conversations', { spaceId, worldId });
 }
 
+/**
+ * Fetch a single conversation by id — ANY kind (unlike `listConversations`,
+ * which filters `kind: "world"`). The subagent drill-in (ADR-0050 D10) uses
+ * this to load a historical run's Conversation object so the runtime store
+ * can ensure a slot and replay the transcript. Rejects with NOT_FOUND when
+ * the row is gone.
+ */
+export function getConversation(
+  spaceId: string,
+  worldId: WorldId,
+  id: ConversationId,
+): Promise<Conversation> {
+  return call<Conversation>('get_conversation', { spaceId, worldId, id });
+}
+
 export function createConversation(
   spaceId: string,
   worldId: WorldId,

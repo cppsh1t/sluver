@@ -43,6 +43,7 @@ function makeToolContext(
     skills: [],
     activatedSkills: new Set(),
     visionConfig: null,
+    subagentRunner: { run: vi.fn() },
     attachmentLookup: { findByFilename: vi.fn(() => null) },
     entityImageLookup: { findByEntity: vi.fn(async () => null) },
   };
@@ -130,7 +131,7 @@ describe("buildToolSet", () => {
     expect(Object.keys(tools).sort()).toEqual(["alpha", "beta"]);
   });
 
-  it("auto tool: executes directly with (input, ctx, { abortSignal }) and never consults the gate", async () => {
+  it("auto tool: executes directly with (input, ctx, { abortSignal, toolCallId }) and never consults the gate", async () => {
     const ctx = makeToolContext();
     const execute = vi.fn(async () => "done");
     const tools = buildToolSet({ echo: makeDef("auto", execute) }, ctx);
@@ -141,7 +142,10 @@ describe("buildToolSet", () => {
 
     expect(result).toBe("done");
     expect(execute).toHaveBeenCalledTimes(1);
-    expect(execute).toHaveBeenCalledWith(input, ctx, { abortSignal });
+    expect(execute).toHaveBeenCalledWith(input, ctx, {
+      abortSignal,
+      toolCallId: "call-1",
+    });
     expect(ctx.approvalGate.request).not.toHaveBeenCalled();
   });
 
@@ -166,7 +170,10 @@ describe("buildToolSet", () => {
       abortSignal,
     });
     expect(execute).toHaveBeenCalledTimes(1);
-    expect(execute).toHaveBeenCalledWith(input, gatedCtx, { abortSignal });
+    expect(execute).toHaveBeenCalledWith(input, gatedCtx, {
+      abortSignal,
+      toolCallId: "call-1",
+    });
   });
 
   it("always tool + gate denies: execute is skipped and the wrapper rejects with ToolDeniedError", async () => {
