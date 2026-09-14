@@ -14,8 +14,8 @@
  * gated by REGISTRATION, not the per-call approval gate: it is only
  * registered when the AgentConfig's `shellToolEnabled` flag is on, and
  * once registered it auto-executes without per-call confirmation.
- * Registered on both the explorer and writer roles (ADR-0042 §3), each
- * gated by its own AgentConfig's flag; the namer never carries it.
+ * Registered on every loop role's universal set (ADR-0050 D8), each
+ * gated by its own AgentConfig's flag; the one-shot roles never carry it.
  *
  * Abort (ADR-0041 §3): listener + natural-resolve pattern — on abort the
  * kill fires fire-and-forget and the `shell_exec` invoke resolves

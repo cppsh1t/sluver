@@ -13,12 +13,13 @@
  *
  * ## Prompt gate (ADR-0037 — load-bearing)
  *
- * Notes are registered statically on BOTH roles; the system prompts carry a
- * hard rule that these tools are used ONLY when the user explicitly asks —
- * never proactively, never as background context gathering. Defense in depth
- * stands even if the model drifts: `create_note` is consent `configurable`
- * and `update_note` / `delete_note` are `always` (ADR-0025), so a drifted
- * write attempt still hits the approval banner.
+ * Notes are registered statically on the scribe role alone (ADR-0050 D8 —
+ * previously both conversational roles carried them); the system prompt
+ * carries the discipline that the scribe's task itself must come from a
+ * user-initiated request routed through the Orchestrator. Defense in depth
+ * stands even if the model drifts: `create_note` is consent
+ * `configurable` and `update_note` / `delete_note` are `always`
+ * (ADR-0025), so a drifted write attempt still hits the approval banner.
  *
  * ## grep division of labor (ADR-0035 / ADR-0037)
  *

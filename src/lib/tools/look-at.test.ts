@@ -40,6 +40,7 @@ function makeToolContext(
     skills: [],
     activatedSkills: new Set(),
     visionConfig: FAKE_VISION_CONFIG,
+    subagentRunner: { run: vi.fn() },
     attachmentLookup: {
       findByFilename: vi.fn(
         (filename: string) =>
@@ -263,7 +264,7 @@ describe("look_at", () => {
     expect(describeImageMock).not.toHaveBeenCalled();
   });
 
-  it("returns a structured not_configured error when visionConfig is null (defensive)", async () => {
+  it("returns a structured unconfigured error when visionConfig is null (ADR-0050 D6)", async () => {
     const ctx = makeToolContext({ visionConfig: null });
 
     const got = await lookAtTool().execute(
@@ -273,7 +274,7 @@ describe("look_at", () => {
     );
 
     expect(got).toEqual({
-      error: "not_configured",
+      error: "unconfigured",
       message: expect.stringContaining("vision"),
     });
     expect(describeImageMock).not.toHaveBeenCalled();

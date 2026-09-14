@@ -29,6 +29,7 @@ function makeToolContext(): ToolContext {
     skills: [],
     activatedSkills: new Set(),
     visionConfig: null,
+    subagentRunner: { run: vi.fn() },
     attachmentLookup: { findByFilename: vi.fn(() => null) },
     entityImageLookup: { findByEntity: vi.fn(async () => null) },
   };

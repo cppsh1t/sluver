@@ -28,10 +28,13 @@
  *     expose no world-id parameter.
  *
  * Consent level: `auto` (read-only observation — same classification as the
- * `search_*` / `web_fetch` tools, ADR-0025). Gated by REGISTRATION, not the
- * per-call approval gate: the tool only exists when the `"vision"`
- * AgentConfig is bound (`ctx.visionConfig != null` — "configured =
- * enabled", mirroring ADR-0040's namer and ADR-0042's shell gate).
+ * `search_*` / `web_fetch` tools, ADR-0025). Registration is UNCONDITIONAL
+ * per ADR-0050 D6 (superseding ADR-0045's `visionConfig != null`
+ * registration gate — "explicit-fail over silent-hide"): the tool is always
+ * present on every role, and when the Space's `"vision"` AgentConfig is
+ * unbound (`ctx.visionConfig == null`) execute returns a structured
+ * `unconfigured` result telling the model to ask the user to bind a vision
+ * model in Settings.
  *
  * Abort semantics: a fired abort signal RE-THROWS so the run terminates
  * like other tools (ADR-0018); every other failure is returned as a
@@ -203,11 +206,13 @@ export function lookAtTools(): Record<string, ToolDef> {
         const { filename, url, entityKind, entityId, question } =
           input as LookAtToolInput;
 
-        // Defensive: the tool is only registered when visionConfig != null,
-        // but execute may be invoked directly (tests) — keep the guard.
+        // ADR-0050 D6 — explicit-fail over silent-hide: the tool is always
+        // registered, so an unbound vision config surfaces as a structured
+        // `unconfigured` result the model can relay to the user (same
+        // structured-result convention as `entity_image_not_found` below).
         if (!ctx.visionConfig) {
           return {
-            error: "not_configured",
+            error: "unconfigured",
             message:
               'The vision agent is not configured for this Space, so images cannot be examined. Ask the user to bind a vision-capable model to the "vision" agent in Settings.',
           };
