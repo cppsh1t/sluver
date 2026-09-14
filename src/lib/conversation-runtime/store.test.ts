@@ -167,6 +167,7 @@ const readyResolver: ModelResolver = () => ({
   shellToolEnabled: false,
   contextCompaction: { enabled: false, turnAge: 3 },
   systemPrompt: "",
+  maxSteps: null,
   skills: [],
   visionConfig: null,
 });

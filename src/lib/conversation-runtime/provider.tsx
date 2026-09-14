@@ -212,6 +212,7 @@ export function ConversationRuntimeProvider({
           shellToolEnabled: joined.shellToolEnabled,
           contextCompaction: joined.contextCompaction,
           systemPrompt: joined.systemPrompt,
+          maxSteps: joined.maxSteps,
           skills: skillsByRole?.[role] ?? [],
           // ADR-0045 — Space-scoped vision agent config for `look_at`.
           // `null` (unbound) → the always-registered tool returns its

@@ -127,6 +127,12 @@ export type ResolvedModel =
        */
       readonly systemPrompt: string;
       /**
+       * Per-role step-budget override from the Space's AgentConfig.
+       * `null` = use the role registry's code-defined default
+       * (ai-roles/index.ts). Applied at Agent-construction time.
+       */
+      readonly maxSteps: number | null;
+      /**
        * Agent Skills enabled for this role (ADR-0043 §3). Empty array =
        * none — no skill tools registered, no `<available_skills>` catalog.
        * Resolved live per role from the Space's per-AgentConfig enablement;
@@ -973,6 +979,7 @@ async function constructAgent(
   shellToolEnabled: boolean,
   contextCompaction: ContextCompaction,
   systemPromptOverride: string,
+  maxStepsOverride: number | null,
   skills: EnabledSkill[],
   visionConfig: ResolvedModelConfig | null,
   subagentRunner: SubagentRunner,
@@ -1117,6 +1124,11 @@ async function constructAgent(
   // customize per-role prompts from the Space config page without code
   // changes.
   const baseSystemPrompt = systemPromptOverride.trim() || roleDefinition.systemPrompt;
+  // Apply the DB-stored step-budget override. `null` = use the code
+  // default from the role registry (ai-roles/index.ts). Unlike the system
+  // prompt, this is nullable-numeric so the fallback uses `??` (an
+  // explicit 0 is schema-invalid and never persists).
+  const effectiveMaxSteps = maxStepsOverride ?? roleDefinition.maxSteps;
   // ADR-0050 D3 — the orchestrator's roster block is appended AFTER the
   // base prompt (override or default): additive machinery like the skills
   // catalog below, so a systemPrompt override still receives it (the
@@ -1141,7 +1153,7 @@ async function constructAgent(
     model,
     systemPrompt: effectiveSystemPrompt,
     tools,
-    maxSteps: roleDefinition.maxSteps,
+    maxSteps: effectiveMaxSteps,
     ...(roleDefinition.temperature !== undefined
       ? { temperature: roleDefinition.temperature }
       : {}),
@@ -2209,7 +2221,7 @@ export function createConversationRuntimeStore(
         return null;
       }
 
-      const { model, autoExecuteDangerousTools, shellToolEnabled, contextCompaction, systemPrompt, skills, visionConfig } = resolved;
+      const { model, autoExecuteDangerousTools, shellToolEnabled, contextCompaction, systemPrompt, maxSteps, skills, visionConfig } = resolved;
       const gate = createGate(worldId, conversationId);
       // ADR-0050 D3 — the dispatch capability riding the ToolContext. The
       // (only) conversational role — the Orchestrator — gets the LIVE
@@ -2242,6 +2254,7 @@ export function createConversationRuntimeStore(
           shellToolEnabled,
           contextCompaction,
           systemPrompt,
+          maxSteps,
           skills,
           visionConfig,
           subagentRunner,
