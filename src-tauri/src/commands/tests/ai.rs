@@ -123,23 +123,34 @@ fn delete_provider_credential_not_found() {
 // ─── agent_config seed (proves do_create_space wires the seed correctly) ─
 
 #[test]
-fn list_agent_configs_returns_seed_explorer_writer_namer_and_vision() {
+fn list_agent_configs_returns_all_eleven_seeds() {
     let (_tmp, mgr) = make_manager();
     let sid = make_space(&mgr, "S");
 
     let agent_configs = do_list_agent_configs(&mgr, &sid).expect("list agent configs");
     let names: Vec<&str> = agent_configs.iter().map(|a| a.name.as_str()).collect();
-    assert!(
-        names.contains(&"explorer"),
-        "explorer seed missing: {names:?}"
-    );
-    assert!(names.contains(&"writer"), "writer seed missing: {names:?}");
-    assert!(names.contains(&"namer"), "namer seed missing: {names:?}");
-    assert!(names.contains(&"vision"), "vision seed missing: {names:?}");
+    for expected in [
+        "orchestrator",
+        "explorer",
+        "writer",
+        "namer",
+        "vision",
+        "curator",
+        "scribe",
+        "historian",
+        "editor",
+        "plotter",
+        "critic",
+    ] {
+        assert!(
+            names.contains(&expected),
+            "{expected} seed missing: {names:?}"
+        );
+    }
     assert_eq!(
         agent_configs.len(),
-        4,
-        "exactly four seed agent configs expected"
+        11,
+        "exactly eleven seed agent configs expected (ADR-0050 D7 topology)"
     );
     // Seeds are created with model_id = NULL.
     for a in &agent_configs {

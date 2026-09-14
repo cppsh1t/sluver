@@ -125,26 +125,42 @@ pub(crate) fn do_create_space(
         return Err(DbError::Io(e));
     }
 
-    // 4. Seed the four AI agent configs (ADR-0012): `explorer` + `writer`
-    //    + `namer` + `vision`, each with model_id = NULL. `with_space`
+    // 4. Seed the eleven AI agent configs (ADR-0012, topology per
+    //    ADR-0050 D7): `orchestrator` (the single user-facing
+    //    conversational role), the eight dispatchable subagents
+    //    (`explorer`, `writer`, `curator`, `scribe`, `historian`,
+    //    `editor`, `plotter`, `critic`), and the two one-shot utilities
+    //    (`namer`, `vision`), each with model_id = NULL. `with_space`
     //    opens + caches the brand-new `space.db` (running SPACE_MIGRATIONS,
     //    which creates the `agent_configs` table). Note the migration
     //    order: migrations run at connection open, i.e. BEFORE this
     //    closure — SPACE_MIGRATION_007's INSERT OR IGNORE already seeded
-    //    `namer` and SPACE_MIGRATION_010's already seeded `vision` on this
-    //    brand-new file, so this loop's INSERT must also be OR IGNORE or
-    //    the `name` UNIQUE constraint would reject them and roll back the
-    //    whole Space creation. For `explorer` / `writer` the OR IGNORE
-    //    never triggers (no migration inserts those). The cached conn is
-    //    reused by the frontend's first `list_agent_configs` call. The
-    //    frontend looks these up by `name`, not by the random UUID id, so
-    //    the ids here are throwaway.
+    //    `namer`, SPACE_MIGRATION_010's `vision`, and SPACE_MIGRATION_011's
+    //    the seven ADR-0050 roles on this brand-new file, so this loop's
+    //    INSERT must also be OR IGNORE or the `name` UNIQUE constraint
+    //    would reject them and roll back the whole Space creation. For
+    //    `explorer` / `writer` the OR IGNORE never triggers (no migration
+    //    inserts those). The cached conn is reused by the frontend's first
+    //    `list_agent_configs` call. The frontend looks these up by `name`,
+    //    not by the random UUID id, so the ids here are throwaway.
     //
     //    On failure, roll back the entire Space (meta row + directory) so we
     //    don't leave a registered Space with a broken agent_configs table —
     //    matching the step-3 rollback pattern.
     if let Err(seed_err) = mgr.with_space(&id, |conn| {
-        for name in ["explorer", "writer", "namer", "vision"] {
+        for name in [
+            "orchestrator",
+            "explorer",
+            "writer",
+            "namer",
+            "vision",
+            "curator",
+            "scribe",
+            "historian",
+            "editor",
+            "plotter",
+            "critic",
+        ] {
             let aid = new_id();
             conn.execute(
                 "INSERT OR IGNORE INTO agent_configs (id, name, model_id, created_at, updated_at)
@@ -305,9 +321,8 @@ fn do_delete_space(
 
     // 4. DELETE the meta row. rows_affected == 0 guards against the race
     //    where the row vanished between step 1 and now.
-    let deleted = mgr.with_meta(|conn| {
-        Ok(conn.execute("DELETE FROM spaces WHERE id = ?1", params![id])?)
-    })?;
+    let deleted =
+        mgr.with_meta(|conn| Ok(conn.execute("DELETE FROM spaces WHERE id = ?1", params![id])?))?;
     if deleted == 0 {
         return Err(DbError::SpaceNotFound(id.to_string()));
     }
@@ -334,8 +349,7 @@ fn do_delete_space(
     //    (lib.rs) calls `DbManager::close_space` again; that's idempotent.
     //    `app` is `None` only in unit tests that bypass the Tauri runtime.
     if let Some(app) = app {
-        if let Some(w) = app.get_webview_window(&crate::window_manager::space_window_label(id))
-        {
+        if let Some(w) = app.get_webview_window(&crate::window_manager::space_window_label(id)) {
             let _ = w.destroy();
         }
     }
