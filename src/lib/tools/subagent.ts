@@ -97,7 +97,7 @@ export function subagentTools(): Record<string, ToolDef> {
     dispatch_subagent: {
       description:
         "Dispatch a specialist subagent to execute a task and wait for its report. " +
-        "ONE dispatch = ONE fresh one-shot run: the subagent starts with no memory of this conversation, sees ONLY the task brief you write, does its work (reading/writing the database through its own tools), and returns its final report message. " +
+        "ONE dispatch = ONE fresh one-shot run: the subagent starts with no memory of this conversation, sees ONLY the task brief you write, does its work through its own tools (database reads and writes, web research where the role carries it), and returns its final report message. " +
         "Write the brief accordingly — include every id, name, and requirement the subagent needs; never refer to \"above\" or \"as discussed\". " +
         "Dispatches emitted as SIBLING calls in one step run concurrently and all block until they finish — prefer that for independent work (e.g. one writer per scene); sequence dispatches across steps when a later task depends on an earlier result. " +
         "The result carries { runId, status, finalMessage, usage }: status \"completed\" with the subagent's final report; \"unconfigured\" when that role has no model bound (tell the user to bind one in Settings and ask how to proceed); \"aborted\"/\"stopped\" with whatever partial text exists; \"error\" with the failure. " +

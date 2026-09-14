@@ -1,13 +1,16 @@
 /**
- * Web search tool — public-web lookups via Bing.
+ * Web search tool — public-web lookups (provider-dispatched per the
+ * user's web-search settings, ADR-0049; keyless Bing is the default).
  *
  * Wraps the server-side `search_web` command (see `@/api/search`). Lets the
- * agent fetch real-world information not present in the worldbuilding
- * database: historical facts, geography, scientific concepts, public figures,
- * current events, real place / person names, etc.
+ * agent fetch information not present in the worldbuilding database:
+ * real-world facts (history, geography, science, public figures, current
+ * events) AND material from existing media or franchises — characters,
+ * settings, and lore from anime, games, films, novels (fan wikis and
+ * encyclopedia pages are ideal sources).
  *
- * The user's current i18n locale (`i18n.language`) is passed through to Bing
- * as the `Accept-Language` header so results match the user's language.
+ * The user's current i18n locale (`i18n.language`) is passed through as the
+ * `Accept-Language` header so results match the user's language.
  *
  * Consent level: `auto` (read-only, no side effects — explicitly approved by
  * the user as a default).
@@ -39,8 +42,11 @@ export function webSearchTools(): Record<string, ToolDef> {
   return {
     web_search: {
       description:
-        "Search the public web via Bing. Use when you need real-world information not in the worldbuilding database: " +
-        "historical facts, geography, scientific concepts, public figures, current events, names of real places or people, etc. " +
+        "Search the public web. Use when you need information not in the worldbuilding database: " +
+        "real-world facts (history, geography, science, public figures, current events, names of real places or people) " +
+        "AND anything from existing media or franchises — characters, settings, and lore from anime, games, films, novels " +
+        "(fan wikis and encyclopedia pages are ideal sources). Also the right tool when a local search came up empty " +
+        "and the subject may exist outside this world. " +
         "Returns a list of results each with a title, URL, and short snippet. " +
         "Query discipline: keep queries to 3-8 keywords rather than full sentences. " +
         "For time-sensitive topics, append the year to the query (e.g. \"oscar winners 2026\").",
