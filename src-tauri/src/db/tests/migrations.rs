@@ -84,12 +84,14 @@ fn meta_fresh_install_schema() {
     );
 }
 
-/// space.db fresh install: ten migrations → user_version 10, exactly the
-/// {worlds, space_config, provider_credentials, agent_configs, skills,
-/// agent_config_skills} table set, and a single named index idx_worlds_name
-/// (the UNIQUE constraints on agent_configs.name / provider_credentials.
-/// provider_id / skills.name and the agent_config_skills composite PK are
-/// column/table-level and produce only NULL-sql autoindexes).
+/// space.db fresh install: eleven migrations → user_version 11, exactly
+/// the {worlds, space_config, provider_credentials, agent_configs,
+/// skills, agent_config_skills} table set, and a single named index
+/// idx_worlds_name (the UNIQUE constraints on agent_configs.name /
+/// provider_credentials.provider_id / skills.name and the
+/// agent_config_skills composite PK are column/table-level and produce
+/// only NULL-sql autoindexes). v11 seeds agent_config rows only — no
+/// tables or indexes.
 #[test]
 fn space_fresh_install_schema() {
     let mut conn = Connection::open_in_memory().expect("open in-memory space db");
@@ -99,7 +101,7 @@ fn space_fresh_install_schema() {
 
     assert_eq!(
         user_version(&conn),
-        10,
+        11,
         "space user_version after to_latest"
     );
     assert_eq!(
@@ -112,19 +114,20 @@ fn space_fresh_install_schema() {
             "space_config",
             "worlds",
         ],
-        "space table set at v10"
+        "space table set at v11"
     );
     assert_eq!(
         named_indexes(&conn),
         ["idx_worlds_name"],
-        "space named index set at v10"
+        "space named index set at v11"
     );
 }
 
-/// world.db fresh install: fourteen migrations → user_version 14, the
+/// world.db fresh install: fifteen migrations → user_version 15, the
 /// exact 20-table set, and the exact 19 named indexes (3 FK lookups from
 /// v1 + 11 UNIQUE from v2 + messages/scene_images/notes/message_attachments
-/// indexes from v4/v8/v11/v13; v14 adds columns only).
+/// indexes from v4/v8/v11/v13; v14 adds columns only, v15 deletes rows
+/// only).
 #[test]
 fn world_fresh_install_schema() {
     let mut conn = Connection::open_in_memory().expect("open in-memory world db");
@@ -134,7 +137,7 @@ fn world_fresh_install_schema() {
 
     assert_eq!(
         user_version(&conn),
-        14,
+        15,
         "world user_version after to_latest"
     );
     assert_eq!(
@@ -161,7 +164,7 @@ fn world_fresh_install_schema() {
             "scenes",
             "world_config",
         ],
-        "world table set at v14 (20 tables)"
+        "world table set at v15 (20 tables)"
     );
     assert_eq!(
         named_indexes(&conn),
@@ -186,19 +189,19 @@ fn world_fresh_install_schema() {
             "idx_scenes_chapter_pos",
             "idx_scenes_chapter_title",
         ],
-        "world named index set at v14 (19 indexes)"
+        "world named index set at v15 (19 indexes)"
     );
 }
 
 // ── family (b): historical upgrade path ────────────────────────────────
 
-/// world.db upgrade path: step 0→14 on ONE connection, asserting
+/// world.db upgrade path: step 0→15 on ONE connection, asserting
 /// user_version and the per-step schema facts (tables added, columns
 /// added / renamed).
 #[test]
 fn world_upgrade_path_step_by_step() {
     let mut conn = Connection::open_in_memory().expect("open in-memory world db");
-    for v in 0..=14 {
+    for v in 0..=15 {
         WORLD_MIGRATIONS
             .to_version(&mut conn, v)
             .unwrap_or_else(|e| panic!("world to_version({v}): {e}"));
@@ -372,18 +375,35 @@ fn world_upgrade_path_step_by_step() {
                     "final world schema still has 20 tables at v14 (columns only)"
                 );
             }
-            _ => unreachable!("loop is bounded to 0..=14"),
+            15 => {
+                // Destructive data-only migration (ADR-0050 D9): the
+                // schema shape is untouched — still 20 tables, 19 named
+                // indexes — and any conversations present at v14 are gone
+                // (the dedicated world_v15_deletes_conversations test
+                // below covers the cascade in depth).
+                assert_eq!(
+                    table_names(&conn).len(),
+                    20,
+                    "v15 deletes rows only — table set unchanged"
+                );
+                let conversations: i64 = conn
+                    .query_row("SELECT COUNT(*) FROM conversations", [], |row| row.get(0))
+                    .expect("count conversations at v15");
+                assert_eq!(conversations, 0, "v15 leaves zero conversations");
+            }
+            _ => unreachable!("loop is bounded to 0..=15"),
         }
     }
 }
 
-/// space.db upgrade path: step 0→10 on ONE connection, asserting
+/// space.db upgrade path: step 0→11 on ONE connection, asserting
 /// user_version and the per-step schema facts (tables and columns added,
-/// namer row seeded at v7, vision row seeded at v10).
+/// namer row seeded at v7, vision row seeded at v10, seven ADR-0050 rows
+/// seeded at v11).
 #[test]
 fn space_upgrade_path_step_by_step() {
     let mut conn = Connection::open_in_memory().expect("open in-memory space db");
-    for v in 0..=10 {
+    for v in 0..=11 {
         SPACE_MIGRATIONS
             .to_version(&mut conn, v)
             .unwrap_or_else(|e| panic!("space to_version({v}): {e}"));
@@ -493,7 +513,38 @@ fn space_upgrade_path_step_by_step() {
                     .expect("count vision rows at v10");
                 assert_eq!(count, 1, "v10 seeds exactly one vision row");
             }
-            _ => unreachable!("loop is bounded to 0..=10"),
+            11 => {
+                // Data migration (ADR-0050 D9): each of the seven new
+                // roles lands exactly once, and the migration-only seed
+                // total is 9 (explorer/writer come solely from
+                // do_create_space).
+                for name in [
+                    "orchestrator",
+                    "curator",
+                    "scribe",
+                    "historian",
+                    "editor",
+                    "plotter",
+                    "critic",
+                ] {
+                    let count: i64 = conn
+                        .query_row(
+                            "SELECT COUNT(*) FROM agent_configs WHERE name = ?1",
+                            [name],
+                            |row| row.get(0),
+                        )
+                        .unwrap_or_else(|e| panic!("count {name} rows at v11: {e}"));
+                    assert_eq!(count, 1, "v11 seeds exactly one {name} row");
+                }
+                let total: i64 = conn
+                    .query_row("SELECT COUNT(*) FROM agent_configs", [], |row| row.get(0))
+                    .expect("count agent_configs at v11");
+                assert_eq!(
+                    total, 9,
+                    "v11 leaves 9 migration-seeded rows (namer + vision + 7 new)"
+                );
+            }
+            _ => unreachable!("loop is bounded to 0..=11"),
         }
     }
 }
@@ -694,14 +745,203 @@ fn space_v10_seeds_vision_row_and_stays_unique() {
     );
 }
 
+/// SPACE v11 data migration (ADR-0050 D9): the seven new agent config
+/// rows are seeded with the exact fixed literals from SPACE_MIGRATION_011
+/// (NULL model, all flags off, compaction turn_age 3, empty system
+/// prompt, far-future timestamps), and re-running to_latest never
+/// duplicates any of them (INSERT OR IGNORE on UNIQUE name).
+#[test]
+fn space_v11_seeds_seven_rows_with_defaults_and_stays_unique() {
+    let mut conn = Connection::open_in_memory().expect("open in-memory space db");
+    SPACE_MIGRATIONS
+        .to_latest(&mut conn)
+        .expect("space to_latest");
+
+    // (id, name) pairs — the fixed literal ids from SPACE_MIGRATION_011.
+    let seeds: [(&str, &str); 7] = [
+        ("01a00a6e-36c1-7a01-9b1a-3e7c2d9b4a01", "orchestrator"),
+        ("01a00a6e-36c2-7a02-9b2a-3e7c2d9b4a02", "curator"),
+        ("01a00a6e-36c3-7a03-9b3a-3e7c2d9b4a03", "scribe"),
+        ("01a00a6e-36c4-7a04-9b4a-3e7c2d9b4a04", "historian"),
+        ("01a00a6e-36c5-7a05-9b5a-3e7c2d9b4a05", "editor"),
+        ("01a00a6e-36c6-7a06-9b6a-3e7c2d9b4a06", "plotter"),
+        ("01a00a6e-36c7-7a07-9b7a-3e7c2d9b4a07", "critic"),
+    ];
+    for (id, name) in seeds {
+        let row: (
+            String,
+            Option<String>,
+            i64,
+            i64,
+            i64,
+            i64,
+            String,
+            String,
+            String,
+        ) = conn
+            .query_row(
+                "SELECT name, model_id, auto_execute_dangerous_tools,
+                        shell_tool_enabled, context_compaction_enabled,
+                        context_compaction_turn_age, system_prompt,
+                        created_at, updated_at
+                 FROM agent_configs WHERE id = ?1",
+                [id],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                        row.get(7)?,
+                        row.get(8)?,
+                    ))
+                },
+            )
+            .unwrap_or_else(|e| panic!("{name} row exists with the fixed literal id: {e}"));
+        let (
+            got_name,
+            model_id,
+            auto_execute,
+            shell_enabled,
+            compaction_enabled,
+            compaction_turn_age,
+            system_prompt,
+            created_at,
+            updated_at,
+        ) = row;
+        assert_eq!(got_name, name);
+        assert!(model_id.is_none(), "{name} model_id is NULL");
+        assert_eq!(auto_execute, 0, "{name} auto_execute off");
+        assert_eq!(shell_enabled, 0, "{name} shell_tool off");
+        assert_eq!(compaction_enabled, 0, "{name} compaction disabled");
+        assert_eq!(compaction_turn_age, 3, "{name} compaction turn_age 3");
+        assert_eq!(system_prompt, "", "{name} system_prompt empty default");
+        assert_eq!(
+            created_at, "9999-12-31T23:59:59.999Z",
+            "{name} fixed far-future created_at"
+        );
+        assert_eq!(
+            updated_at, "9999-12-31T23:59:59.999Z",
+            "{name} fixed far-future updated_at"
+        );
+    }
+
+    // Idempotency: a second to_latest pass must not duplicate any seed row.
+    SPACE_MIGRATIONS
+        .to_latest(&mut conn)
+        .expect("space to_latest re-run");
+    let total: i64 = conn
+        .query_row("SELECT COUNT(*) FROM agent_configs", [], |row| row.get(0))
+        .expect("count agent_configs after re-run");
+    assert_eq!(
+        total, 9,
+        "re-running to_latest must not duplicate any seed row (9 = namer + vision + 7)"
+    );
+}
+
+/// SPACE v11 upgrade on a LEGACY space.db: a Space created at the v10
+/// schema already carries `explorer` + `writer` (seeded by
+/// do_create_space) — after upgrading to v11 the eleven-config topology
+/// of ADR-0050 D7 is complete.
+#[test]
+fn space_v11_upgrade_yields_eleven_configs_on_legacy_space() {
+    let mut conn = Connection::open_in_memory().expect("open in-memory space db");
+    SPACE_MIGRATIONS
+        .to_version(&mut conn, 10)
+        .expect("step space to v10 (legacy)");
+    conn.execute(
+        "INSERT INTO agent_configs (id, name, model_id, created_at, updated_at)
+         VALUES ('legacy-e', 'explorer', NULL, '2026-01-01T00:00:00.000Z',
+                 '2026-01-01T00:00:00.000Z'),
+                ('legacy-w', 'writer', NULL, '2026-01-01T00:00:00.000Z',
+                 '2026-01-01T00:00:00.000Z')",
+        [],
+    )
+    .expect("seed legacy explorer + writer rows");
+
+    SPACE_MIGRATIONS
+        .to_latest(&mut conn)
+        .expect("upgrade legacy space to v11");
+
+    let total: i64 = conn
+        .query_row("SELECT COUNT(*) FROM agent_configs", [], |row| row.get(0))
+        .expect("count agent_configs after upgrade");
+    assert_eq!(
+        total, 11,
+        "legacy Space carries the full eleven-config topology after v11"
+    );
+    // The pre-existing explorer/writer rows survive untouched (their ids
+    // prove they were not replaced by the migration).
+    for id in ["legacy-e", "legacy-w"] {
+        let found: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM agent_configs WHERE id = ?1",
+                [id],
+                |row| row.get(0),
+            )
+            .unwrap_or_else(|e| panic!("legacy row {id} survives: {e}"));
+        assert_eq!(found, 1, "legacy row {id} must survive the upgrade");
+    }
+}
+
+/// WORLD v15 destructive cleanup (ADR-0050 D9): conversations present at
+/// v14 are deleted, and the FK cascade chain conversations → messages →
+/// message_attachments carries everything away with them.
+#[test]
+fn world_v15_deletes_conversations_and_cascades() {
+    let mut conn = Connection::open_in_memory().expect("open in-memory world db");
+    WORLD_MIGRATIONS
+        .to_version(&mut conn, 14)
+        .expect("step world to v14");
+
+    // Seed a full pre-migration conversation: row + message + attachment.
+    conn.execute(
+        "INSERT INTO conversations (id, agent_config_name, title, meta, created_at, updated_at)
+         VALUES ('c1', 'explorer', NULL, '{\"kind\":\"world\"}',
+                 '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')",
+        [],
+    )
+    .expect("seed conversation at v14");
+    conn.execute(
+        "INSERT INTO messages (id, conversation_id, body, created_at)
+         VALUES ('m1', 'c1', '{\"role\":\"user\"}', '2026-01-01T00:00:00.000Z')",
+        [],
+    )
+    .expect("seed message at v14");
+    conn.execute(
+        "INSERT INTO message_attachments
+             (id, message_id, position, kind, mime, filename, size_bytes, data_blob, created_at)
+         VALUES ('a1', 'm1', 0, 'text', 'text/plain', 'n.txt', 3, X'616263',
+                 '2026-01-01T00:00:00.000Z')",
+        [],
+    )
+    .expect("seed attachment at v14");
+
+    WORLD_MIGRATIONS
+        .to_version(&mut conn, 15)
+        .expect("step world to v15");
+
+    for table in ["conversations", "messages", "message_attachments"] {
+        let count: i64 = conn
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .unwrap_or_else(|e| panic!("count {table} at v15: {e}"));
+        assert_eq!(count, 0, "v15 must leave {table} empty (FK cascade)");
+    }
+}
+
 /// to_latest is idempotent for all three database kinds: a second run
 /// neither errors nor moves user_version.
 #[test]
 fn to_latest_twice_is_idempotent_for_all_kinds() {
     let cases: [(&str, &Migrations, i64); 3] = [
         ("meta", &META_MIGRATIONS, 1),
-        ("space", &SPACE_MIGRATIONS, 10),
-        ("world", &WORLD_MIGRATIONS, 14),
+        ("space", &SPACE_MIGRATIONS, 11),
+        ("world", &WORLD_MIGRATIONS, 15),
     ];
     for (name, migrations, latest) in cases {
         let mut conn = Connection::open_in_memory().expect("open in-memory db");

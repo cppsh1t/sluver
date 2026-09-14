@@ -252,6 +252,58 @@ const SPACE_MIGRATION_010: &str = r#"
          '9999-12-31T23:59:59.999Z', '9999-12-31T23:59:59.999Z');
 "#;
 
+/// Migration 11 for `space.db`: seed the seven new agent configs of the
+/// subagent-orchestration redesign (ADR-0050 D9) — `orchestrator` (the
+/// single user-facing conversational role) plus the six NEW dispatchable
+/// subagents `curator`, `scribe`, `historian`, `editor`, `plotter`,
+/// `critic`. The eighth subagent (`explorer`) and the pipeline's writer
+/// (`writer`) already exist as seed rows in every Space, and the one-shot
+/// utilities (`namer`, `vision`) were seeded by SPACE_MIGRATION_007 /
+/// SPACE_MIGRATION_010 — so after this migration every Space carries the
+/// full eleven-config topology of ADR-0050 D7. Seeds use the exact
+/// defaults of the namer/vision precedent (model_id NULL, auto-execute
+/// off, shell tool off, compaction disabled with turn_age 3, empty system
+/// prompt). OR IGNORE is required because `name` is UNIQUE: brand-new
+/// Spaces get these rows from SPACE_MIGRATION_011 itself (migrations run
+/// at connection open, BEFORE `do_create_space`'s seed loop — see
+/// commands/space.rs step 4), and any Space where a row already exists
+/// must not fail. Fixed literal ids/timestamps keep the migration
+/// deterministic across every Space's `space.db`; the ids are valid UUID
+/// v7 literals (time-sortable, matching `new_id()`'s format, stamped
+/// monotonically just after `vision`'s so the seven sort deterministically
+/// among themselves) and the timestamps match `now_iso()`'s ISO 8601 ms
+/// format. `created_at` is a deliberate FAR-FUTURE literal (same rationale
+/// as namer/vision): `do_list_agent_configs` sorts `ORDER BY created_at`,
+/// and the seed loop stamps `explorer`/`writer` with the Space's real
+/// creation time — a realistic past literal would float the new roles
+/// ABOVE the two primary roles for every Space created after this
+/// migration ships. 9999 keeps the auxiliary tier last regardless of when
+/// the Space is created. Added as a separate migration so existing
+/// `space.db` files get the rows via `rusqlite_migration`'s incremental
+/// migration tracking — modifying `SPACE_MIGRATION_002` would NOT re-run
+/// for already-migrated databases.
+const SPACE_MIGRATION_011: &str = r#"
+    INSERT OR IGNORE INTO agent_configs
+        (id, name, model_id, auto_execute_dangerous_tools,
+         shell_tool_enabled, context_compaction_enabled,
+         context_compaction_turn_age, system_prompt, created_at, updated_at)
+    VALUES
+        ('01a00a6e-36c1-7a01-9b1a-3e7c2d9b4a01', 'orchestrator', NULL, 0, 0, 0, 3, '',
+         '9999-12-31T23:59:59.999Z', '9999-12-31T23:59:59.999Z'),
+        ('01a00a6e-36c2-7a02-9b2a-3e7c2d9b4a02', 'curator', NULL, 0, 0, 0, 3, '',
+         '9999-12-31T23:59:59.999Z', '9999-12-31T23:59:59.999Z'),
+        ('01a00a6e-36c3-7a03-9b3a-3e7c2d9b4a03', 'scribe', NULL, 0, 0, 0, 3, '',
+         '9999-12-31T23:59:59.999Z', '9999-12-31T23:59:59.999Z'),
+        ('01a00a6e-36c4-7a04-9b4a-3e7c2d9b4a04', 'historian', NULL, 0, 0, 0, 3, '',
+         '9999-12-31T23:59:59.999Z', '9999-12-31T23:59:59.999Z'),
+        ('01a00a6e-36c5-7a05-9b5a-3e7c2d9b4a05', 'editor', NULL, 0, 0, 0, 3, '',
+         '9999-12-31T23:59:59.999Z', '9999-12-31T23:59:59.999Z'),
+        ('01a00a6e-36c6-7a06-9b6a-3e7c2d9b4a06', 'plotter', NULL, 0, 0, 0, 3, '',
+         '9999-12-31T23:59:59.999Z', '9999-12-31T23:59:59.999Z'),
+        ('01a00a6e-36c7-7a07-9b7a-3e7c2d9b4a07', 'critic', NULL, 0, 0, 0, 3, '',
+         '9999-12-31T23:59:59.999Z', '9999-12-31T23:59:59.999Z');
+"#;
+
 // ─── world DB schema ────────────────────────────────────────────────────────
 // Tier 3 of the three-database design (ADR-0007). One file per World at
 // `spaces/{spaceId}/worlds/{worldId}.db`. Schema is byte-for-byte identical
@@ -417,6 +469,7 @@ const SPACE_SLICE: &[M] = &[
     M::up(SPACE_MIGRATION_008),
     M::up(SPACE_MIGRATION_009),
     M::up(SPACE_MIGRATION_010),
+    M::up(SPACE_MIGRATION_011),
 ];
 pub const SPACE_MIGRATIONS: Migrations = Migrations::from_slice(SPACE_SLICE);
 
@@ -703,6 +756,20 @@ const WORLD_MIGRATION_014: &str = r#"
     ALTER TABLE scenes ADD COLUMN word_count_requirements TEXT NOT NULL DEFAULT '';
 "#;
 
+/// Migration 15 for each world DB: PRE-RELEASE DESTRUCTIVE cleanup
+/// (ADR-0050 D9). Every existing conversation is explorer/writer-bound
+/// (the old two-role chat surface this migration replaces) and would fail
+/// `constructAgent` under the new role registry — no users ship yet, so
+/// the entire conversation history is deleted rather than migrated. The
+/// `messages.conversation_id` and `message_attachments.message_id` FK
+/// cascades carry the messages and attachments away with their
+/// conversations; no schema shape changes. New `kind = "subagent"` run
+/// conversations (ADR-0050 D2) are created exclusively AFTER this
+/// migration by the dispatch tool, so nothing here has to preserve them.
+const WORLD_MIGRATION_015: &str = r#"
+    DELETE FROM conversations;
+"#;
+
 const WORLD_SLICE: &[M] = &[
     M::up(WORLD_SQL),
     M::up(WORLD_MIGRATION_002),
@@ -718,6 +785,7 @@ const WORLD_SLICE: &[M] = &[
     M::up(WORLD_MIGRATION_012),
     M::up(WORLD_MIGRATION_013),
     M::up(WORLD_MIGRATION_014),
+    M::up(WORLD_MIGRATION_015),
 ];
 pub const WORLD_MIGRATIONS: Migrations = Migrations::from_slice(WORLD_SLICE);
 
