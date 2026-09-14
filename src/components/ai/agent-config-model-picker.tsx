@@ -13,6 +13,7 @@ import {
   useSkills,
   useUpdateAgentConfigAutoExecute,
   useUpdateAgentConfigContextCompaction,
+  useUpdateAgentConfigMaxSteps,
   useUpdateAgentConfigModel,
   useUpdateAgentConfigShellTool,
   useUpdateAgentConfigSystemPrompt,
@@ -67,6 +68,20 @@ import { ModelCascadingSelect } from "./model-cascading-select";
 const COMPACT_TURN_AGE_PRESETS = [3, 5, 8, 10] as const;
 
 /**
+ * Preset max-steps caps offered in the UI (built-in loop default is 30).
+ * If the stored `maxSteps` ever falls outside this list (e.g. via direct
+ * DB edit or a future migration), it is merged in so the current value
+ * always remains selectable.
+ */
+const MAX_STEPS_PRESETS = [10, 15, 20, 30, 40, 50, 80, 100, 150, 200] as const;
+
+/**
+ * Sentinel Select value for the "Default" max-steps option. Select values
+ * are strings, so the null default (built-in 30) maps to this sentinel.
+ */
+const MAX_STEPS_DEFAULT_VALUE = "default";
+
+/**
  * One row per agent config: a label (Explorer / Writer) on the left, a brief
  * model summary in the middle, and a config (gear) icon button on the right
  * that opens a dialog hosting the full set of per-agent settings — model,
@@ -95,6 +110,7 @@ export function AgentConfigModelPicker({
   const autoExecMut = useUpdateAgentConfigAutoExecute(spaceId);
   const shellMut = useUpdateAgentConfigShellTool(spaceId);
   const compactionMut = useUpdateAgentConfigContextCompaction(spaceId);
+  const maxStepsMut = useUpdateAgentConfigMaxSteps(spaceId);
   const systemPromptMut = useUpdateAgentConfigSystemPrompt(spaceId);
   const skillsQ = useSkills(spaceId);
   const skillMut = useSetSkillEnabled(spaceId);
@@ -192,6 +208,16 @@ export function AgentConfigModelPicker({
     ? [...presets]
     : [agentConfig.contextCompaction.turnAge, ...presets];
 
+  // Merge the stored maxSteps into the preset list so the Select always has
+  // a matching item (defensive against non-preset values from the DB). The
+  // null default maps to the sentinel option instead of a numeric entry.
+  const maxStepsPresets: readonly number[] = MAX_STEPS_PRESETS;
+  const maxStepsOptions: number[] =
+    agentConfig.maxSteps !== null &&
+    !maxStepsPresets.includes(agentConfig.maxSteps)
+      ? [agentConfig.maxSteps, ...maxStepsPresets]
+      : [...maxStepsPresets];
+
   async function persistModel(composite: string | null) {
     lastPersistedRef.current = composite;
     try {
@@ -287,6 +313,20 @@ export function AgentConfigModelPicker({
           enabled: agentConfig.contextCompaction.enabled,
           turnAge,
         },
+      });
+      toast.success(i18n.t("ai:agentConfigs.toast.updateSuccess"));
+    } catch (err) {
+      toast.error(i18n.t("ai:agentConfigs.toast.updateFailed"), {
+        description: translateError(toErrorPayload(err)),
+      });
+    }
+  }
+
+  async function handleMaxStepsChange(maxSteps: number | null) {
+    try {
+      await maxStepsMut.mutateAsync({
+        id: agentConfig.id,
+        maxSteps,
       });
       toast.success(i18n.t("ai:agentConfigs.toast.updateSuccess"));
     } catch (err) {
@@ -569,6 +609,62 @@ export function AgentConfigModelPicker({
                 </SelectContent>
               </Select>
             </div>
+          )}
+
+          {/* Max steps — the agent loop's hard iteration cap. Null keeps
+              the built-in default (30). One-shot roles never run the loop,
+              so the section is hidden for them (same gate as compaction). */}
+          {!isOneShot && (
+          <div className="flex items-center justify-between gap-6">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-xs font-medium text-muted-foreground">
+                {t("ai:agentConfigs.maxSteps.title")}
+              </span>
+              <span className="text-[0.6875rem] text-muted-foreground/70">
+                {t("ai:agentConfigs.maxSteps.description")}
+              </span>
+            </div>
+            <Select
+              value={
+                agentConfig.maxSteps === null
+                  ? MAX_STEPS_DEFAULT_VALUE
+                  : String(agentConfig.maxSteps)
+              }
+              onValueChange={(val) => {
+                if (typeof val === "string") {
+                  handleMaxStepsChange(
+                    val === MAX_STEPS_DEFAULT_VALUE ? null : Number(val),
+                  );
+                }
+              }}
+            >
+              {/* Wider than turnAge's w-24: the localized Default label is
+                  longer than a bare number and the trigger is
+                  whitespace-nowrap. */}
+              <SelectTrigger
+                className="w-40"
+                disabled={disabled || maxStepsMut.isPending}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectList>
+                  <SelectItem value={MAX_STEPS_DEFAULT_VALUE}>
+                    <SelectItemText>
+                      {t("ai:agentConfigs.maxSteps.defaultOption")}
+                    </SelectItemText>
+                    <SelectItemIndicator />
+                  </SelectItem>
+                  {maxStepsOptions.map((steps) => (
+                    <SelectItem key={steps} value={String(steps)}>
+                      <SelectItemText>{String(steps)}</SelectItemText>
+                      <SelectItemIndicator />
+                    </SelectItem>
+                  ))}
+                </SelectList>
+              </SelectContent>
+            </Select>
+          </div>
           )}
 
           {/* Skills — per-AgentConfig enablement (ADR-0043). The catalog is
