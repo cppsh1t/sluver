@@ -96,6 +96,7 @@ export {
   useUpdateAgentConfigShellTool,
   useUpdateAgentConfigContextCompaction,
   useUpdateAgentConfigSystemPrompt,
+  useUpdateAgentConfigMaxSteps,
   useModelsDevCatalog,
   useRefreshModelsDevCatalog,
   useResolvedModelConfig,

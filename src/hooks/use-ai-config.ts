@@ -10,6 +10,7 @@ import {
   setProviderCredential,
   updateAgentConfigAutoExecute,
   updateAgentConfigContextCompaction,
+  updateAgentConfigMaxSteps,
   updateAgentConfigModel,
   updateAgentConfigShellTool,
   updateAgentConfigSystemPrompt,
@@ -160,6 +161,20 @@ export const useUpdateAgentConfigSystemPrompt = (spaceId: SpaceId) => {
   });
 };
 
+export const useUpdateAgentConfigMaxSteps = (spaceId: SpaceId) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      maxSteps,
+    }: {
+      id: string;
+      maxSteps: number | null;
+    }) => updateAgentConfigMaxSteps(spaceId, id, maxSteps),
+    onSuccess: () => qc.invalidateQueries({ queryKey: aiConfigKeys.agentConfigs(spaceId) }),
+  });
+};
+
 // ─── Models.dev catalog (global) ─────────────────────────────────────────────
 
 /**
@@ -203,6 +218,8 @@ export interface ResolvedAgentModelConfig {
   contextCompaction: ContextCompaction;
   /** Per-role system prompt override. Empty string = code-defined default. */
   systemPrompt: string;
+  /** Per-role step-budget override. `null` = role registry default. */
+  maxSteps: number | null;
 }
 
 /**
@@ -230,6 +247,10 @@ export function resolveAgentModelConfig(
     turnAge: 3,
   };
   const systemPrompt = agentConfig?.systemPrompt ?? "";
+  // Per-role step-budget override. `null` = fall back to the role
+  // registry's code-defined default at Agent-construction time (same
+  // lifecycle as the systemPrompt override above).
+  const maxSteps = agentConfig?.maxSteps ?? null;
   const [providerId, modelId] = parseModelId(agentConfig?.modelId ?? null);
 
   if (!providerId || !modelId) {
@@ -239,6 +260,7 @@ export function resolveAgentModelConfig(
       shellToolEnabled,
       contextCompaction,
       systemPrompt,
+      maxSteps,
     };
   }
 
@@ -261,6 +283,7 @@ export function resolveAgentModelConfig(
       shellToolEnabled,
       contextCompaction,
       systemPrompt,
+      maxSteps,
     };
   }
 
@@ -277,6 +300,7 @@ export function resolveAgentModelConfig(
     shellToolEnabled,
     contextCompaction,
     systemPrompt,
+    maxSteps,
   };
 }
 
@@ -319,6 +343,8 @@ export function useResolvedModelConfig(
   contextCompaction: ContextCompaction;
   /** Per-role system prompt override. Empty string = code-defined default. */
   systemPrompt: string;
+  /** Per-role step-budget override. `null` = role registry default. */
+  maxSteps: number | null;
   isLoading: boolean;
   error: Error | null;
 } {
