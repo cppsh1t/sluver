@@ -56,6 +56,7 @@ Tauri v2 desktop app for **worldbuilding & novel writing**. React 19 + TypeScrip
   - [ADR-0048](./docs/adr/0048-images-universal-agent-resource.md) — Images as a universal agent resource: `prepare_image` compression bridge (attachment bytes or URL in, ≤1 MiB canonical WebP out; dual crop/fit modes), `set_*_image_from_attachment` + `clear_*_image` + scene-gallery tools, and a `look_at` entity-image source via `entityImageLookup`
   - [ADR-0049](./docs/adr/0049-web-search-multi-provider-dispatch.md) — `web_search` multi-provider dispatch: keyless WebView2 SERP engines (Bing default + Baidu, Windows) + BYOK REST providers (Tavily/Serper/Exa/Jina/Brave; Exa dual-tier — keyless MCP ~50/day without a key); settings in meta.db `app.webSearch`; reqwest `system-proxy` enabled
   - [ADR-0050](./docs/adr/0050-subagent-orchestration.md) — Subagent orchestration: single user-facing Orchestrator dispatching 8 one-shot Subagents (hidden `kind:"subagent"` conversations); single `dispatch_subagent` tool, parallel-in-step blocking; explicit-fail over silent-hide (amends ADR-0045's `look_at` gate); per-role consent overrides (writer `update_scene` → configurable); replaces the explorer/writer dual-role chat surface
+  - [ADR-0051](./docs/adr/0051-agent-config-max-steps.md) — Per-role max steps stored in AgentConfig (`agent_configs.max_steps`, nullable; NULL = ROLE_REGISTRY default, raised to 30 for all loop roles); user-editable preset Select on the Space config page; app-layer validation (turn_age precedent)
 
 ## Git commit style
 
