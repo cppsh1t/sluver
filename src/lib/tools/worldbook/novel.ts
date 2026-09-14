@@ -340,6 +340,8 @@ const createSceneSchema = z.object({
   title: z.string().min(1).describe("Scene title (must be unique within the chapter)."),
   summary: z.string().optional().describe("Scene summary / outline."),
   content: z.string().optional().describe("The scene's prose text (plain text)."),
+  writingRequirements: z.string().optional().describe("Requirements / notes for writing this scene — viewpoint, beats, tone, continuity constraints. This is the plan Writers draft against; set it when outlining."),
+  wordCountRequirements: z.string().optional().describe('Word-count target for this scene (free-form text, e.g. "2000-3000 words" or "约3000字").'),
   startAt: z.string().datetime({ offset: true }).optional().describe("ISO 8601 timestamp (e.g. 2026-01-15T10:30:00Z) for when the scene starts. Free-form text like \"midnight\" is rejected."),
   endAt: z.string().datetime({ offset: true }).optional().describe("ISO 8601 timestamp (e.g. 2026-01-15T10:30:00Z) for when the scene ends. Free-form text like \"midnight\" is rejected."),
   characterRefs: z.array(characterRefSchema).optional().describe("Characters appearing, each pinned to a phase."),
@@ -428,6 +430,8 @@ export function sceneTools(): Record<string, ToolDef> {
           title?: string;
           summary?: string;
           content?: string;
+          writingRequirements?: string;
+          wordCountRequirements?: string;
           startAt?: string;
           endAt?: string;
           characterRefs?: unknown[];
@@ -441,8 +445,8 @@ export function sceneTools(): Record<string, ToolDef> {
           title: changes.title ?? current.title,
           summary: changes.summary ?? current.summary,
           content: changes.content ?? current.content,
-          writingRequirements: current.writingRequirements,
-          wordCountRequirements: current.wordCountRequirements,
+          writingRequirements: changes.writingRequirements ?? current.writingRequirements,
+          wordCountRequirements: changes.wordCountRequirements ?? current.wordCountRequirements,
           startAt: changes.startAt ?? current.startAt,
           endAt: changes.endAt ?? current.endAt,
           characterRefs: (changes.characterRefs ?? current.characterRefs) as never,

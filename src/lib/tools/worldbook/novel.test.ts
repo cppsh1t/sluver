@@ -238,6 +238,35 @@ describe("update_scene", () => {
     // Omitted junctions keep the current values.
     expect(input.eventIds).toEqual(["ev-9"]);
     expect(input.locationId).toEqual(locationId);  });
+
+  it("passes provided writing/word-count requirements through and keeps omitted ones", async () => {
+    const current = makeScene({
+      writingRequirements: "Old: third person",
+      wordCountRequirements: "2000 words",
+    });
+    vi.mocked(getScene).mockResolvedValue(current);
+    vi.mocked(updateScene).mockResolvedValue(current);
+
+    await sceneTools().update_scene.execute(
+      {
+        id: "sc-1",
+        writingRequirements: "First person, night scene, rain motif",
+        wordCountRequirements: "约3000字",
+      },
+      ctx,
+      call,
+    );
+
+    const input = vi.mocked(updateScene).mock.calls[0][3];
+    expect(input.writingRequirements).toBe("First person, night scene, rain motif");
+    expect(input.wordCountRequirements).toBe("约3000字");
+
+    // Omitted requirements keep the current values.
+    await sceneTools().update_scene.execute({ id: "sc-1", title: "X" }, ctx, call);
+    const omitted = vi.mocked(updateScene).mock.calls[1][3];
+    expect(omitted.writingRequirements).toBe("Old: third person");
+    expect(omitted.wordCountRequirements).toBe("2000 words");
+  });
 });
 
 describe("count_scene_words", () => {
@@ -604,5 +633,21 @@ describe("create_scene schema", () => {
     expect(schema.safeParse({ chapterId: "cp-1", title: "X" }).success).toBe(
       true,
     );
+  });
+
+  it("accepts writing and word-count requirements", () => {
+    const parsed = schema.safeParse({
+      chapterId: "cp-1",
+      title: "X",
+      writingRequirements: "First person, night scene",
+      wordCountRequirements: "约3000字",
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data).toMatchObject({
+        writingRequirements: "First person, night scene",
+        wordCountRequirements: "约3000字",
+      });
+    }
   });
 });
