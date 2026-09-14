@@ -18,7 +18,9 @@
  * | historian    | universal + worldbook reads + retrieval + queryOnly novel-side reads.         |
  * |              | ZERO write tools (pure reader)                                                |
  * | editor       | universal + world/novel/chapter/scene FULL CRUD (images, reorder, gallery)   |
- * | plotter      | universal + chapter/scene CRUD + worldbook read trio                          |
+ * | plotter      | universal + scene CRUD + chapter reads (queryOnly) + worldbook read    |
+ * |              | trio — chapter scaffolding is the editor's (orchestrator workflow    |
+ * |              | step 3); the plotter works WITHIN briefed chapters                    |
  * | writer       | universal + scene reads + update_scene (consent override → "configurable",   |
  * |              | ADR-0050 D5). NO scene create/delete/reorder                                   |
  * | critic       | universal + chapter/scene reads + count_scene_words                           |
@@ -301,16 +303,18 @@ export function buildEditorTools(ctx: ToolContext): ToolSet {
 }
 
 /**
- * Plotter toolset: universal + chapter/scene CRUD + the worldbook read
- * trio for reference. No novel CRUD (the novel itself is structural
- * scaffolding the editor owns), no prose writes into scene content
- * beyond what structural edits entail.
+ * Plotter toolset: universal + scene CRUD + chapter READS + the worldbook
+ * read trio for reference. Chapters are structural scaffolding the editor
+ * owns (orchestrator workflow step 3) — the plotter designs scenes WITHIN
+ * chapters named by the brief, so chapter mutation tools are absent by
+ * name (queryOnly projection). No novel CRUD either, and no prose writes
+ * into scene content beyond what structural edits entail.
  */
 export function buildPlotterTools(ctx: ToolContext): ToolSet {
   return buildToolSet(
     {
       ...universalSubagentTools(ctx),
-      ...chapterTools(),
+      ...queryOnly(chapterTools()),
       ...sceneTools(),
       ...worldbookReadTools(),
     },

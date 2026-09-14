@@ -401,8 +401,8 @@ describe("buildEditorTools", () => {
 describe("buildPlotterTools", () => {
   const keys = namesOf("plotter");
 
-  it("carries chapter/scene CRUD + worldbook read trio", () => {
-    for (const name of ["create_chapter", "update_chapter", "delete_chapter", "reorder_chapters"]) {
+  it("carries scene CRUD + chapter reads + worldbook read trio", () => {
+    for (const name of ["list_chapters", "search_chapters", "get_chapter", "get_chapter_overview"]) {
       expect(keys).toContain(name);
     }
     for (const name of ["create_scene", "update_scene", "delete_scene", "reorder_scenes"]) {
@@ -411,7 +411,10 @@ describe("buildPlotterTools", () => {
     for (const name of WORLDBOOK_READS) expect(keys).toContain(name);
   });
 
-  it("has no novel CRUD, no web, no notes", () => {
+  it("has no chapter CRUD and no novel CRUD, no web, no notes", () => {
+    for (const name of ["create_chapter", "update_chapter", "delete_chapter", "reorder_chapters"]) {
+      expect(keys).not.toContain(name);
+    }
     for (const name of ["create_novel", "update_novel", "delete_novel", "set_novel_image_from_url"]) {
       expect(keys).not.toContain(name);
     }
