@@ -134,6 +134,23 @@ export function updateAgentConfigSystemPrompt(
   });
 }
 
+/**
+ * Update an agent config's step-budget override. Pass `null` to fall back
+ * to the role registry's code-defined default. Returns the updated agent
+ * config.
+ */
+export function updateAgentConfigMaxSteps(
+  spaceId: string,
+  id: string,
+  maxSteps: number | null,
+): Promise<AgentConfig> {
+  return call<AgentConfig>("update_agent_config_max_steps", {
+    spaceId,
+    id,
+    maxSteps,
+  });
+}
+
 // ─── Models.dev catalog (global, not Space-scoped) ──────────────────────────
 
 /**

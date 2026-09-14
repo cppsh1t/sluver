@@ -128,6 +128,11 @@ export const agentConfigSchema = z.object({
    * non-empty value replaces the role's system prompt for this Space.
    */
   systemPrompt: z.string(),
+  /**
+   * Per-role step-budget override for the agent loop. `null` = use the
+   * code-defined default from the role registry (`src/lib/ai-roles`).
+   */
+  maxSteps: z.number().int().positive().nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
