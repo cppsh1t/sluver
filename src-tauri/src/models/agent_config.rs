@@ -41,6 +41,11 @@ pub struct AgentConfig {
     /// value overrides the role's system prompt for this Space. Defaults to
     /// empty on seed and on migration of pre-existing rows.
     pub system_prompt: String,
+    /// User-editable per-role loop step budget. `None` (NULL, the default
+    /// on seed and on migration of pre-existing rows) = use the frontend
+    /// `ROLE_REGISTRY` default (30 for loop roles); a value overrides it
+    /// for this Space. One-shot roles (`namer`, `vision`) never read it.
+    pub max_steps: Option<i64>,
     pub created_at: String,
     pub updated_at: String,
 }

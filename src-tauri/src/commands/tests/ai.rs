@@ -159,6 +159,13 @@ fn list_agent_configs_returns_all_eleven_seeds() {
             "seed agent config model_id must be NULL"
         );
     }
+    // Seeds are created with max_steps = NULL ("use the code default").
+    for a in &agent_configs {
+        assert!(
+            a.max_steps.is_none(),
+            "seed agent config max_steps must be NULL"
+        );
+    }
 }
 
 // ─── update_agent_config_model ──────────────────────────────────────────
@@ -202,6 +209,91 @@ fn update_agent_config_model_not_found() {
     let (_tmp, mgr) = make_manager();
     let sid = make_space(&mgr, "S");
     let err = do_update_agent_config_model(&mgr, &sid, "no-such-agent", Some("x/y".into()))
+        .expect_err("update missing agent config");
+    match err {
+        DbError::AgentConfigNotFound(id) => assert_eq!(id, "no-such-agent"),
+        other => panic!("expected AgentConfigNotFound, got {other:?}"),
+    }
+}
+
+// ─── update_agent_config_max_steps ──────────────────────────────────────
+
+#[test]
+fn update_agent_config_max_steps_set_and_clear() {
+    let (_tmp, mgr) = make_manager();
+    let sid = make_space(&mgr, "S");
+
+    let explorer = do_list_agent_configs(&mgr, &sid)
+        .expect("list")
+        .into_iter()
+        .find(|a| a.name == "explorer")
+        .expect("explorer exists");
+    assert!(
+        explorer.max_steps.is_none(),
+        "fresh seed max_steps must be NULL"
+    );
+
+    // Set a budget.
+    let updated =
+        do_update_agent_config_max_steps(&mgr, &sid, &explorer.id, Some(50)).expect("set");
+    assert_eq!(updated.max_steps, Some(50));
+    assert_eq!(updated.id, explorer.id);
+    assert!(updated.updated_at >= explorer.updated_at);
+
+    // Clear it (None = back to "use the code default").
+    let cleared = do_update_agent_config_max_steps(&mgr, &sid, &explorer.id, None).expect("clear");
+    assert!(
+        cleared.max_steps.is_none(),
+        "max_steps must be NULL after clear"
+    );
+}
+
+#[test]
+fn update_agent_config_max_steps_rejects_non_positive() {
+    let (_tmp, mgr) = make_manager();
+    let sid = make_space(&mgr, "S");
+
+    let explorer = do_list_agent_configs(&mgr, &sid)
+        .expect("list")
+        .into_iter()
+        .find(|a| a.name == "explorer")
+        .expect("explorer exists");
+
+    for bad in [0, -3] {
+        let err = do_update_agent_config_max_steps(&mgr, &sid, &explorer.id, Some(bad))
+            .expect_err("max_steps must be a positive integer when set");
+        match err {
+            DbError::InvalidInput(msg) => {
+                assert!(
+                    msg.contains("positive integer"),
+                    "error must explain the constraint: {msg}"
+                );
+                assert!(
+                    msg.contains(&bad.to_string()),
+                    "error must include the offending value {bad}: {msg}"
+                );
+            }
+            other => panic!("expected InvalidInput, got {other:?}"),
+        }
+    }
+
+    // The rejected writes must not have landed: still NULL.
+    let after = do_list_agent_configs(&mgr, &sid)
+        .expect("list")
+        .into_iter()
+        .find(|a| a.name == "explorer")
+        .expect("explorer still exists");
+    assert!(
+        after.max_steps.is_none(),
+        "rejected values must never reach SQLite"
+    );
+}
+
+#[test]
+fn update_agent_config_max_steps_not_found() {
+    let (_tmp, mgr) = make_manager();
+    let sid = make_space(&mgr, "S");
+    let err = do_update_agent_config_max_steps(&mgr, &sid, "no-such-agent", Some(10))
         .expect_err("update missing agent config");
     match err {
         DbError::AgentConfigNotFound(id) => assert_eq!(id, "no-such-agent"),
@@ -989,6 +1081,7 @@ fn agent_config_serialization_shape() {
             turn_age: 3,
         },
         system_prompt: "".into(),
+        max_steps: Some(50),
         created_at: "2026-01-01T00:00:00.000Z".into(),
         updated_at: "2026-01-01T00:00:00.000Z".into(),
     };
@@ -1013,6 +1106,10 @@ fn agent_config_serialization_shape() {
         json.contains("\"systemPrompt\":\"\""),
         "camelCase systemPrompt: {json}"
     );
+    assert!(
+        json.contains("\"maxSteps\":50"),
+        "camelCase maxSteps: {json}"
+    );
     assert!(!json.contains("model_id"), "snake_case leak: {json}");
     assert!(
         !json.contains("auto_execute_dangerous_tools"),
@@ -1027,6 +1124,7 @@ fn agent_config_serialization_shape() {
         "snake_case leak: {json}"
     );
     assert!(!json.contains("system_prompt"), "snake_case leak: {json}");
+    assert!(!json.contains("max_steps"), "snake_case leak: {json}");
 }
 
 /// SetProviderCredentialInput deserializes from camelCase frontend input.

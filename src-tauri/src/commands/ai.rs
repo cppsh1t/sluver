@@ -74,6 +74,7 @@ fn row_to_agent_config(row: &rusqlite::Row) -> rusqlite::Result<AgentConfig> {
             turn_age: row.get("context_compaction_turn_age")?,
         },
         system_prompt: row.get("system_prompt")?,
+        max_steps: row.get("max_steps")?,
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
     })
@@ -236,7 +237,7 @@ pub(crate) fn do_list_agent_configs(
         let mut stmt = conn.prepare(
             "SELECT id, name, model_id, auto_execute_dangerous_tools, shell_tool_enabled,
                     context_compaction_enabled, context_compaction_turn_age,
-                    system_prompt, created_at, updated_at
+                    system_prompt, max_steps, created_at, updated_at
              FROM agent_configs ORDER BY created_at",
         )?;
         let rows = stmt
@@ -276,7 +277,7 @@ pub(crate) fn do_update_agent_config_model(
         conn.query_row(
             "SELECT id, name, model_id, auto_execute_dangerous_tools, shell_tool_enabled,
                     context_compaction_enabled, context_compaction_turn_age,
-                    system_prompt, created_at, updated_at
+                    system_prompt, max_steps, created_at, updated_at
              FROM agent_configs WHERE id = ?1",
             params![id],
             row_to_agent_config,
@@ -318,7 +319,7 @@ pub(crate) fn do_update_agent_config_auto_execute(
         conn.query_row(
             "SELECT id, name, model_id, auto_execute_dangerous_tools, shell_tool_enabled,
                     context_compaction_enabled, context_compaction_turn_age,
-                    system_prompt, created_at, updated_at
+                    system_prompt, max_steps, created_at, updated_at
              FROM agent_configs WHERE id = ?1",
             params![id],
             row_to_agent_config,
@@ -382,7 +383,7 @@ pub(crate) fn do_update_agent_config_context_compaction(
         conn.query_row(
             "SELECT id, name, model_id, auto_execute_dangerous_tools, shell_tool_enabled,
                     context_compaction_enabled, context_compaction_turn_age,
-                    system_prompt, created_at, updated_at
+                    system_prompt, max_steps, created_at, updated_at
              FROM agent_configs WHERE id = ?1",
             params![id],
             row_to_agent_config,
@@ -424,7 +425,7 @@ pub(crate) fn do_update_agent_config_system_prompt(
         conn.query_row(
             "SELECT id, name, model_id, auto_execute_dangerous_tools, shell_tool_enabled,
                     context_compaction_enabled, context_compaction_turn_age,
-                    system_prompt, created_at, updated_at
+                    system_prompt, max_steps, created_at, updated_at
              FROM agent_configs WHERE id = ?1",
             params![id],
             row_to_agent_config,
@@ -466,7 +467,62 @@ pub(crate) fn do_update_agent_config_shell_tool(
         conn.query_row(
             "SELECT id, name, model_id, auto_execute_dangerous_tools, shell_tool_enabled,
                     context_compaction_enabled, context_compaction_turn_age,
-                    system_prompt, created_at, updated_at
+                    system_prompt, max_steps, created_at, updated_at
+             FROM agent_configs WHERE id = ?1",
+            params![id],
+            row_to_agent_config,
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => DbError::AgentConfigNotFound(id.to_string()),
+            other => DbError::Sqlite(other),
+        })
+    })
+}
+
+#[tracing::instrument(skip(state, id), fields(entity_id = %id))]
+#[tauri::command]
+pub fn update_agent_config_max_steps(
+    space_id: String,
+    id: String,
+    max_steps: Option<i64>,
+    state: State<'_, DbManager>,
+) -> Result<AgentConfig, DbError> {
+    do_update_agent_config_max_steps(&state, &space_id, &id, max_steps)
+}
+
+pub(crate) fn do_update_agent_config_max_steps(
+    mgr: &DbManager,
+    space_id: &str,
+    id: &str,
+    max_steps: Option<i64>,
+) -> Result<AgentConfig, DbError> {
+    // Guard: max_steps must be a positive integer when set. The frontend
+    // Zod schema (types/ai.ts) enforces this on the happy path, but a
+    // direct IPC call or manual DB edit could bypass it. Reject early so
+    // a bad value can never reach SQLite (where a budget ≤ 0 would abort
+    // the very first loop step). NULL is always valid — it means "use the
+    // code default".
+    if let Some(value) = max_steps {
+        if value < 1 {
+            return Err(DbError::InvalidInput(format!(
+                "max_steps must be a positive integer, got {value}"
+            )));
+        }
+    }
+    let now = now_iso();
+    mgr.with_space(space_id, |conn| {
+        let affected = conn.execute(
+            "UPDATE agent_configs SET max_steps = ?1, updated_at = ?2 WHERE id = ?3",
+            params![max_steps, now, id],
+        )?;
+        if affected == 0 {
+            return Err(DbError::AgentConfigNotFound(id.to_string()));
+        }
+        // Read back the canonical row (AGENTS.md: read after mutation).
+        conn.query_row(
+            "SELECT id, name, model_id, auto_execute_dangerous_tools, shell_tool_enabled,
+                    context_compaction_enabled, context_compaction_turn_age,
+                    system_prompt, max_steps, created_at, updated_at
              FROM agent_configs WHERE id = ?1",
             params![id],
             row_to_agent_config,
