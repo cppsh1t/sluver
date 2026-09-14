@@ -27,6 +27,18 @@
 // `fetch_and_prepare_image` — the two commands share one download + crop
 // pipeline and cannot drift.
 //
+// ## WebView2 fallback (ADR-0052)
+//
+// CDNs that fingerprint TLS (rustls) or demand cookies 403 the plain
+// reqwest download. On 401/403/429 — and only those —
+// [`download_image_bytes_with_fallback`] retries through a hidden WebView2
+// window (`commands::search::download_image_bytes_via_webview`): a
+// same-origin in-page fetch carrying the real Edge TLS fingerprint plus the
+// app's shared WebView2 cookie profile. The reqwest path stays the primary
+// fast path; when both paths fail the caller still sees the original
+// `fetch_image got HTTP <status>` error, so the model-visible surface is
+// unchanged.
+//
 // ## Redaction
 //
 // Base64 payloads are user creative content; URLs are research targets
@@ -103,7 +115,8 @@ enum PrepareMode {
 ///    positive
 /// 2. Acquire bytes: base64-decode (≤ 5 MiB decoded, the chat-attachment
 ///    cap) or `reqwest` GET (shared helper, same Chrome UA + timeout as
-///    `fetch_and_prepare_image`)
+///    `fetch_and_prepare_image`; on 401/403/429 retries through a hidden
+///    WebView2 — [`download_image_bytes_with_fallback`])
 /// 3. `image::load_from_memory` auto-detects format (JPEG / PNG / WebP)
 /// 4. CROP: shared center-crop + Lanczos3 `resize_exact` + lossless WebP
 ///    helper (identical to `fetch_and_prepare_image`); FIT: proportional
@@ -126,23 +139,29 @@ enum PrepareMode {
 /// user creative content and are NEVER logged at any level.
 #[tracing::instrument(skip_all, fields(source, input_bytes, url_length, output_bytes))]
 #[tauri::command]
-pub async fn prepare_image(input: PrepareImageInput) -> Result<tauri::ipc::Response, DbError> {
-    let out_bytes = do_prepare_image(input).await?;
+pub async fn prepare_image(
+    app: tauri::AppHandle,
+    input: PrepareImageInput,
+) -> Result<tauri::ipc::Response, DbError> {
+    let out_bytes = do_prepare_image(input, Some(&app)).await?;
     tracing::debug!("prepare_image completed");
     Ok(tauri::ipc::Response::new(out_bytes))
 }
 
 /// Core pipeline behind [`prepare_image`] — everything except the
 /// `tauri::ipc::Response` wrap, split out per the crate's `do_*` convention
-/// (no mock runtime; tests drive this directly with the bytes source, so no
-/// network is ever touched).
+/// (no mock runtime; tests drive this directly with the bytes source and
+/// `app: None`, so no network and no webview are ever touched).
 ///
 /// Span field recording (`source`, `input_bytes`/`url_length`,
 /// `output_bytes`) happens here against `Span::current()`: in production
 /// that is the `#[tracing::instrument]` span of the command wrapper (this
 /// fn is awaited inside its body); in tests there is no active span and
 /// recording is a no-op.
-pub(crate) async fn do_prepare_image(input: PrepareImageInput) -> Result<Vec<u8>, DbError> {
+pub(crate) async fn do_prepare_image(
+    input: PrepareImageInput,
+    app: Option<&tauri::AppHandle>,
+) -> Result<Vec<u8>, DbError> {
     // ── 1. Validate: exactly one source, exactly one mode ──────────────
     //
     // Mirrors `fetch_and_prepare_image`'s arg-error style — a clear
@@ -219,7 +238,10 @@ pub(crate) async fn do_prepare_image(input: PrepareImageInput) -> Result<Vec<u8>
         tracing::Span::current().record("source", "url");
         tracing::Span::current().record("url_length", url.len());
         let target = parse_http_url(&url)?;
-        download_image_bytes(&target).await?
+        // Same download path as `fetch_and_prepare_image`: plain reqwest
+        // first, transparent hidden-WebView2 retry on 401/403/429 (the
+        // `app` handle is None in tests → no fallback attempted).
+        download_image_bytes_with_fallback(app, &target).await?
     };
 
     // ── 3. Decode (auto-detect format, same as fetch_and_prepare_image) ─
@@ -272,21 +294,62 @@ pub(crate) fn parse_http_url(url: &str) -> Result<Url, DbError> {
     Ok(target)
 }
 
+/// Classified failure of [`download_image_bytes`].
+///
+/// Split out from a plain `DbError` so that
+/// [`download_image_bytes_with_fallback`] can route HTTP-status denials
+/// (401/403/429 — the CDN anti-bot trio) to the hidden-WebView2 retry while
+/// leaving every other failure (timeouts, DNS, 5xx, 404) on the fast
+/// reqwest-only path. Converting to `DbError` (via the `From` impl below)
+/// reproduces the pre-fallback message strings byte-identically, so the
+/// error surface callers see is unchanged.
+pub(crate) enum ImageDownloadError {
+    /// The server answered with a non-2xx status.
+    Status(reqwest::StatusCode),
+    /// Client-build / send / body-read failure — carries the fully
+    /// formatted legacy message.
+    Transport(String),
+}
+
+impl From<ImageDownloadError> for DbError {
+    /// Byte-identical reproduction of the pre-fallback `DbError::Internal`
+    /// messages: the status branch formats `StatusCode`'s Display
+    /// (`"fetch_image got HTTP 403 Forbidden"`), while each transport
+    /// construction site bakes in its own historical prefix
+    /// (`"fetch_image client build: …"` / `"fetch_image request failed: …"`
+    /// / `"fetch_image read body failed: …"`).
+    fn from(e: ImageDownloadError) -> Self {
+        match e {
+            ImageDownloadError::Status(status) => {
+                DbError::Internal(format!("fetch_image got HTTP {status}"))
+            }
+            ImageDownloadError::Transport(message) => DbError::Internal(message),
+        }
+    }
+}
+
 /// Download the bytes behind an already-scheme-guarded http(s) image URL.
 ///
 /// Extracted verbatim from `fetch_and_prepare_image` (commands/search.rs)
 /// so both commands share one download path — same Chrome UA (mandatory:
 /// most CDNs instantly block non-browser UAs), same 15s timeout
-/// (`REQUEST_TIMEOUT_SECS`), same image-accept header. Callers run
+/// (`REQUEST_TIMEOUT_SECS`), same image-accept header, plus a site-root
+/// Referer (several CDNs hotlink-guard on its absence). Callers run
 /// [`parse_http_url`] BEFORE downloading; passing a `&Url` here (rather
 /// than the raw string) guarantees the scheme guard cannot be skipped.
-pub(crate) async fn download_image_bytes(target: &Url) -> Result<Vec<u8>, DbError> {
+///
+/// Failures surface as [`ImageDownloadError`] — [`Status`](ImageDownloadError::Status)
+/// when the server answered a non-2xx code (routed to the WebView2
+/// fallback by [`download_image_bytes_with_fallback`] when eligible),
+/// [`Transport`](ImageDownloadError::Transport) for everything else
+/// (client build, send, body read).
+pub(crate) async fn download_image_bytes(target: &Url) -> Result<Vec<u8>, ImageDownloadError> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(
             crate::commands::search::REQUEST_TIMEOUT_SECS,
         ))
         .build()
-        .map_err(|e| DbError::Internal(format!("fetch_image client build: {e}")))?;
+        .map_err(|e| ImageDownloadError::Transport(format!("fetch_image client build: {e}")))?;
 
     let resp = client
         // `IntoUrl` is not implemented for `&Url` — pass an owned clone
@@ -301,22 +364,92 @@ pub(crate) async fn download_image_bytes(target: &Url) -> Result<Vec<u8>, DbErro
             reqwest::header::ACCEPT,
             "image/png,image/jpeg,image/webp,image/*;q=0.8,*/*;q=0.5",
         )
+        // Site-root Referer. `Origin::ascii_serialization` yields
+        // "https://host[:port]"; the trailing slash mirrors what a browser
+        // sends when Referer is a site root.
+        .header(
+            reqwest::header::REFERER,
+            format!("{}/", target.origin().ascii_serialization()),
+        )
         .send()
         .await
-        .map_err(|e| DbError::Internal(format!("fetch_image request failed: {e}")))?;
+        .map_err(|e| ImageDownloadError::Transport(format!("fetch_image request failed: {e}")))?;
 
     if !resp.status().is_success() {
-        return Err(DbError::Internal(format!(
-            "fetch_image got HTTP {}",
-            resp.status()
-        )));
+        return Err(ImageDownloadError::Status(resp.status()));
     }
 
     let bytes = resp
         .bytes()
         .await
-        .map_err(|e| DbError::Internal(format!("fetch_image read body failed: {e}")))?;
+        .map_err(|e| ImageDownloadError::Transport(format!("fetch_image read body failed: {e}")))?;
     Ok(bytes.to_vec())
+}
+
+/// Which HTTP statuses route an image download to the WebView2 fallback:
+/// the CDN anti-bot trio only. 5xx (server trouble — a browser would not
+/// fare better), 3xx (reqwest follows redirects itself), and 404 (gone is
+/// gone) stay plain reqwest failures.
+pub(crate) fn is_webview_fallback_status(status: reqwest::StatusCode) -> bool {
+    matches!(status.as_u16(), 401 | 403 | 429)
+}
+
+/// [`download_image_bytes`] + transparent WebView2 fallback (ADR-0052).
+///
+/// The fast path is always plain reqwest. When — and only when — the
+/// reqwest attempt fails with 401/403/429
+/// ([`is_webview_fallback_status`]) and an `AppHandle` is available, the
+/// download is retried inside a hidden WebView2 window
+/// (`commands::search::download_image_bytes_via_webview`): a same-origin
+/// in-page `fetch` with the real Edge TLS fingerprint and the app's shared
+/// WebView2 cookie profile, which is what the CDN challenge actually keys
+/// on. Both commands with a URL source (`fetch_and_prepare_image`,
+/// `prepare_image`) route through here.
+///
+/// `app: None` (unit tests, non-window contexts) skips the fallback and
+/// converts the error directly — the exact pre-fallback behavior.
+///
+/// The error surface is stable: when the fallback also fails, the caller
+/// sees the ORIGINAL reqwest status error (`"fetch_image got HTTP 403
+/// Forbidden"`), not the webview detail — the model's retry logic keys off
+/// the reqwest-shaped message. The fallback detail only lands in the log
+/// (WARN, metadata-only snake_case fields; the URL is never logged —
+/// ADR-0048/0016 redaction).
+pub(crate) async fn download_image_bytes_with_fallback(
+    app: Option<&tauri::AppHandle>,
+    url: &Url,
+) -> Result<Vec<u8>, DbError> {
+    match download_image_bytes(url).await {
+        Ok(bytes) => Ok(bytes),
+        Err(e @ ImageDownloadError::Status(status)) if is_webview_fallback_status(status) => {
+            // No AppHandle (unit tests) → no fallback; the plain reqwest
+            // error propagates unchanged.
+            let Some(app) = app else {
+                return Err(e.into());
+            };
+            match crate::commands::search::download_image_bytes_via_webview(app, url).await {
+                Ok(bytes) => {
+                    tracing::warn!(
+                        status = status.as_u16(),
+                        output_bytes = bytes.len(),
+                        "image.download.webview_fallback"
+                    );
+                    Ok(bytes)
+                }
+                Err(fallback_error) => {
+                    tracing::warn!(
+                        status = status.as_u16(),
+                        error = %fallback_error,
+                        "image.download.webview_fallback_failed"
+                    );
+                    // Surface the ORIGINAL reqwest status error — the
+                    // webview detail lives only in the log line above.
+                    Err(e.into())
+                }
+            }
+        }
+        Err(e) => Err(e.into()),
+    }
 }
 
 /// Center-crop to `aspect`, Lanczos3-resize to exactly

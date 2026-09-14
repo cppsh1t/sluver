@@ -19,6 +19,9 @@
 //   - `fetch_url_via_webview` — same extraction, but the page is rendered
 //     in a hidden WebView2 first (anti-bot bypass). Shares its window
 //     lifecycle machinery with the builtin search engines.
+//   - `download_image_bytes_via_webview` — image-byte variant of the same
+//     hidden-window machinery (pub(crate) helper for commands/image.rs's
+//     401/403/429 fallback, ADR-0052; not a command).
 //
 // ## Redaction
 //
@@ -2017,11 +2020,221 @@ async fn search_web_via_webview(
 /// as-is (the retry gives up after 3 attempts).
 fn looks_like_challenge(html: &str) -> bool {
     html.contains("challenge-platform") // Cloudflare
-    || html.contains("cf-turnstile")
-    || html.contains("Just a moment...")
-    || html.contains("Checking your browser") // Generic interstitials
-    || html.contains("Verifying you are human")
-    || html.contains("px-captcha") // PerimeterX / HUMAN
+        || html.contains("cf-turnstile")
+        || html.contains("Just a moment...")
+        || html.contains("Checking your browser") // Generic interstitials
+        || html.contains("Verifying you are human")
+        || html.contains("px-captcha") // PerimeterX / HUMAN
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// download_image_bytes_via_webview (image anti-bot fallback, ADR-0052)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// In-page fetch driver injected via [`eval_js_string`].
+///
+/// `ICoreWebView2::ExecuteScript` cannot await promises, so the async IIFE
+/// runs detached, parks its result on `window.__sluverImg`, and the
+/// comma-operator tail hands ExecuteScript an immediate benign sync value
+/// (`"started"`) to marshal. The fetch targets `location.href`: the window
+/// navigated to the image URL, so the request is same-origin (cookies
+/// apply) and carries the real Edge TLS fingerprint — exactly what the CDN
+/// challenges key on. Bytes travel as base64 because ExecuteScript results
+/// are JSON strings (UTF-16, not binary-safe): the binary string is
+/// assembled in 0x8000-byte chunks (`String.fromCharCode.apply` overflows
+/// the argument list on whole buffers) and `btoa`'d. The leading `delete`
+/// clears any result parked by a previous retry attempt so the poll below
+/// never reads stale state.
+#[cfg(target_os = "windows")]
+const WEBVIEW_IMAGE_FETCH_JS: &str = r#"delete window.__sluverImg, (async () => {
+    try {
+        const r = await fetch(location.href);
+        if (!r.ok) {
+            window.__sluverImg = { ok: false, status: r.status };
+            return;
+        }
+        const ct = r.headers.get("content-type") || "";
+        if (!ct.startsWith("image/")) {
+            window.__sluverImg = { ok: false, status: r.status, contentType: ct };
+            return;
+        }
+        const bytes = new Uint8Array(await r.arrayBuffer());
+        let bin = "";
+        for (let i = 0; i < bytes.length; i += 0x8000) {
+            bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+        }
+        window.__sluverImg = { ok: true, b64: btoa(bin) };
+    } catch (e) {
+        window.__sluverImg = { ok: false, error: String(e) };
+    }
+})(), "started""#;
+
+/// Poll probe: `"pending"` until the IIFE parks its result, then the
+/// JSON-stringified result object.
+#[cfg(target_os = "windows")]
+const WEBVIEW_IMAGE_POLL_JS: &str =
+    r#"window.__sluverImg === undefined ? "pending" : JSON.stringify(window.__sluverImg)"#;
+
+/// Run one in-page fetch attempt inside the loaded window.
+///
+/// `Ok(Some(bytes))` — decoded image bytes. `Ok(None)` — the body was a
+/// `text/html` challenge interstitial (worth retrying; they typically
+/// clear after a few seconds). `Err(detail)` — hard failure, where
+/// `detail` is built from status / content-type / short error only (never
+/// the URL or payload bytes — redaction policy).
+#[cfg(target_os = "windows")]
+async fn webview_image_fetch_attempt(
+    window: &tauri::WebviewWindow,
+) -> Result<Option<Vec<u8>>, String> {
+    // Kick off the detached fetch IIFE. 5s timeout: the eval returns the
+    // "started" sentinel synchronously — only ExecuteScript dispatch
+    // latency is on the clock here, not the fetch itself.
+    eval_js_string(
+        window,
+        WEBVIEW_IMAGE_FETCH_JS,
+        std::time::Duration::from_secs(5),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Poll the parked result every 500ms under a 15s overall budget. The
+    // per-eval timeout is also 15s: the COMPLETING poll marshals the
+    // multi-MB base64 string across the ExecuteScript bridge, which can
+    // legitimately take seconds on large images.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    let raw = loop {
+        let res = eval_js_string(
+            window,
+            WEBVIEW_IMAGE_POLL_JS,
+            std::time::Duration::from_secs(15),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        if res != "pending" {
+            break res;
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err("timed out waiting for the in-page fetch result".to_string());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    };
+
+    let payload: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|_| "unexpected in-page fetch result payload".to_string())?;
+
+    if payload.get("ok").and_then(|v| v.as_bool()) == Some(true) {
+        let b64 = payload
+            .get("b64")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "missing image payload".to_string())?;
+        return base64::engine::general_purpose::STANDARD
+            .decode(b64)
+            .map(Some)
+            .map_err(|_| "invalid base64 image payload".to_string());
+    }
+
+    // ok:false — a text/html body is a challenge interstitial: signal
+    // retry so the caller waits for it to clear (the image-body analogue
+    // of `looks_like_challenge` in `fetch_url_via_webview`).
+    let content_type = payload
+        .get("contentType")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if content_type.starts_with("text/html") {
+        return Ok(None);
+    }
+
+    if let Some(err) = payload.get("error").and_then(|v| v.as_str()) {
+        return Err(format!("fetch error: {err}"));
+    }
+    let detail = match (
+        payload.get("status").and_then(|v| v.as_u64()),
+        content_type.is_empty(),
+    ) {
+        (Some(status), false) => format!("HTTP {status}, content-type {content_type}"),
+        (Some(status), true) => format!("HTTP {status}"),
+        (None, _) => "unknown failure".to_string(),
+    };
+    Err(detail)
+}
+
+/// Fetch image bytes through a hidden WebView2 window — the anti-bot
+/// fallback behind `commands::image::download_image_bytes_with_fallback`
+/// (called ONLY for reqwest 401/403/429, Windows only).
+///
+/// Reuses the shared hidden-window machinery: the window navigates
+/// DIRECTLY to the image URL (label prefix `webview-image-`), waits for
+/// `PageLoadEvent::Finished` (30s anti-bot budget), then drives
+/// [`webview_image_fetch_attempt`] with the same challenge-aware retry
+/// loop shape as [`fetch_url_via_webview`] (challenge page → wait 3s →
+/// re-attempt, up to 3 retries; an interstitial fires `Finished` first
+/// and clears seconds later, so re-running the in-page fetch after the
+/// wait picks up the now-cleared cookies). The window is ALWAYS closed on
+/// every exit path, success and failure alike.
+///
+/// **Redaction:** failures collapse to `DbError::Internal` whose detail
+/// uses only status / content-type / short error strings — the URL and
+/// payload bytes are never embedded (ADR-0048/0016).
+#[cfg(target_os = "windows")]
+pub(crate) async fn download_image_bytes_via_webview(
+    app: &tauri::AppHandle,
+    url: &Url,
+) -> Result<Vec<u8>, DbError> {
+    let label = format!("webview-image-{}", crate::util::new_id());
+    let loaded = std::sync::Arc::new(tokio::sync::Notify::new());
+
+    let window = create_hidden_nav_window(app, &label, url, &loaded).await?;
+
+    // Inner flow: ANY failure still closes the window on the way out (same
+    // discipline as fetch_url_via_webview / search_web_via_webview).
+    let outcome = async {
+        wait_for_page_load(&loaded, std::time::Duration::from_secs(30)).await?;
+
+        let mut attempts = 0u8;
+        loop {
+            match webview_image_fetch_attempt(&window).await {
+                Ok(Some(bytes)) => return Ok(bytes),
+                Ok(None) if attempts < 3 => {
+                    attempts += 1;
+                    tracing::debug!(
+                        attempt = attempts,
+                        "webview image fetch hit a challenge page, retrying"
+                    );
+                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                }
+                Ok(None) => {
+                    return Err(DbError::Internal(
+                        "webview image fetch failed: challenge page did not clear".into(),
+                    ));
+                }
+                Err(detail) => {
+                    return Err(DbError::Internal(format!(
+                        "webview image fetch failed: {detail}"
+                    )));
+                }
+            }
+        }
+    }
+    .await;
+
+    // Always close the hidden window (success and failure alike).
+    let _ = window.close();
+    outcome
+}
+
+/// Non-Windows stub — mirrors [`fetch_url_via_webview`]'s
+/// unsupported-platform error so
+/// `commands::image::download_image_bytes_with_fallback` compiles
+/// everywhere (and surfaces the plain reqwest error off-Windows, since the
+/// `is_webview_fallback_status` gating already ran).
+#[cfg(not(target_os = "windows"))]
+pub(crate) async fn download_image_bytes_via_webview(
+    _app: &tauri::AppHandle,
+    _url: &Url,
+) -> Result<Vec<u8>, DbError> {
+    Err(DbError::Internal(
+        "webview image fetch is currently only supported on Windows".into(),
+    ))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2038,7 +2251,9 @@ fn looks_like_challenge(html: &str) -> bool {
 /// while this command uses **center-crop** (no face/saliency detection).
 ///
 /// **Pipeline:**
-/// 1. `reqwest` GET (reuses `CHROME_UA` + `REQUEST_TIMEOUT_SECS` from `fetch_url`)
+/// 1. `reqwest` GET (reuses `CHROME_UA` + `REQUEST_TIMEOUT_SECS` from
+///    `fetch_url`; on 401/403/429 retries through a hidden WebView2 —
+///    `commands::search::download_image_bytes_via_webview`, ADR-0052)
 /// 2. `image::load_from_memory` auto-detects format (JPEG / PNG / WebP)
 /// 3. Center-crop to `aspect` — cuts the longer dimension in half from each
 ///    side so the source center stays in frame
@@ -2050,8 +2265,9 @@ fn looks_like_challenge(html: &str) -> bool {
 ///    surfaces as `INVALID_IMAGE` (the same code the user-upload path uses)
 ///
 /// Steps 1, 3-5 live in shared `pub(crate)` helpers in `commands/image.rs`
-/// (`parse_http_url` + `download_image_bytes` + `crop_resize_encode_webp`),
-/// which `prepare_image` also calls — one download + crop pipeline, no drift.
+/// (`parse_http_url` + `download_image_bytes_with_fallback` +
+/// `crop_resize_encode_webp`), which `prepare_image` also calls — one
+/// download + crop pipeline, no drift.
 ///
 /// Output is returned as raw bytes via `tauri::ipc::Response` — bypasses
 /// JSON serialization on the wire, mirroring `get_*_image`. Frontend reads
@@ -2071,6 +2287,7 @@ fn looks_like_challenge(html: &str) -> bool {
 #[tracing::instrument(skip_all, fields(url_length = url.len(), output_bytes))]
 #[tauri::command]
 pub async fn fetch_and_prepare_image(
+    app: tauri::AppHandle,
     url: String,
     aspect: f64,
     output_width: u32,
@@ -2093,10 +2310,13 @@ pub async fn fetch_and_prepare_image(
     }
 
     // ── 2. Download bytes (reuse the Chrome UA + timeout from fetch_url) ─
-    // Shared helper (`commands::image::download_image_bytes`) — identical
-    // client builder, UA, accept header, and timeout as before the
-    // extraction.
-    let bytes = crate::commands::image::download_image_bytes(&target).await?;
+    // Shared helper (`commands::image::download_image_bytes_with_fallback`)
+    // — identical client builder, UA, accept header, and timeout as before
+    // the extraction, plus a transparent hidden-WebView2 retry when the
+    // CDN answers 401/403/429 (Windows only, ADR-0052). The `app` handle
+    // feeds that fallback; it is covered by `skip_all` above.
+    let bytes =
+        crate::commands::image::download_image_bytes_with_fallback(Some(&app), &target).await?;
 
     // ── 3. Decode (auto-detect format) ──────────────────────────────────
     let img = image::load_from_memory(&bytes)

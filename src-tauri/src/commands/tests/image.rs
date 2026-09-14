@@ -6,7 +6,9 @@ use super::*;
 // No-network tests: every case drives the bytes source only. The URL source
 // shares `parse_http_url` + `download_image_bytes` with
 // `fetch_and_prepare_image`, whose network path is production-only — the
-// same no-mock-runtime discipline as the rest of the crate.
+// same no-mock-runtime discipline as the rest of the crate. `app: None`
+// additionally disables the WebView2 fallback in the URL path, so tests
+// never open windows.
 
 /// Drive an async `do_prepare_image` call on a throwaway current-thread
 /// tokio runtime (same pattern as tests/shell.rs). The bytes path never
@@ -16,7 +18,7 @@ fn prepare(input: PrepareImageInput) -> Result<Vec<u8>, DbError> {
         .enable_all()
         .build()
         .expect("test runtime")
-        .block_on(do_prepare_image(input))
+        .block_on(do_prepare_image(input, None))
 }
 
 /// Deterministic splitmix32 noise image. Near-uniform noise is effectively
@@ -225,4 +227,27 @@ fn oversize_base64_input_is_rejected() {
         matches!(err, DbError::AttachmentTooLarge { .. }),
         "unexpected error: {err:?}"
     );
+}
+
+// ── webview fallback gating ────────────────────────────────────────────────
+
+/// Only the CDN anti-bot trio (401/403/429) routes an image download to
+/// the hidden-WebView2 retry — 2xx/3xx/404/5xx stay plain reqwest failures
+/// (see `is_webview_fallback_status`).
+#[test]
+fn only_anti_bot_statuses_gate_the_webview_fallback() {
+    for code in [401u16, 403, 429] {
+        let status = reqwest::StatusCode::from_u16(code).expect("valid status code");
+        assert!(
+            is_webview_fallback_status(status),
+            "{code} must route to the webview fallback"
+        );
+    }
+    for code in [200u16, 301, 404, 500] {
+        let status = reqwest::StatusCode::from_u16(code).expect("valid status code");
+        assert!(
+            !is_webview_fallback_status(status),
+            "{code} must stay on the reqwest path"
+        );
+    }
 }
