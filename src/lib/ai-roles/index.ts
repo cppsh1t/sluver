@@ -84,11 +84,11 @@ export interface RoleDefinition {
 
 // ─── System prompts (model-facing English) ────────────────────────────────
 //
-// Structure per docs/agent-prompt-style-reference.md §4: a plain identity
-// line, then XML-tagged sections — <context> / <tool_guidance> /
-// <constraints> / <report_format> for subagents (the Orchestrator swaps
-// report_format for workflow + tool_guidance, since its deliverable is the
-// user conversation). XML marks section boundaries only; prose stays inside.
+// Structure: a plain identity line, then XML-tagged sections — <context> /
+// <tool_guidance> / <constraints> / <report_format> for subagents (the
+// Orchestrator swaps report_format for workflow + tool_guidance, since its
+// deliverable is the user conversation). XML marks section boundaries only;
+// prose stays inside.
 //
 // Three blocks are appended by the runtime AFTER these prompts (store.ts
 // constructAgent) and MUST NOT be duplicated here: the Orchestrator's
