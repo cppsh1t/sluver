@@ -122,6 +122,11 @@
         "description": "超过此轮数的工具调用会被压缩。默认 3。"
       }
     },
+    "maxSteps": {
+      "title": "最大执行轮次",
+      "description": "单次运行中智能体循环的最大步数，超出后强制结束（max-steps）。选择「默认」使用内置值 30。",
+      "defaultOption": "默认（30 步）"
+    },
     "systemPrompt": {
       "title": "系统提示词",
       "description": "自定义发送给此 Agent 的指令。留空使用默认值。",

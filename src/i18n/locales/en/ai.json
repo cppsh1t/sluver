@@ -122,6 +122,11 @@
         "description": "Tool calls older than this many turns are compacted. Default 3."
       }
     },
+    "maxSteps": {
+      "title": "Max steps",
+      "description": "Maximum loop steps per run before the run force-finishes (max-steps). Choose Default to use the built-in 30.",
+      "defaultOption": "Default (30 steps)"
+    },
     "systemPrompt": {
       "title": "System prompt",
       "description": "Customize the instructions sent to this agent. Leave empty to use the default.",
