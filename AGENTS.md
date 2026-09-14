@@ -55,6 +55,7 @@ Tauri v2 desktop app for **worldbuilding & novel writing**. React 19 + TypeScrip
   - [ADR-0047](./docs/adr/0047-user-initiated-message-mutations.md) — User-initiated message mutations (pair-aware delete, in-place body edit for user + assistant messages; durable-first relaxation of ADR-0028 append-only)
   - [ADR-0048](./docs/adr/0048-images-universal-agent-resource.md) — Images as a universal agent resource: `prepare_image` compression bridge (attachment bytes or URL in, ≤1 MiB canonical WebP out; dual crop/fit modes), `set_*_image_from_attachment` + `clear_*_image` + scene-gallery tools, and a `look_at` entity-image source via `entityImageLookup`
   - [ADR-0049](./docs/adr/0049-web-search-multi-provider-dispatch.md) — `web_search` multi-provider dispatch: keyless WebView2 SERP engines (Bing default + Baidu, Windows) + BYOK REST providers (Tavily/Serper/Exa/Jina/Brave; Exa dual-tier — keyless MCP ~50/day without a key); settings in meta.db `app.webSearch`; reqwest `system-proxy` enabled
+  - [ADR-0050](./docs/adr/0050-subagent-orchestration.md) — Subagent orchestration: single user-facing Orchestrator dispatching 8 one-shot Subagents (hidden `kind:"subagent"` conversations); single `dispatch_subagent` tool, parallel-in-step blocking; explicit-fail over silent-hide (amends ADR-0045's `look_at` gate); per-role consent overrides (writer `update_scene` → configurable); replaces the explorer/writer dual-role chat surface
 
 ## Git commit style
 
