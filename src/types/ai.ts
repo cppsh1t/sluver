@@ -123,11 +123,14 @@ export const agentConfigSchema = z.object({
    */
   contextCompaction: contextCompactionSchema,
   /**
-   * Per-role system prompt override. Empty string = use the code-defined
-   * default (see the role registry in `src/lib/ai-roles/index.ts`). A
-   * non-empty value replaces the role's system prompt for this Space.
+   * Per-role context note: a user-authored guideline inserted at the END
+   * of the role prompt's `<context>` block at Agent-construction time
+   * (`injectContextNote` in `src/lib/ai-roles/index.ts`). Empty string =
+   * no note (the code-defined registry prompt is used verbatim). Unlike
+   * the removed full-prompt override, the note is additive — it can never
+   * rewrite the prompt's operational sections.
    */
-  systemPrompt: z.string(),
+  contextNote: z.string(),
   /**
    * Per-role step-budget override for the agent loop. `null` = use the
    * code-defined default from the role registry (`src/lib/ai-roles`).

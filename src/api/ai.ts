@@ -119,18 +119,19 @@ export function updateAgentConfigContextCompaction(
 }
 
 /**
- * Update an agent config's system prompt override. Pass an empty string to
- * reset to the code-defined default. Returns the updated agent config.
+ * Update an agent config's context note — the custom guideline inserted
+ * at the end of the role prompt's `<context>` block. Pass an empty string
+ * to remove the note. Returns the updated agent config.
  */
-export function updateAgentConfigSystemPrompt(
+export function updateAgentConfigContextNote(
   spaceId: string,
   id: string,
-  systemPrompt: string,
+  contextNote: string,
 ): Promise<AgentConfig> {
-  return call<AgentConfig>("update_agent_config_system_prompt", {
+  return call<AgentConfig>("update_agent_config_context_note", {
     spaceId,
     id,
-    systemPrompt,
+    contextNote,
   });
 }
 

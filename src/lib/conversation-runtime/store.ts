@@ -59,7 +59,11 @@ import {
 } from "@/api/image";
 import { getSceneImage } from "@/api/scene-image";
 import { createAgentEventLogger } from "@/lib/ai/agent-logging";
-import { buildSubagentRosterBlock, getRoleDefinition } from "@/lib/ai-roles";
+import {
+  buildSubagentRosterBlock,
+  getRoleDefinition,
+  injectContextNote,
+} from "@/lib/ai-roles";
 import { TauriSessionStore } from "@/lib/ai-store";
 import { base64Encode, sniffImageMime } from "@/lib/image-bytes";
 import { logger } from "@/lib/logger";
@@ -121,11 +125,12 @@ export type ResolvedModel =
       /** Per-role Context-mode compaction config (ADR-0031 Phase 1). */
       readonly contextCompaction: ContextCompaction;
       /**
-       * Per-role system prompt override from the Space's AgentConfig.
-       * Empty string = use the code-defined default (ai-roles/index.ts).
-       * Non-empty = replace the role's system prompt.
+       * Per-role context note from the Space's AgentConfig. Empty string =
+       * none. Non-empty = inserted at the END of the role prompt's
+       * `<context>` block (`injectContextNote`, ai-roles/index.ts) — the
+       * code-defined prompt itself is never replaced.
        */
-      readonly systemPrompt: string;
+      readonly contextNote: string;
       /**
        * Per-role step-budget override from the Space's AgentConfig.
        * `null` = use the role registry's code-defined default
@@ -978,7 +983,7 @@ async function constructAgent(
   autoExecuteDangerousTools: boolean,
   shellToolEnabled: boolean,
   contextCompaction: ContextCompaction,
-  systemPromptOverride: string,
+  contextNote: string,
   maxStepsOverride: number | null,
   skills: EnabledSkill[],
   visionConfig: ResolvedModelConfig | null,
@@ -1119,27 +1124,29 @@ async function constructAgent(
   };
 
   const tools = roleDefinition.buildTools(ctx);
-  // Apply the DB-stored system prompt override. Empty string = use the code
-  // default from the role registry (ai-roles/index.ts). This lets users
-  // customize per-role prompts from the Space config page without code
-  // changes.
-  const baseSystemPrompt = systemPromptOverride.trim() || roleDefinition.systemPrompt;
+  // Apply the user's per-role context note: the trimmed text is inserted
+  // at the END of the registry prompt's `<context>` block (never a new
+  // XML section, never a replacement — the structured prompt's
+  // operational sections stay code-owned). Empty note = registry prompt
+  // verbatim. See injectContextNote in ai-roles/index.ts.
+  const baseSystemPrompt = injectContextNote(
+    roleDefinition.systemPrompt,
+    contextNote,
+  );
   // Apply the DB-stored step-budget override. `null` = use the code
-  // default from the role registry (ai-roles/index.ts). Unlike the system
-  // prompt, this is nullable-numeric so the fallback uses `??` (an
+  // default from the role registry (ai-roles/index.ts). Unlike the
+  // context note, this is nullable-numeric so the fallback uses `??` (an
   // explicit 0 is schema-invalid and never persists).
   const effectiveMaxSteps = maxStepsOverride ?? roleDefinition.maxSteps;
   // ADR-0050 D3 — the orchestrator's roster block is appended AFTER the
-  // base prompt (override or default): additive machinery like the skills
-  // catalog below, so a systemPrompt override still receives it (the
-  // orchestrator NEEDS the roster to dispatch coherently). Skipped for
+  // base prompt: additive machinery like the skills catalog below, so the
+  // roster is present regardless of the context note. Skipped for
   // subagents — they never see the dispatch tool (D1).
   // ADR-0045 — the look_at teaching is appended unconditionally since
   // ADR-0050 D6 (the tool is always registered; unbound vision surfaces
   // as a structured `unconfigured` result instead of silence).
-  // ADR-0043 §3 catalog — appended AFTER the role/override prompt. It is
-  // additive machinery, not user content: a systemPrompt override still
-  // receives the catalog (the skill tools reference it by name). Skipped
+  // ADR-0043 §3 catalog — appended AFTER the role prompt. It is additive
+  // machinery, not user content: the context note never removes it. Skipped
   // entirely when the role has no enabled skills.
   const effectiveSystemPrompt = [
     baseSystemPrompt,
@@ -2221,7 +2228,7 @@ export function createConversationRuntimeStore(
         return null;
       }
 
-      const { model, autoExecuteDangerousTools, shellToolEnabled, contextCompaction, systemPrompt, maxSteps, skills, visionConfig } = resolved;
+      const { model, autoExecuteDangerousTools, shellToolEnabled, contextCompaction, contextNote, maxSteps, skills, visionConfig } = resolved;
       const gate = createGate(worldId, conversationId);
       // ADR-0050 D3 — the dispatch capability riding the ToolContext. The
       // (only) conversational role — the Orchestrator — gets the LIVE
@@ -2253,7 +2260,7 @@ export function createConversationRuntimeStore(
           autoExecuteDangerousTools,
           shellToolEnabled,
           contextCompaction,
-          systemPrompt,
+          contextNote,
           maxSteps,
           skills,
           visionConfig,

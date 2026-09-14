@@ -491,6 +491,38 @@ export function getRoleDefinition(
   return ROLE_REGISTRY[agentConfigName];
 }
 
+// ─── Context note injection ───────────────────────────────────────────────
+
+/**
+ * Insert the user's per-role context note (Space-scoped `contextNote` on
+ * the AgentConfig) at the END of the prompt's `<context>` block — inside
+ * the block, deliberately NOT as a new XML section, so custom guidance
+ * reads as background facts rather than competing with the operational
+ * sections (`<tool_guidance>` / `<constraints>` / `<report_format>` stay
+ * code-owned and untouchable).
+ *
+ * Behavior:
+ * - Whitespace-only note → the prompt is returned unchanged.
+ * - The note lands immediately before the FIRST `</context>` closing tag,
+ *   separated from the existing content by a blank line.
+ * - Literal `<context>` / `</context>` tags inside the note are STRIPPED
+ *   before insertion: user text can never close the block early and leak
+ *   between the operational sections (other tag-like text is harmless —
+ *   it stays inert content inside the block).
+ * - A prompt with no `<context>` block (e.g. a future registry entry that
+ *   opts out) is returned unchanged — injection is best-effort by design,
+ *   never an error.
+ */
+export function injectContextNote(systemPrompt: string, note: string): string {
+  const trimmed = note
+    .trim()
+    .replace(/<\/?context>/g, "");
+  if (!trimmed) return systemPrompt;
+  const end = systemPrompt.indexOf("</context>");
+  if (end === -1) return systemPrompt;
+  return `${systemPrompt.slice(0, end)}\n${trimmed}\n${systemPrompt.slice(end)}`;
+}
+
 // ─── Orchestrator roster ──────────────────────────────────────────────────
 
 /**

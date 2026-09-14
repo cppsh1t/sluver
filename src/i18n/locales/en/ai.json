@@ -127,15 +127,13 @@
       "description": "Maximum loop steps per run before the run force-finishes (max-steps). Choose Default to use the built-in 30.",
       "defaultOption": "Default (30 steps)"
     },
-    "systemPrompt": {
-      "title": "System prompt",
-      "description": "Customize the instructions sent to this agent. Leave empty to use the default.",
-      "usingDefault": "Using default",
-      "usingCustom": "Custom",
-      "resetToDefault": "Reset to default",
+    "contextNote": {
+      "title": "Context note",
+      "description": "A custom guideline appended to the end of this agent's <context> block. Leave empty for none.",
+      "placeholder": "e.g. \"Keep reports concise and cite entity ids\" — appended as background guidance.",
       "toast": {
-        "updateSuccess": "System prompt updated",
-        "updateFailed": "Failed to update system prompt"
+        "updateSuccess": "Context note updated",
+        "updateFailed": "Failed to update context note"
       }
     }
   },

@@ -13,10 +13,10 @@ import {
   useSkills,
   useUpdateAgentConfigAutoExecute,
   useUpdateAgentConfigContextCompaction,
+  useUpdateAgentConfigContextNote,
   useUpdateAgentConfigMaxSteps,
   useUpdateAgentConfigModel,
   useUpdateAgentConfigShellTool,
-  useUpdateAgentConfigSystemPrompt,
 } from "@/hooks";
 import { parseModelId } from "@/lib/ai";
 import { getRoleDefinition } from "@/lib/ai-roles";
@@ -111,10 +111,10 @@ export function AgentConfigModelPicker({
   const shellMut = useUpdateAgentConfigShellTool(spaceId);
   const compactionMut = useUpdateAgentConfigContextCompaction(spaceId);
   const maxStepsMut = useUpdateAgentConfigMaxSteps(spaceId);
-  const systemPromptMut = useUpdateAgentConfigSystemPrompt(spaceId);
+  const contextNoteMut = useUpdateAgentConfigContextNote(spaceId);
   const skillsQ = useSkills(spaceId);
   const skillMut = useSetSkillEnabled(spaceId);
-  const [localPrompt, setLocalPrompt] = useState(agentConfig.systemPrompt);
+  const [localNote, setLocalNote] = useState(agentConfig.contextNote);
 
   // Registry-driven role shape (ADR-0050 D1): every flag below reads the
   // role's registry entry instead of hardcoded name lists, so new roles
@@ -190,12 +190,12 @@ export function AgentConfigModelPicker({
     setLocalModel(m);
   }, [agentConfig.modelId]);
 
-  // Re-sync local prompt state whenever the server-side systemPrompt changes
+  // Re-sync local note state whenever the server-side contextNote changes
   // (mutation result, external update, etc.). Keyed on the raw string so a
   // no-op server response doesn't clobber mid-edit.
   useEffect(() => {
-    setLocalPrompt(agentConfig.systemPrompt);
-  }, [agentConfig.systemPrompt]);
+    setLocalNote(agentConfig.contextNote);
+  }, [agentConfig.contextNote]);
 
   const availableProviderIds = new Set(credentials.map((c) => c.providerId));
 
@@ -354,43 +354,26 @@ export function AgentConfigModelPicker({
     }
   }
 
-  async function commitPromptIfDirty() {
-    // Only commit if the value actually changed. Prompts are long; committing
-    // on every blur would waste round trips when the user clicked away without
-    // editing. This is also called from the Dialog's onOpenChange when the
-    // dialog closes — close paths (ESC / X / backdrop) aren't guaranteed to
-    // fire the textarea's onBlur before the content unmounts, so an explicit
+  async function commitNoteIfDirty() {
+    // Only commit if the value actually changed. Committing on every blur
+    // would waste round trips when the user clicked away without editing.
+    // This is also called from the Dialog's onOpenChange when the dialog
+    // closes — close paths (ESC / X / backdrop) aren't guaranteed to fire
+    // the textarea's onBlur before the content unmounts, so an explicit
     // close-time commit is the safety net that prevents silent data loss.
-    if (localPrompt === agentConfig.systemPrompt) return;
+    if (localNote === agentConfig.contextNote) return;
     try {
-      await systemPromptMut.mutateAsync({
+      await contextNoteMut.mutateAsync({
         id: agentConfig.id,
-        systemPrompt: localPrompt,
+        contextNote: localNote,
       });
-      toast.success(i18n.t("ai:agentConfigs.systemPrompt.toast.updateSuccess"));
+      toast.success(i18n.t("ai:agentConfigs.contextNote.toast.updateSuccess"));
     } catch (err) {
-      toast.error(i18n.t("ai:agentConfigs.systemPrompt.toast.updateFailed"), {
+      toast.error(i18n.t("ai:agentConfigs.contextNote.toast.updateFailed"), {
         description: translateError(toErrorPayload(err)),
       });
       // Revert local state on failure so the field reflects the server truth.
-      setLocalPrompt(agentConfig.systemPrompt);
-    }
-  }
-
-  async function handleResetPrompt() {
-    setLocalPrompt("");
-    try {
-      await systemPromptMut.mutateAsync({
-        id: agentConfig.id,
-        systemPrompt: "",
-      });
-      toast.success(i18n.t("ai:agentConfigs.systemPrompt.toast.updateSuccess"));
-    } catch (err) {
-      toast.error(i18n.t("ai:agentConfigs.systemPrompt.toast.updateFailed"), {
-        description: translateError(toErrorPayload(err)),
-      });
-      // Revert local state on failure — mirror handleSystemPromptBlur.
-      setLocalPrompt(agentConfig.systemPrompt);
+      setLocalNote(agentConfig.contextNote);
     }
   }
 
@@ -411,9 +394,9 @@ export function AgentConfigModelPicker({
   return (
     <Dialog
       onOpenChange={(nextOpen) => {
-        // Commit an in-progress system-prompt edit when the dialog closes —
-        // see commitPromptIfDirty for why this is needed in addition to blur.
-        if (!nextOpen) void commitPromptIfDirty();
+        // Commit an in-progress context-note edit when the dialog closes —
+        // see commitNoteIfDirty for why this is needed in addition to blur.
+        if (!nextOpen) void commitNoteIfDirty();
       }}
     >
       {/* Compact row: name + model summary + config (gear) icon button.
@@ -725,50 +708,28 @@ export function AgentConfigModelPicker({
           </div>
           )}
 
-          {/* System prompt override — one-shot roles' prompts are fixed in
+          {/* Context note — the user's custom guideline, inserted at the
+              end of this role's <context> block at Agent construction
+              (injectContextNote). One-shot roles' prompts are fixed in
               code (namer: src/lib/ai/auto-title.ts), so the editor is
-              hidden for them */}
+              hidden for them. Clearing the field commits "" = no note. */}
           {!isOneShot && (
           <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex flex-col gap-0.5">
-                <span className="text-xs font-medium text-muted-foreground">
-                  {t("ai:agentConfigs.systemPrompt.title")}
-                </span>
-                <span className="text-[0.6875rem] text-muted-foreground/70">
-                  {t("ai:agentConfigs.systemPrompt.description")}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                {agentConfig.systemPrompt.trim() ? (
-                  <span className="text-[0.6875rem] text-muted-foreground/70">
-                    {t("ai:agentConfigs.systemPrompt.usingCustom")}
-                  </span>
-                ) : (
-                  <span className="text-[0.6875rem] text-muted-foreground/70">
-                    {t("ai:agentConfigs.systemPrompt.usingDefault")}
-                  </span>
-                )}
-                {agentConfig.systemPrompt.trim() && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={handleResetPrompt}
-                    disabled={disabled || systemPromptMut.isPending}
-                  >
-                    {t("ai:agentConfigs.systemPrompt.resetToDefault")}
-                  </Button>
-                )}
-              </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-xs font-medium text-muted-foreground">
+                {t("ai:agentConfigs.contextNote.title")}
+              </span>
+              <span className="text-[0.6875rem] text-muted-foreground/70">
+                {t("ai:agentConfigs.contextNote.description")}
+              </span>
             </div>
             <Textarea
-              value={localPrompt}
-              onChange={(e) => setLocalPrompt(e.currentTarget.value)}
-              onBlur={commitPromptIfDirty}
-              placeholder={getRoleDefinition(agentConfig.name)?.systemPrompt ?? ""}
+              value={localNote}
+              onChange={(e) => setLocalNote(e.currentTarget.value)}
+              onBlur={commitNoteIfDirty}
+              placeholder={t("ai:agentConfigs.contextNote.placeholder")}
               className="min-h-24 text-xs"
-              disabled={disabled || systemPromptMut.isPending}
+              disabled={disabled || contextNoteMut.isPending}
             />
           </div>
           )}

@@ -127,15 +127,13 @@
       "description": "单次运行中智能体循环的最大步数，超出后强制结束（max-steps）。选择「默认」使用内置值 30。",
       "defaultOption": "默认（30 步）"
     },
-    "systemPrompt": {
-      "title": "系统提示词",
-      "description": "自定义发送给此 Agent 的指令。留空使用默认值。",
-      "usingDefault": "使用默认",
-      "usingCustom": "自定义",
-      "resetToDefault": "恢复默认",
+    "contextNote": {
+      "title": "上下文附注",
+      "description": "附加到该 Agent 提示词 <context> 块末尾的自定义指南。留空则不附加。",
+      "placeholder": "例如：「汇报保持简洁，引用实体 ID」—— 将作为补充背景指南附加。",
       "toast": {
-        "updateSuccess": "系统提示词已更新",
-        "updateFailed": "更新系统提示词失败"
+        "updateSuccess": "上下文附注已更新",
+        "updateFailed": "更新上下文附注失败"
       }
     }
   },

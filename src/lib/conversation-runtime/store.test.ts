@@ -103,6 +103,9 @@ vi.mock("@/lib/ai-roles", () => ({
     },
   })),
   buildSubagentRosterBlock: vi.fn(() => "<subagent_roster>stub</subagent_roster>"),
+  // Identity passthrough — the stub prompt has no <context> block, and the
+  // store tests assert structure, not prompt text.
+  injectContextNote: vi.fn((prompt: string) => prompt),
 }));
 
 vi.mock("@/lib/ai/agent-logging", () => ({
@@ -166,7 +169,7 @@ const readyResolver: ModelResolver = () => ({
   autoExecuteDangerousTools: false,
   shellToolEnabled: false,
   contextCompaction: { enabled: false, turnAge: 3 },
-  systemPrompt: "",
+  contextNote: "",
   maxSteps: null,
   skills: [],
   visionConfig: null,

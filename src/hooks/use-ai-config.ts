@@ -10,10 +10,10 @@ import {
   setProviderCredential,
   updateAgentConfigAutoExecute,
   updateAgentConfigContextCompaction,
+  updateAgentConfigContextNote,
   updateAgentConfigMaxSteps,
   updateAgentConfigModel,
   updateAgentConfigShellTool,
-  updateAgentConfigSystemPrompt,
 } from "@/api";
 import { parseModelId, type ResolvedModelConfig } from "@/lib/ai";
 import type {
@@ -147,16 +147,16 @@ export const useUpdateAgentConfigContextCompaction = (spaceId: SpaceId) => {
   });
 };
 
-export const useUpdateAgentConfigSystemPrompt = (spaceId: SpaceId) => {
+export const useUpdateAgentConfigContextNote = (spaceId: SpaceId) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({
       id,
-      systemPrompt,
+      contextNote,
     }: {
       id: string;
-      systemPrompt: string;
-    }) => updateAgentConfigSystemPrompt(spaceId, id, systemPrompt),
+      contextNote: string;
+    }) => updateAgentConfigContextNote(spaceId, id, contextNote),
     onSuccess: () => qc.invalidateQueries({ queryKey: aiConfigKeys.agentConfigs(spaceId) }),
   });
 };
@@ -216,8 +216,11 @@ export interface ResolvedAgentModelConfig {
   shellToolEnabled: boolean;
   /** Per-role Context-mode compaction config (ADR-0031 Phase 1). */
   contextCompaction: ContextCompaction;
-  /** Per-role system prompt override. Empty string = code-defined default. */
-  systemPrompt: string;
+  /**
+   * Per-role context note inserted at the end of the role prompt's
+   * `<context>` block. Empty string = no note.
+   */
+  contextNote: string;
   /** Per-role step-budget override. `null` = role registry default. */
   maxSteps: number | null;
 }
@@ -246,10 +249,10 @@ export function resolveAgentModelConfig(
     enabled: false,
     turnAge: 3,
   };
-  const systemPrompt = agentConfig?.systemPrompt ?? "";
+  const contextNote = agentConfig?.contextNote ?? "";
   // Per-role step-budget override. `null` = fall back to the role
   // registry's code-defined default at Agent-construction time (same
-  // lifecycle as the systemPrompt override above).
+  // lifecycle as the contextNote above).
   const maxSteps = agentConfig?.maxSteps ?? null;
   const [providerId, modelId] = parseModelId(agentConfig?.modelId ?? null);
 
@@ -259,7 +262,7 @@ export function resolveAgentModelConfig(
       autoExecuteDangerousTools,
       shellToolEnabled,
       contextCompaction,
-      systemPrompt,
+      contextNote,
       maxSteps,
     };
   }
@@ -282,7 +285,7 @@ export function resolveAgentModelConfig(
       autoExecuteDangerousTools,
       shellToolEnabled,
       contextCompaction,
-      systemPrompt,
+      contextNote,
       maxSteps,
     };
   }
@@ -299,7 +302,7 @@ export function resolveAgentModelConfig(
     autoExecuteDangerousTools,
     shellToolEnabled,
     contextCompaction,
-    systemPrompt,
+    contextNote,
     maxSteps,
   };
 }
@@ -341,8 +344,11 @@ export function useResolvedModelConfig(
   shellToolEnabled: boolean;
   /** Per-role Context-mode compaction config (ADR-0031 Phase 1). */
   contextCompaction: ContextCompaction;
-  /** Per-role system prompt override. Empty string = code-defined default. */
-  systemPrompt: string;
+  /**
+   * Per-role context note inserted at the end of the role prompt's
+   * `<context>` block. Empty string = no note.
+   */
+  contextNote: string;
   /** Per-role step-budget override. `null` = role registry default. */
   maxSteps: number | null;
   isLoading: boolean;
