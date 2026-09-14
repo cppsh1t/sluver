@@ -189,7 +189,9 @@ pub(crate) async fn do_prepare_image(input: PrepareImageInput) -> Result<Vec<u8>
                 ));
             };
             if width == 0 || height == 0 {
-                return Err(DbError::Internal("width and height must be positive".into()));
+                return Err(DbError::Internal(
+                    "width and height must be positive".into(),
+                ));
             }
             PrepareMode::Crop { width, height }
         }
@@ -263,8 +265,7 @@ pub(crate) async fn do_prepare_image(input: PrepareImageInput) -> Result<Vec<u8>
 /// and `data:` URLs, which would expose local file contents to the agent /
 /// frontend.
 pub(crate) fn parse_http_url(url: &str) -> Result<Url, DbError> {
-    let target = Url::parse(url)
-        .map_err(|e| DbError::Internal(format!("invalid URL: {e}")))?;
+    let target = Url::parse(url).map_err(|e| DbError::Internal(format!("invalid URL: {e}")))?;
     if !matches!(target.scheme(), "http" | "https") {
         return Err(DbError::Internal("only http(s) URLs are supported".into()));
     }

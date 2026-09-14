@@ -391,7 +391,8 @@ must be skipped (no URL line)
 fn unwrap_sse_json_extracts_last_data_line() {
     // SSE framing: `event: message` + `data: {JSON}` — payload is the LAST
     // `data: ` line, parseable straight into McpResponse.
-    let payload = r#"{"result":{"content":[{"type":"text","text":"Title: T\nURL: https://t.example"}]}}"#;
+    let payload =
+        r#"{"result":{"content":[{"type":"text","text":"Title: T\nURL: https://t.example"}]}}"#;
     let body = format!("event: message\ndata: {payload}\n\n");
     let resp: McpResponse = serde_json::from_str(unwrap_sse_json(&body)).unwrap();
     assert_eq!(
@@ -421,7 +422,10 @@ fn mcp_response_tolerates_sparse_and_error_shapes() {
         serde_json::from_str(r#"{"error":{"code":-32601,"message":"nope"}}"#).unwrap();
     assert!(resp.result.is_none());
     let msg = exa_keyless_rpc_err(resp.error.as_ref().unwrap()).to_string();
-    assert!(msg.contains("exa keyless search failed"), "unexpected: {msg}");
+    assert!(
+        msg.contains("exa keyless search failed"),
+        "unexpected: {msg}"
+    );
     assert!(msg.contains("-32601"), "unexpected: {msg}");
     assert!(msg.contains("nope"), "unexpected: {msg}");
 }

@@ -40,8 +40,7 @@ const MINIMAL_CSS: &str =
 /// Chapter separator drawn in the TXT output. A single horizontal rule of
 /// `U+2550` (BOX DRAWINGS DOUBLE HORIZONTAL) — tasteful, unambiguous, and
 /// survives any plain-text encoding that is UTF-8 (the only encoding we emit).
-const TXT_CHAPTER_SEPARATOR: &str =
-    "═══════════════════════════════════════";
+const TXT_CHAPTER_SEPARATOR: &str = "═══════════════════════════════════════";
 
 /// EPUB language tag. Hard-coded to `zh-CN` for v1 since the app's primary
 /// audience is Chinese-language worldbuilding/novel writing. A future task can
@@ -337,7 +336,11 @@ pub fn generate_epub<W: Write + Seek>(novel: &ExportedNovel, w: W) -> Result<(),
                     }
                     _ => continue,
                 };
-                let mime = if ext == "jpeg" { "image/jpeg" } else { "image/png" };
+                let mime = if ext == "jpeg" {
+                    "image/jpeg"
+                } else {
+                    "image/png"
+                };
                 // Unique path across the whole book. epub-builder places
                 // resources under `OEBPS/` automatically, so the path is given
                 // WITHOUT an `OEBPS/` prefix; the `<img src>` is relative and
@@ -378,8 +381,11 @@ fn transcode_webp_to_png(webp_bytes: &[u8]) -> Result<Vec<u8>, ExportError> {
     let img = image::load_from_memory_with_format(webp_bytes, image::ImageFormat::WebP)
         .map_err(|e| ExportError::ImageTranscode(format!("decode webp: {e}")))?;
     let mut png_bytes = Vec::new();
-    img.write_to(&mut std::io::Cursor::new(&mut png_bytes), image::ImageFormat::Png)
-        .map_err(|e| ExportError::ImageTranscode(format!("encode png: {e}")))?;
+    img.write_to(
+        &mut std::io::Cursor::new(&mut png_bytes),
+        image::ImageFormat::Png,
+    )
+    .map_err(|e| ExportError::ImageTranscode(format!("encode png: {e}")))?;
     Ok(png_bytes)
 }
 

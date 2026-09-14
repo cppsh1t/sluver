@@ -45,7 +45,9 @@ pub async fn open_space_window(space_id: String, app: AppHandle) -> Result<(), D
     // run `ensure_space_window` (which calls `WebviewWindowBuilder::build`
     // directly on the main thread — no re-entrancy), and send back the
     // result. This recv is on a tokio worker thread, not the main thread.
-    rx.recv()
-        .map_err(|_| DbError::Internal("main thread dropped the channel sender before sending a result".to_string()))?
+    rx.recv().map_err(|_| {
+        DbError::Internal(
+            "main thread dropped the channel sender before sending a result".to_string(),
+        )
+    })?
 }
-

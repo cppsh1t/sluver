@@ -68,9 +68,7 @@ pub(crate) fn do_get_message_attachment(
             |row| row.get::<_, Vec<u8>>(0),
         )
         .map_err(|e| match e {
-            rusqlite::Error::QueryReturnedNoRows => {
-                DbError::NotFound("Attachment", id.to_string())
-            }
+            rusqlite::Error::QueryReturnedNoRows => DbError::NotFound("Attachment", id.to_string()),
             other => DbError::Sqlite(other),
         })
     })

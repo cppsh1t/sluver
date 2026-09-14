@@ -414,11 +414,11 @@ async fn keyed_provider_search(
         // Exa is routed by the dispatcher (keyless MCP fallback when no
         // key); the builtin engines never take the keyed path. Unreachable
         // arms kept total.
-        WebSearchProvider::Exa | WebSearchProvider::BuiltinBing | WebSearchProvider::BuiltinBaidu => {
-            Err(DbError::Internal(
-                "provider does not use the keyed search path".into(),
-            ))
-        }
+        WebSearchProvider::Exa
+        | WebSearchProvider::BuiltinBing
+        | WebSearchProvider::BuiltinBaidu => Err(DbError::Internal(
+            "provider does not use the keyed search path".into(),
+        )),
     }
 }
 

@@ -22,15 +22,15 @@
 //! structured `fields` tracing field reproduces the original verbatim in the
 //! JSON-lines file (no silent renaming at the bridge — see ADR-0016).
 
-use std::fs::{File, read_dir};
+use std::fs::{read_dir, File};
 use std::io::{BufRead, BufReader, Read, Write};
 
 use chrono::{Duration, Local, NaiveDate};
 use rusqlite::params;
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Manager, State};
-use zip::{CompressionMethod, ZipWriter};
 use zip::write::SimpleFileOptions;
+use zip::{CompressionMethod, ZipWriter};
 
 use crate::db::{DbError, DbManager};
 use crate::logging::LoggingState;
@@ -274,10 +274,7 @@ pub fn export_logs(
     let today = Local::now().date_naive();
     let (date_cutoff, range_description) = match date_range {
         DateRange::All => (None, "all".to_string()),
-        DateRange::Last24Hours => (
-            Some(today - Duration::days(1)),
-            "last 24 hours".to_string(),
-        ),
+        DateRange::Last24Hours => (Some(today - Duration::days(1)), "last 24 hours".to_string()),
         DateRange::LastNDays { days } => {
             let d = days.max(1) as i64;
             (Some(today - Duration::days(d)), format!("last {d} days"))
@@ -289,8 +286,8 @@ pub fn export_logs(
     let mut zip = ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
-    let entries = read_dir(&logs_dir)
-        .map_err(|e| DbError::LogExportFailed(format!("read logs dir: {e}")))?;
+    let entries =
+        read_dir(&logs_dir).map_err(|e| DbError::LogExportFailed(format!("read logs dir: {e}")))?;
 
     // Label for the README: "some" iff per-line filtering was applied.
     let lines_filtered_label = if space_id_filter.is_some() {
@@ -330,26 +327,20 @@ pub fn export_logs(
         if let Some(filter) = &space_id_filter {
             let bytes = filter_log_file(entry.path(), filter)
                 .map_err(|e| DbError::LogExportFailed(format!("filter {filename_str}: {e}")))?;
-            zip.start_file(filename_str, options).map_err(|e| {
-                DbError::LogExportFailed(format!("zip start {filename_str}: {e}"))
-            })?;
-            zip.write_all(&bytes).map_err(|e| {
-                DbError::LogExportFailed(format!("zip write {filename_str}: {e}"))
-            })?;
+            zip.start_file(filename_str, options)
+                .map_err(|e| DbError::LogExportFailed(format!("zip start {filename_str}: {e}")))?;
+            zip.write_all(&bytes)
+                .map_err(|e| DbError::LogExportFailed(format!("zip write {filename_str}: {e}")))?;
         } else {
-            zip.start_file(filename_str, options).map_err(|e| {
-                DbError::LogExportFailed(format!("zip start {filename_str}: {e}"))
-            })?;
-            let mut f = File::open(entry.path()).map_err(|e| {
-                DbError::LogExportFailed(format!("open {filename_str}: {e}"))
-            })?;
+            zip.start_file(filename_str, options)
+                .map_err(|e| DbError::LogExportFailed(format!("zip start {filename_str}: {e}")))?;
+            let mut f = File::open(entry.path())
+                .map_err(|e| DbError::LogExportFailed(format!("open {filename_str}: {e}")))?;
             let mut buf = Vec::new();
-            f.read_to_end(&mut buf).map_err(|e| {
-                DbError::LogExportFailed(format!("read {filename_str}: {e}"))
-            })?;
-            zip.write_all(&buf).map_err(|e| {
-                DbError::LogExportFailed(format!("zip write {filename_str}: {e}"))
-            })?;
+            f.read_to_end(&mut buf)
+                .map_err(|e| DbError::LogExportFailed(format!("read {filename_str}: {e}")))?;
+            zip.write_all(&buf)
+                .map_err(|e| DbError::LogExportFailed(format!("zip write {filename_str}: {e}")))?;
         }
 
         included_count += 1;
@@ -358,7 +349,11 @@ pub fn export_logs(
     // README.txt — included unconditionally so a recipient of the zip can
     // tell at a glance what was filtered and when. No PII per ADR-0016.
     let space_filter_label = space_id_filter.as_deref().unwrap_or("all");
-    let profile = if cfg!(debug_assertions) { "debug" } else { "release" };
+    let profile = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
     let exported_at = now_iso();
     let readme = format!(
         "sluver log export\n\
@@ -399,7 +394,10 @@ pub fn export_logs(
 /// Read `path` line by line and return the bytes of a file containing only
 /// the lines that pass the Space filter (per [`line_matches_space`]).
 /// Trailing blank lines are dropped. Each kept line is followed by `\n`.
-fn filter_log_file<P: AsRef<std::path::Path>>(path: P, filter: &str) -> Result<Vec<u8>, std::io::Error> {
+fn filter_log_file<P: AsRef<std::path::Path>>(
+    path: P,
+    filter: &str,
+) -> Result<Vec<u8>, std::io::Error> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
     let mut out: Vec<u8> = Vec::new();

@@ -678,10 +678,9 @@ pub fn import_world(
     } else {
         None
     };
-    let final_name =
-        state.with_space(&space_id, |conn| {
-            resolve_unique_name(conn, &manifest.world.name, exclude_id)
-        })?;
+    let final_name = state.with_space(&space_id, |conn| {
+        resolve_unique_name(conn, &manifest.world.name, exclude_id)
+    })?;
 
     // 8. Close any cached world connection so the .db file can be replaced
     //    (mirrors delete_world). Idempotent — no-op if nothing is cached.
@@ -731,18 +730,17 @@ pub fn import_world(
     }
 
     // 11. Decode the cover image (if any) for the registry row.
-    let (image_blob, image_mime): (Option<Vec<u8>>, Option<String>) =
-        match &manifest.world.image {
-            Some(img) => {
-                // Reuse the single-sourced validator so import enforces the
-                // same MIME allowlist (webp/jpeg/png) + 1 MiB ceiling as every
-                // `update_*_image` command. A crafted archive with an oversized
-                // or off-MIME blob is rejected as INVALID_IMAGE.
-                let bytes = decode_and_validate_image(&img.blob_base64, &img.mime)?;
-                (Some(bytes), Some(img.mime.clone()))
-            }
-            None => (None, None),
-        };
+    let (image_blob, image_mime): (Option<Vec<u8>>, Option<String>) = match &manifest.world.image {
+        Some(img) => {
+            // Reuse the single-sourced validator so import enforces the
+            // same MIME allowlist (webp/jpeg/png) + 1 MiB ceiling as every
+            // `update_*_image` command. A crafted archive with an oversized
+            // or off-MIME blob is rejected as INVALID_IMAGE.
+            let bytes = decode_and_validate_image(&img.blob_base64, &img.mime)?;
+            (Some(bytes), Some(img.mime.clone()))
+        }
+        None => (None, None),
+    };
 
     // 12. Insert or update the registry row, then read back the full World.
     //     The manifest's created_at/updated_at are preserved so the imported

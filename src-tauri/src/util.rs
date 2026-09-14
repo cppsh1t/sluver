@@ -82,8 +82,7 @@ pub const ALLOWED_ATTACHMENT_IMAGE_MIMES: [&str; 3] = ["image/webp", "image/jpeg
 
 /// MIME allowlist for chat attachment text files (plain text, Markdown,
 /// CSV). All are UTF-8-decodable text formats.
-pub const ALLOWED_ATTACHMENT_TEXT_MIMES: [&str; 3] =
-    ["text/plain", "text/markdown", "text/csv"];
+pub const ALLOWED_ATTACHMENT_TEXT_MIMES: [&str; 3] = ["text/plain", "text/markdown", "text/csv"];
 
 /// Hard ceiling on the DECODED image attachment payload (5 MiB, plan D6).
 pub const MAX_ATTACHMENT_IMAGE_BYTES: usize = 5 * 1024 * 1024;

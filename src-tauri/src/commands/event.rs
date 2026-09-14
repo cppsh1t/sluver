@@ -473,13 +473,7 @@ pub fn update_event_image(
         Ok(())
     });
     if result.is_ok() {
-        emit_entity_changed(
-            &app,
-            "event",
-            Some(id.clone()),
-            &space_id,
-            Some(&world_id),
-        );
+        emit_entity_changed(&app, "event", Some(id.clone()), &space_id, Some(&world_id));
     }
     result
 }
@@ -506,13 +500,7 @@ pub fn clear_event_image(
         Ok(())
     });
     if result.is_ok() {
-        emit_entity_changed(
-            &app,
-            "event",
-            Some(id.clone()),
-            &space_id,
-            Some(&world_id),
-        );
+        emit_entity_changed(&app, "event", Some(id.clone()), &space_id, Some(&world_id));
     }
     result
 }

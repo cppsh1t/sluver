@@ -12,7 +12,7 @@
 
 use crate::db::migrations::{SPACE_MIGRATIONS, WORLD_MIGRATIONS};
 use crate::db::{DbError, DbManager};
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 use tempfile::TempDir;
 
 /// Format `n` into a 36-char UUID-shaped string (8-4-4-4-12 hex digits).

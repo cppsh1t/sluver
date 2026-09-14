@@ -240,12 +240,9 @@ fn parse_skill_zip(bytes: &[u8]) -> Result<ParsedSkillPackage, DbError> {
         .map(|(_, b)| String::from_utf8_lossy(b).into_owned())
         .ok_or_else(|| invalid("SKILL.md not found in the archive"))?;
     let fm = parse_frontmatter(&skill_md)?;
-    let name = fm
-        .name
-        .filter(|n| is_valid_skill_name(n))
-        .ok_or_else(|| {
-            invalid("frontmatter name is missing or invalid (must match ^[a-z0-9][a-z0-9-]{0,63}$)")
-        })?;
+    let name = fm.name.filter(|n| is_valid_skill_name(n)).ok_or_else(|| {
+        invalid("frontmatter name is missing or invalid (must match ^[a-z0-9][a-z0-9-]{0,63}$)")
+    })?;
     let description = fm
         .description
         .ok_or_else(|| invalid("frontmatter description is missing"))?;

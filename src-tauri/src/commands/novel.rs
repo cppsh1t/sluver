@@ -6,8 +6,8 @@ use crate::commands::events::emit_entity_changed;
 use crate::db::{DbError, DbManager};
 use crate::models::character::CharacterRef;
 use crate::models::novel::{
-    Chapter, ChapterOverview, CreateChapterInput, CreateNovelInput, CreateSceneInput, Novel,
-    Scene, SceneImageMeta, SceneOverview, UpdateChapterInput, UpdateNovelInput, UpdateSceneInput,
+    Chapter, ChapterOverview, CreateChapterInput, CreateNovelInput, CreateSceneInput, Novel, Scene,
+    SceneImageMeta, SceneOverview, UpdateChapterInput, UpdateNovelInput, UpdateSceneInput,
 };
 use crate::util::{decode_and_validate_image, new_id, normalize_iso, now_iso};
 
@@ -243,7 +243,15 @@ pub(crate) fn do_create_novel(
         conn.execute(
             "INSERT INTO novels (id, title, description, author, tags, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![id, input.title, input.description, input.author, tags_json, now, now],
+            params![
+                id,
+                input.title,
+                input.description,
+                input.author,
+                tags_json,
+                now,
+                now
+            ],
         )?;
         load_novel(conn, &id, world_id)
     });
@@ -695,13 +703,7 @@ pub(crate) fn do_delete_novel(
         Ok(())
     });
     if let (Ok(()), Some(app)) = (&result, app) {
-        emit_entity_changed(
-            app,
-            "novel",
-            Some(id.to_string()),
-            space_id,
-            Some(world_id),
-        );
+        emit_entity_changed(app, "novel", Some(id.to_string()), space_id, Some(world_id));
     }
     result
 }
@@ -782,7 +784,10 @@ pub fn get_chapter(
 /// what happens in a chapter and which worldbook entities are referenced
 /// without transferring every scene's prose. Mirrors `list_scenes`' batch
 /// junction-ref loading, but omits the `content` column from the scene SELECT.
-fn load_chapter_overview(conn: &rusqlite::Connection, id: &str) -> Result<ChapterOverview, DbError> {
+fn load_chapter_overview(
+    conn: &rusqlite::Connection,
+    id: &str,
+) -> Result<ChapterOverview, DbError> {
     let chapter = load_chapter(conn, id)?;
 
     // (a) Batch-load ALL scene rows for this chapter — WITHOUT `content`.
@@ -846,9 +851,8 @@ fn load_chapter_overview(conn: &rusqlite::Connection, id: &str) -> Result<Chapte
         .collect::<Result<Vec<_>, _>>()?;
 
     // (c) Batch-load ALL item refs.
-    let item_sql = format!(
-        "SELECT scene_id, item_id FROM scene_item_refs WHERE scene_id IN ({placeholders})"
-    );
+    let item_sql =
+        format!("SELECT scene_id, item_id FROM scene_item_refs WHERE scene_id IN ({placeholders})");
     let mut item_stmt = conn.prepare(&item_sql)?;
     let all_item_refs: Vec<(String, String)> = item_stmt
         .query_map(rusqlite::params_from_iter(ids.iter()), |row| {
@@ -874,9 +878,8 @@ fn load_chapter_overview(conn: &rusqlite::Connection, id: &str) -> Result<Chapte
         .collect::<Result<Vec<_>, _>>()?;
 
     // (e) Batch-load ALL lore refs.
-    let lore_sql = format!(
-        "SELECT scene_id, lore_id FROM scene_lore_refs WHERE scene_id IN ({placeholders})"
-    );
+    let lore_sql =
+        format!("SELECT scene_id, lore_id FROM scene_lore_refs WHERE scene_id IN ({placeholders})");
     let mut lore_stmt = conn.prepare(&lore_sql)?;
     let all_lore_refs: Vec<(String, String)> = lore_stmt
         .query_map(rusqlite::params_from_iter(ids.iter()), |row| {
@@ -1109,7 +1112,14 @@ pub fn create_scene(
     state: State<'_, DbManager>,
     app: AppHandle,
 ) -> Result<Scene, DbError> {
-    let scene = do_create_scene(&state, &space_id, &world_id, &chapter_id, &input, Some(&app))?;
+    let scene = do_create_scene(
+        &state,
+        &space_id,
+        &world_id,
+        &chapter_id,
+        &input,
+        Some(&app),
+    )?;
     tracing::Span::current().record("entity_id", scene.id.as_str());
     Ok(scene)
 }
@@ -1354,13 +1364,7 @@ pub(crate) fn do_delete_scene(
         Ok(())
     });
     if let (Ok(()), Some(app)) = (&result, app) {
-        emit_entity_changed(
-            app,
-            "scene",
-            Some(id.to_string()),
-            space_id,
-            Some(world_id),
-        );
+        emit_entity_changed(app, "scene", Some(id.to_string()), space_id, Some(world_id));
     }
     result
 }
@@ -1470,13 +1474,7 @@ pub fn update_novel_image(
         Ok(())
     });
     if result.is_ok() {
-        emit_entity_changed(
-            &app,
-            "novel",
-            Some(id.clone()),
-            &space_id,
-            Some(&world_id),
-        );
+        emit_entity_changed(&app, "novel", Some(id.clone()), &space_id, Some(&world_id));
     }
     result
 }
@@ -1503,13 +1501,7 @@ pub fn clear_novel_image(
         Ok(())
     });
     if result.is_ok() {
-        emit_entity_changed(
-            &app,
-            "novel",
-            Some(id.clone()),
-            &space_id,
-            Some(&world_id),
-        );
+        emit_entity_changed(&app, "novel", Some(id.clone()), &space_id, Some(&world_id));
     }
     result
 }
@@ -1653,7 +1645,9 @@ pub fn delete_scene_image(
                 |row| row.get(0),
             )
             .map_err(|e| match e {
-                rusqlite::Error::QueryReturnedNoRows => DbError::NotFound("Image", image_id.clone()),
+                rusqlite::Error::QueryReturnedNoRows => {
+                    DbError::NotFound("Image", image_id.clone())
+                }
                 other => DbError::Sqlite(other),
             })?;
 
@@ -1667,9 +1661,8 @@ pub fn delete_scene_image(
         // No UNIQUE(scene_id, position) constraint exists, so we can update
         // rows in place without the temporary-shift dance reorder_scenes needs.
         let remaining_ids: Vec<String> = {
-            let mut stmt = tx.prepare(
-                "SELECT id FROM scene_images WHERE scene_id = ?1 ORDER BY position ASC",
-            )?;
+            let mut stmt = tx
+                .prepare("SELECT id FROM scene_images WHERE scene_id = ?1 ORDER BY position ASC")?;
             let rows = stmt.query_map(params![&scene_id], |row| row.get::<_, String>(0))?;
             let mut v = Vec::new();
             for r in rows {

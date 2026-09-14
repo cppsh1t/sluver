@@ -436,13 +436,7 @@ pub(crate) fn do_delete_item(
     });
     if result.is_ok() {
         if let Some(app) = app {
-            emit_entity_changed(
-                app,
-                "item",
-                Some(id.to_string()),
-                space_id,
-                Some(world_id),
-            );
+            emit_entity_changed(app, "item", Some(id.to_string()), space_id, Some(world_id));
         }
     }
     result
@@ -615,13 +609,7 @@ pub(crate) fn do_delete_lore(
     });
     if result.is_ok() {
         if let Some(app) = app {
-            emit_entity_changed(
-                app,
-                "lore",
-                Some(id.to_string()),
-                space_id,
-                Some(world_id),
-            );
+            emit_entity_changed(app, "lore", Some(id.to_string()), space_id, Some(world_id));
         }
     }
     result

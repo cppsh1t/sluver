@@ -97,10 +97,11 @@ pub enum DbError {
     /// Surfaces as `LOGGING_RELOAD_FAILED` — distinct from `LoggingInit`
     /// because it happens at runtime (post-startup verbosity change) where
     /// the original subscriber is still healthy and emitting.
-    #[allow(dead_code)] // Constructed only by `LoggingState::reload_filter*`
-                       // which is wired up in a downstream task (logging
-                       // commands TBA — see ADR-0014 "frontend_log" + the
-                       // runtime verbosity change UI).
+    #[allow(dead_code)]
+    // Constructed only by `LoggingState::reload_filter*`
+    // which is wired up in a downstream task (logging
+    // commands TBA — see ADR-0014 "frontend_log" + the
+    // runtime verbosity change UI).
     #[error("Logging reload failed: {0}")]
     LoggingReload(String),
 
@@ -117,9 +118,10 @@ pub enum DbError {
     /// allowed tiers (`standard` / `verbose` / `very_verbose`). Surfaces as
     /// `INVALID_LOG_LEVEL` with `{ provided }` so the frontend can render
     /// a translated "unknown log level '<provided>'" message.
-    #[allow(dead_code)] // Constructed only by the `set_log_level` command,
-                       // wired up in a downstream task (logging commands
-                       // TBA — see ADR-0014).
+    #[allow(dead_code)]
+    // Constructed only by the `set_log_level` command,
+    // wired up in a downstream task (logging commands
+    // TBA — see ADR-0014).
     #[error("Invalid log level: {0}")]
     InvalidLogLevel(String),
 
@@ -127,9 +129,10 @@ pub enum DbError {
     /// message is the only useful information; surfaces as
     /// `LOG_EXPORT_FAILED` with no args. The partial output file (if any)
     /// is the caller's responsibility to clean up.
-    #[allow(dead_code)] // Constructed only by the `export_logs` command,
-                       // wired up in a downstream task (logging commands
-                       // TBA — see ADR-0014).
+    #[allow(dead_code)]
+    // Constructed only by the `export_logs` command,
+    // wired up in a downstream task (logging commands
+    // TBA — see ADR-0014).
     #[error("Log export failed: {0}")]
     LogExportFailed(String),
 
@@ -165,10 +168,7 @@ pub enum DbError {
     /// `{ entity, id, existing_name }` so the frontend can show a
     /// confirmation dialog and retry with `overwrite = true`.
     #[error("World import already exists: {id} ({existing_name})")]
-    WorldImportAlreadyExists {
-        id: String,
-        existing_name: String,
-    },
+    WorldImportAlreadyExists { id: String, existing_name: String },
 
     /// `create_note` / `move_note` targeted a `parent_id` that exists but
     /// is not a folder (notes cannot nest under notes — ADR-0038 §1).
@@ -276,9 +276,7 @@ impl DbError {
                 "AGENT_CONFIG_NOT_FOUND",
                 HashMap::from([("id".to_string(), id.clone())]),
             ),
-            DbError::CatalogFetchFailed => {
-                ("CATALOG_FETCH_FAILED", HashMap::new())
-            },
+            DbError::CatalogFetchFailed => ("CATALOG_FETCH_FAILED", HashMap::new()),
             DbError::InvalidInput(msg) => (
                 "INVALID_INPUT",
                 HashMap::from([("message".to_string(), msg.clone())]),
@@ -299,9 +297,7 @@ impl DbError {
             // dynamic and not worth interpolating. No `args` — everything
             // useful is in `message` as the English fallback.
             DbError::LoggingInit(_) => ("LOGGING_INIT_FAILED", HashMap::new()),
-            DbError::LoggingReload(_) => {
-                ("LOGGING_RELOAD_FAILED", HashMap::new())
-            }
+            DbError::LoggingReload(_) => ("LOGGING_RELOAD_FAILED", HashMap::new()),
             // `set_log_level` validation failure: surface the rejected value
             // so the frontend can quote it back to the user.
             DbError::InvalidLogLevel(provided) => (
@@ -389,9 +385,7 @@ impl DbError {
                 "ATTACHMENT_INVALID_MIME",
                 HashMap::from([("mime".to_string(), mime.clone())]),
             ),
-            DbError::AttachmentInvalidText => {
-                ("ATTACHMENT_INVALID_TEXT", HashMap::new())
-            }
+            DbError::AttachmentInvalidText => ("ATTACHMENT_INVALID_TEXT", HashMap::new()),
         };
         ErrorPayload {
             code: code.to_string(),

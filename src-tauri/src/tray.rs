@@ -110,8 +110,8 @@ fn build_menu(app: &AppHandle, locale: &str) -> tauri::Result<Menu<tauri::Wry>> 
                     app,
                     format!("focus-space:{}", space.id),
                     space.name,
-                    true,     // enabled
-                    is_open,  // checked
+                    true,    // enabled
+                    is_open, // checked
                     None::<&str>,
                 )?;
                 menu.append(&item)?;
@@ -126,8 +126,7 @@ fn build_menu(app: &AppHandle, locale: &str) -> tauri::Result<Menu<tauri::Wry>> 
         menu.append(&sep)?;
     }
 
-    let launcher =
-        MenuItem::with_id(app, "show", label(locale, "launcher"), true, None::<&str>)?;
+    let launcher = MenuItem::with_id(app, "show", label(locale, "launcher"), true, None::<&str>)?;
     menu.append(&launcher)?;
     let quit = MenuItem::with_id(app, "quit", label(locale, "quit"), true, None::<&str>)?;
     menu.append(&quit)?;

@@ -145,7 +145,13 @@ pub(crate) fn do_create_character(
     });
     if let Ok(ref entity) = result {
         if let Some(app) = app {
-            emit_entity_changed(app, "character", Some(entity.id.clone()), space_id, Some(world_id));
+            emit_entity_changed(
+                app,
+                "character",
+                Some(entity.id.clone()),
+                space_id,
+                Some(world_id),
+            );
         }
     }
     result
@@ -288,7 +294,13 @@ pub(crate) fn do_update_character(
     });
     if let Ok(ref entity) = result {
         if let Some(app) = app {
-            emit_entity_changed(app, "character", Some(entity.id.clone()), space_id, Some(world_id));
+            emit_entity_changed(
+                app,
+                "character",
+                Some(entity.id.clone()),
+                space_id,
+                Some(world_id),
+            );
         }
     }
     result
@@ -322,7 +334,13 @@ pub(crate) fn do_delete_character(
     });
     if result.is_ok() {
         if let Some(app) = app {
-            emit_entity_changed(app, "character", Some(id.to_string()), space_id, Some(world_id));
+            emit_entity_changed(
+                app,
+                "character",
+                Some(id.to_string()),
+                space_id,
+                Some(world_id),
+            );
         }
     }
     result
@@ -340,7 +358,14 @@ pub fn add_phase(
     state: State<'_, DbManager>,
     app: AppHandle,
 ) -> Result<CharacterPhase, DbError> {
-    let entity = do_add_phase(&state, &space_id, &world_id, &character_id, &input, Some(&app))?;
+    let entity = do_add_phase(
+        &state,
+        &space_id,
+        &world_id,
+        &character_id,
+        &input,
+        Some(&app),
+    )?;
     tracing::Span::current().record("entity_id", entity.id.as_str());
     Ok(entity)
 }
@@ -412,7 +437,13 @@ pub(crate) fn do_add_phase(
     });
     if let Ok(ref entity) = result {
         if let Some(app) = app {
-            emit_entity_changed(app, "phase", Some(entity.id.clone()), space_id, Some(world_id));
+            emit_entity_changed(
+                app,
+                "phase",
+                Some(entity.id.clone()),
+                space_id,
+                Some(world_id),
+            );
         }
     }
     result
@@ -478,7 +509,13 @@ pub(crate) fn do_update_phase(
     });
     if let Ok(ref entity) = result {
         if let Some(app) = app {
-            emit_entity_changed(app, "phase", Some(entity.id.clone()), space_id, Some(world_id));
+            emit_entity_changed(
+                app,
+                "phase",
+                Some(entity.id.clone()),
+                space_id,
+                Some(world_id),
+            );
         }
     }
     result
@@ -515,7 +552,13 @@ pub(crate) fn do_delete_phase(
     });
     if result.is_ok() {
         if let Some(app) = app {
-            emit_entity_changed(app, "phase", Some(phase_id.to_string()), space_id, Some(world_id));
+            emit_entity_changed(
+                app,
+                "phase",
+                Some(phase_id.to_string()),
+                space_id,
+                Some(world_id),
+            );
         }
     }
     result
@@ -537,7 +580,14 @@ pub fn reorder_phases(
     state: State<'_, DbManager>,
     app: AppHandle,
 ) -> Result<(), DbError> {
-    do_reorder_phases(&state, &space_id, &world_id, &character_id, &phase_ids, Some(&app))
+    do_reorder_phases(
+        &state,
+        &space_id,
+        &world_id,
+        &character_id,
+        &phase_ids,
+        Some(&app),
+    )
 }
 
 pub(crate) fn do_reorder_phases(

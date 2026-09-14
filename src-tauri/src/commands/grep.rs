@@ -110,7 +110,13 @@ fn json_array_prefilter(col: &str) -> String {
 /// prefilter / Rust scan folding agreement is load-bearing there too.
 pub(crate) fn fold_ascii(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_ascii_uppercase() { c.to_ascii_lowercase() } else { c })
+        .map(|c| {
+            if c.is_ascii_uppercase() {
+                c.to_ascii_lowercase()
+            } else {
+                c
+            }
+        })
         .collect()
 }
 
@@ -141,7 +147,10 @@ fn context_before(s: &str, end: usize, max_chars: usize) -> String {
 /// `pub(crate)`: shared with `commands/note.rs::grep_notes`, which maps
 /// the returned `GrepSnippet`s onto its `NoteSnippet` (identical shape) —
 /// one tested implementation of the tricky UTF-8-boundary scan, no drift.
-pub(crate) fn scan_text_field(haystack: &str, folded_needle: &str) -> Option<(i64, Vec<GrepSnippet>)> {
+pub(crate) fn scan_text_field(
+    haystack: &str,
+    folded_needle: &str,
+) -> Option<(i64, Vec<GrepSnippet>)> {
     let folded_haystack = fold_ascii(haystack);
     let mut count: i64 = 0;
     let mut snippets = Vec::new();
@@ -315,9 +324,7 @@ pub fn grep(
     groups.sort_by(|a, b| {
         b.match_count
             .cmp(&a.match_count)
-            .then_with(|| {
-                entity_type_rank(&a.entity_type).cmp(&entity_type_rank(&b.entity_type))
-            })
+            .then_with(|| entity_type_rank(&a.entity_type).cmp(&entity_type_rank(&b.entity_type)))
             .then_with(|| a.entity_title.cmp(&b.entity_title))
             .then_with(|| a.entity_id.cmp(&b.entity_id))
     });
@@ -431,11 +438,7 @@ fn scan_characters(
 /// grep covers their four author-written fields (ADR-0035 §2). The JOIN
 /// resolves the redundant owner identity so the model can act on a phase
 /// hit without a second `get_*` call. `entity_id` is the PHASE id.
-fn scan_phases(
-    conn: &Connection,
-    pat: &str,
-    needle: &str,
-) -> Result<Vec<GrepMatchGroup>, DbError> {
+fn scan_phases(conn: &Connection, pat: &str, needle: &str) -> Result<Vec<GrepMatchGroup>, DbError> {
     let mut stmt = conn.prepare(
         "SELECT p.id AS phase_id, p.name AS phase_name, p.appearance,
                 p.description, p.conversation_style,
@@ -529,11 +532,7 @@ impl_element_grep_scan!(scan_lores, "lores", "lore");
 /// Events: `start_at` / `end_at` are deliberately NOT searched — timestamps
 /// are not creative text (ADR-0035 §2), unlike `search_events` which does
 /// match them for entity discovery.
-fn scan_events(
-    conn: &Connection,
-    pat: &str,
-    needle: &str,
-) -> Result<Vec<GrepMatchGroup>, DbError> {
+fn scan_events(conn: &Connection, pat: &str, needle: &str) -> Result<Vec<GrepMatchGroup>, DbError> {
     let sql = format!(
         "SELECT id, name, description, notes, tags FROM events
          WHERE name LIKE ?1 OR description LIKE ?1 OR notes LIKE ?1 OR {}",
@@ -567,11 +566,7 @@ fn scan_events(
 }
 
 /// Novels: `title` (not `name`) + `description` + `author` + `tags`.
-fn scan_novels(
-    conn: &Connection,
-    pat: &str,
-    needle: &str,
-) -> Result<Vec<GrepMatchGroup>, DbError> {
+fn scan_novels(conn: &Connection, pat: &str, needle: &str) -> Result<Vec<GrepMatchGroup>, DbError> {
     let sql = format!(
         "SELECT id, title, description, author, tags FROM novels
          WHERE title LIKE ?1 OR description LIKE ?1 OR author LIKE ?1 OR {}",
@@ -638,11 +633,7 @@ fn scan_chapters(
 /// Scenes: `content` is the largest creative payload in the schema and the
 /// grep corpus's heaviest table — the SQL prefilter matters most here
 /// (only surviving rows' content reaches the in-memory scan).
-fn scan_scenes(
-    conn: &Connection,
-    pat: &str,
-    needle: &str,
-) -> Result<Vec<GrepMatchGroup>, DbError> {
+fn scan_scenes(conn: &Connection, pat: &str, needle: &str) -> Result<Vec<GrepMatchGroup>, DbError> {
     let mut stmt = conn.prepare(
         "SELECT id, title, summary, content FROM scenes
          WHERE title LIKE ?1 OR summary LIKE ?1 OR content LIKE ?1",

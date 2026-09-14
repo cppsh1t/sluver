@@ -53,9 +53,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use deno_task_shell::parser::SequentialList;
-use deno_task_shell::{
-    execute_with_pipes, pipe, KillSignal, ShellState, SignalKind,
-};
+use deno_task_shell::{execute_with_pipes, pipe, KillSignal, ShellState, SignalKind};
 use serde::Serialize;
 use tauri::State;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -193,10 +191,13 @@ impl ShellRegistry {
         kill_tx: UnboundedSender<SignalKind>,
         kill_requested: Arc<AtomicBool>,
     ) {
-        self.runs
-            .lock()
-            .unwrap()
-            .insert(run_id, RunHandle { kill_tx, kill_requested });
+        self.runs.lock().unwrap().insert(
+            run_id,
+            RunHandle {
+                kill_tx,
+                kill_requested,
+            },
+        );
     }
 
     /// Remove a run's entry (idempotent).
@@ -241,8 +242,7 @@ impl Drop for RunGuard {
 /// Parse a command string, mapping failures to [`ShellError::ParseError`].
 /// Runs BEFORE any spawn or registry mutation — parse failures never spawn.
 fn parse_command(command: &str) -> Result<SequentialList, ShellError> {
-    deno_task_shell::parser::parse(command)
-        .map_err(|e| ShellError::ParseError(e.to_string()))
+    deno_task_shell::parser::parse(command).map_err(|e| ShellError::ParseError(e.to_string()))
 }
 
 /// Core run loop. MUST be driven by `block_on` on the run's dedicated
@@ -277,8 +277,7 @@ async fn run_parsed_command(
     // stderr, so the reader observes chronologically interleaved output
     // (ADR-0041 §4) rather than two separately buffered streams.
     let (out_reader, out_writer) = pipe();
-    let state =
-        ShellState::new(env_vars, cwd, HashMap::new(), kill_signal.clone());
+    let state = ShellState::new(env_vars, cwd, HashMap::new(), kill_signal.clone());
     let output_task = out_reader.pipe_to_string_handle();
 
     // EOF stdin: a pipe whose writer end is dropped immediately (reads return
@@ -371,9 +370,7 @@ async fn run_parsed_command(
         tracing::warn!(run_id = %run_id, "shell.exec cleanup_hang");
     }
 
-    let output = match tokio::time::timeout(OUTPUT_DRAIN_GRACE, output_task)
-        .await
-    {
+    let output = match tokio::time::timeout(OUTPUT_DRAIN_GRACE, output_task).await {
         Ok(Ok(s)) => s,
         // Drain task panicked or the pipe was still held past the grace
         // (extreme edge; the Job Object kill is async) — return what we can.
@@ -404,8 +401,7 @@ fn truncate_output(output: String) -> (String, bool, usize) {
         return (output, false, total);
     }
     let head: String = output.chars().take(OUTPUT_HEAD_CHARS).collect();
-    let tail: String =
-        output.chars().skip(total - OUTPUT_TAIL_CHARS).collect();
+    let tail: String = output.chars().skip(total - OUTPUT_TAIL_CHARS).collect();
     let omitted = total - OUTPUT_HEAD_CHARS - OUTPUT_TAIL_CHARS;
     (
         format!("{head}\n...[truncated {omitted} chars]...\n{tail}"),
@@ -494,18 +490,16 @@ pub async fn shell_exec(
     // ── registry + blocking-thread execution ────────────────────────────────
     let (kill_tx, kill_rx) = tokio::sync::mpsc::unbounded_channel();
     let kill_requested = Arc::new(AtomicBool::new(false));
-    registry.register(
-        run_id.clone(),
-        kill_tx,
-        Arc::clone(&kill_requested),
-    );
+    registry.register(run_id.clone(), kill_tx, Arc::clone(&kill_requested));
 
     let guard_registry = ShellRegistry::clone(&registry);
     let run_id_for_thread = run_id.clone();
     let join = tauri::async_runtime::spawn_blocking(move || {
         // Deregisters the registry entry on ANY exit path (incl. panic).
-        let _guard =
-            RunGuard { registry: guard_registry, run_id: run_id_for_thread.clone() };
+        let _guard = RunGuard {
+            registry: guard_registry,
+            run_id: run_id_for_thread.clone(),
+        };
         let runtime = tokio::runtime::Handle::current();
         runtime.block_on(run_parsed_command(
             list,
@@ -543,10 +537,7 @@ pub async fn shell_exec(
 /// fire-and-forget, frequently racing the exec resolving naturally.
 #[tracing::instrument(skip(state), fields(run_id = %run_id))]
 #[tauri::command]
-pub fn shell_kill(
-    run_id: String,
-    state: State<'_, ShellRegistry>,
-) -> Result<(), ShellError> {
+pub fn shell_kill(run_id: String, state: State<'_, ShellRegistry>) -> Result<(), ShellError> {
     if !state.kill_run(&run_id) {
         tracing::debug!(run_id = %run_id, "shell.kill unknown_run");
     }

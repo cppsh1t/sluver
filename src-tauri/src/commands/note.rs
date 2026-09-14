@@ -41,11 +41,11 @@ use tauri::{AppHandle, State};
 use crate::commands::events::emit_entity_changed;
 use crate::commands::grep::{fold_ascii, like_pattern, scan_text_field};
 use crate::db::{DbError, DbManager};
+use crate::models::grep::GrepSnippet;
 use crate::models::note::{
     CreateNoteInput, GrepNotesInput, GrepNotesResponse, Note, NoteKind, NoteMatchGroup,
     NoteSnippet, NoteSummary, UpdateNoteInput,
 };
-use crate::models::grep::GrepSnippet;
 use crate::util::{new_id, now_iso};
 
 /// Soft ceiling on match groups returned per page — mirrors `grep.rs`
@@ -109,7 +109,9 @@ fn ensure_parent_is_folder(conn: &Connection, parent_id: &str) -> Result<(), DbE
             |row| row.get(0),
         )
         .map_err(|e| match e {
-            rusqlite::Error::QueryReturnedNoRows => DbError::NotFound("Note", parent_id.to_string()),
+            rusqlite::Error::QueryReturnedNoRows => {
+                DbError::NotFound("Note", parent_id.to_string())
+            }
             other => DbError::Sqlite(other),
         })?;
     if kind != NoteKind::Folder.as_db_str() {
@@ -516,9 +518,11 @@ pub(crate) fn do_move_note(
         // silent no-op UPDATE + an empty renumber below. The title rides
         // along for the sibling-title violation mapping in (d).
         let moved_title: String = tx
-            .query_row("SELECT title FROM notes WHERE id = ?1", params![id], |row| {
-                row.get(0)
-            })
+            .query_row(
+                "SELECT title FROM notes WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
             .map_err(|e| match e {
                 rusqlite::Error::QueryReturnedNoRows => DbError::NotFound("Note", id.to_string()),
                 other => DbError::Sqlite(other),
@@ -529,7 +533,8 @@ pub(crate) fn do_move_note(
         if let Some(parent_id) = new_parent_id {
             ensure_parent_is_folder(&tx, parent_id)?;
 
-            let row_count: i64 = tx.query_row("SELECT COUNT(*) FROM notes", [], |row| row.get(0))?;
+            let row_count: i64 =
+                tx.query_row("SELECT COUNT(*) FROM notes", [], |row| row.get(0))?;
             let mut cursor = parent_id.to_string();
             let mut steps_remaining = row_count + 1;
             loop {
@@ -573,8 +578,7 @@ pub(crate) fn do_move_note(
         let mut sibling_ids: Vec<String> = {
             let mut stmt =
                 tx.prepare("SELECT id FROM notes WHERE parent_id IS ?1 ORDER BY position, id")?;
-            let rows =
-                stmt.query_map(params![new_parent_id], |row| row.get::<_, String>(0))?;
+            let rows = stmt.query_map(params![new_parent_id], |row| row.get::<_, String>(0))?;
             rows.collect::<Result<Vec<_>, _>>()?
         };
         sibling_ids.retain(|sid| sid != id);
@@ -658,11 +662,7 @@ fn to_note_snippet(s: GrepSnippet) -> NoteSnippet {
 /// and extracts up to 3 snippets per field. Notes match on title + content
 /// fields; folders (pure containers, content always '') match on title
 /// only. One group per (row, field) with ≥1 match.
-fn scan_notes(
-    conn: &Connection,
-    pat: &str,
-    needle: &str,
-) -> Result<Vec<NoteMatchGroup>, DbError> {
+fn scan_notes(conn: &Connection, pat: &str, needle: &str) -> Result<Vec<NoteMatchGroup>, DbError> {
     // (a) Full (id → parent, title) map for the in-memory ancestry walks.
     let mut titles: NoteTitles = HashMap::new();
     {
@@ -747,9 +747,8 @@ pub fn grep_notes(
     let pat = like_pattern(&input.query);
     let needle = fold_ascii(&input.query);
 
-    let mut groups = state.with_world(&space_id, &world_id, |conn| {
-        scan_notes(conn, &pat, &needle)
-    })?;
+    let mut groups =
+        state.with_world(&space_id, &world_id, |conn| scan_notes(conn, &pat, &needle))?;
 
     // Deterministic ordering (grep.rs §5 adapted to the single-table
     // corpus — no entity-type rank): match_count desc → title asc →

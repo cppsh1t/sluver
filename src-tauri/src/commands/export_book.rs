@@ -27,9 +27,7 @@ use serde::Deserialize;
 use tauri::State;
 
 use crate::db::{DbError, DbManager};
-use crate::export::{
-    CoverImage, ExportedChapter, ExportedImage, ExportedNovel, ExportedScene,
-};
+use crate::export::{CoverImage, ExportedChapter, ExportedImage, ExportedNovel, ExportedScene};
 
 // ─── ExportFormat ───────────────────────────────────────────────────────────
 
@@ -171,9 +169,7 @@ fn load_exported_novel(
                 // Only build a cover when both halves are present; a lone
                 // blob/mime pair would be malformed data and the EPUB
                 // renderer needs both anyway.
-                let cover = blob.and_then(|bytes| {
-                    mime.map(|m| CoverImage { bytes, mime: m })
-                });
+                let cover = blob.and_then(|bytes| mime.map(|m| CoverImage { bytes, mime: m }));
                 Ok((title, author, description, cover))
             },
         )
@@ -186,9 +182,8 @@ fn load_exported_novel(
 
     // (b) Chapters (ordered by position).
     let chapter_rows: Vec<(String, String)> = {
-        let mut stmt = conn.prepare(
-            "SELECT id, title FROM chapters WHERE novel_id = ?1 ORDER BY position",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT id, title FROM chapters WHERE novel_id = ?1 ORDER BY position")?;
         let rows = stmt.query_map(params![novel_id], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;

@@ -165,8 +165,8 @@ fn mode_must_be_exactly_one() {
     let png = png_bytes(&gradient_image(8, 8));
 
     // Both modes.
-    let err = prepare(b64_input(&png, Some(300), Some(400), Some(64)))
-        .expect_err("both modes must fail");
+    let err =
+        prepare(b64_input(&png, Some(300), Some(400), Some(64))).expect_err("both modes must fail");
     assert!(
         matches!(err, DbError::Internal(ref msg) if msg.contains("not both")),
         "unexpected error: {err:?}"
@@ -180,8 +180,8 @@ fn mode_must_be_exactly_one() {
     );
 
     // Width without height.
-    let err = prepare(b64_input(&png, Some(300), None, None))
-        .expect_err("half crop spec must fail");
+    let err =
+        prepare(b64_input(&png, Some(300), None, None)).expect_err("half crop spec must fail");
     assert!(
         matches!(err, DbError::Internal(ref msg) if msg.contains("both width and height")),
         "unexpected error: {err:?}"

@@ -81,7 +81,10 @@ pub fn query_timeline(
     input: TimelineQueryInput,
     state: State<'_, DbManager>,
 ) -> Result<TimelineResponse, DbError> {
-    let limit = input.limit.unwrap_or(DEFAULT_LIMIT).clamp(MIN_LIMIT, MAX_LIMIT);
+    let limit = input
+        .limit
+        .unwrap_or(DEFAULT_LIMIT)
+        .clamp(MIN_LIMIT, MAX_LIMIT);
 
     state.with_world(&space_id, &world_id, |conn| {
         // ── (1) EVENTS subset ──────────────────────────────────────────────
@@ -329,11 +332,7 @@ pub fn query_timeline(
         entries.truncate(limit as usize);
         let truncated = (total as usize) > entries.len();
 
-        tracing::debug!(
-            entries = entries.len(),
-            total = total,
-            "timeline queried"
-        );
+        tracing::debug!(entries = entries.len(), total = total, "timeline queried");
 
         Ok(TimelineResponse {
             entries,
@@ -393,10 +392,7 @@ pub fn list_timeline_lanes(
             })?
             .collect::<Result<Vec<_>, _>>()?;
 
-        tracing::debug!(
-            lane_count = lanes.len(),
-            "timeline lanes listed"
-        );
+        tracing::debug!(lane_count = lanes.len(), "timeline lanes listed");
 
         Ok(lanes)
     })

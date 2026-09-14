@@ -44,7 +44,7 @@ use std::sync::Mutex;
 use chrono::{Duration, Local, NaiveDate};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
-use tracing_subscriber::{EnvFilter, Registry, fmt, prelude::*, reload};
+use tracing_subscriber::{fmt, prelude::*, reload, EnvFilter, Registry};
 
 use crate::db::DbError;
 
@@ -138,8 +138,8 @@ impl LoggingState {
     #[allow(dead_code)] // Wired up in a downstream task (logging commands
                         // TBA per ADR-0014).
     pub fn reload_filter_str(&self, filter_str: &str) -> Result<(), DbError> {
-        let new_filter = EnvFilter::try_new(filter_str)
-            .map_err(|e| DbError::LoggingReload(e.to_string()))?;
+        let new_filter =
+            EnvFilter::try_new(filter_str).map_err(|e| DbError::LoggingReload(e.to_string()))?;
         self.reload_filter(new_filter)
     }
 }
@@ -171,8 +171,8 @@ pub fn init(data_dir: &std::path::Path) -> Result<LoggingState, DbError> {
     let (non_blocking, guard) = tracing_appender::non_blocking(file_writer);
 
     // ---- reloadable EnvFilter ----------------------------------------
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(DEFAULT_FILTER));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(DEFAULT_FILTER));
     let (filter_layer, reload_handle) = reload::Layer::new(filter);
 
     // ---- layer cake ---------------------------------------------------
@@ -195,8 +195,7 @@ pub fn init(data_dir: &std::path::Path) -> Result<LoggingState, DbError> {
     // `set_global_default` per the task spec — in practice the ordering
     // only matters if a `log::*` call fires in the window between these
     // two calls, which is essentially impossible here.
-    tracing_log::LogTracer::init()
-        .map_err(|e| DbError::LoggingInit(e.to_string()))?;
+    tracing_log::LogTracer::init().map_err(|e| DbError::LoggingInit(e.to_string()))?;
 
     tracing::subscriber::set_global_default(subscriber)
         .map_err(|e| DbError::LoggingInit(e.to_string()))?;

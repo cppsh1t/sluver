@@ -123,9 +123,8 @@ pub fn list_character_summaries(
     state: State<'_, DbManager>,
 ) -> Result<Vec<CharacterSummary>, DbError> {
     state.with_world(&space_id, &world_id, |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT id, name, tags FROM characters ORDER BY created_at LIMIT 200",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT id, name, tags FROM characters ORDER BY created_at LIMIT 200")?;
         let rows = stmt
             .query_map([], |row| {
                 let tags_json: String = row.get("tags")?;
@@ -247,9 +246,8 @@ pub fn list_novel_summaries(
     state: State<'_, DbManager>,
 ) -> Result<Vec<NovelSummary>, DbError> {
     state.with_world(&space_id, &world_id, |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT id, title, tags, author FROM novels ORDER BY created_at LIMIT 200",
-        )?;
+        let mut stmt = conn
+            .prepare("SELECT id, title, tags, author FROM novels ORDER BY created_at LIMIT 200")?;
         let rows = stmt
             .query_map([], |row| {
                 let tags_json: String = row.get("tags")?;
