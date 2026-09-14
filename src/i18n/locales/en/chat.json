@@ -3,7 +3,7 @@
   "role": {
     "explorer": "Explorer",
     "writer": "Writer",
-    "pickerLabel": "Role"
+    "orchestrator": "Orchestrator"
   },
   "list": {
     "empty": "No conversations yet",
@@ -189,6 +189,26 @@
     "toolConsentTitle": "Tool approval required",
     "toolConsentBody": "“{{tool}}” is waiting for your approval",
     "toolConsentBodyMulti": "{{count}} tool(s) are waiting for your approval"
+  },
+  "subagent": {
+    "runTitle": "Subagent run",
+    "status": {
+      "running": "Running",
+      "awaitingApproval": "Awaiting approval ({{count}})",
+      "completed": "Completed",
+      "stopped": "Stopped",
+      "aborted": "Aborted",
+      "error": "Error",
+      "unconfigured": "No model bound"
+    },
+    "stop": "Stop",
+    "stopLabel": "Stop this subagent run",
+    "approveAll": "Approve all ({{count}})",
+    "openLabel": "Open the {{role}} subagent run transcript",
+    "taskDigestLabel": "Task: {{task}}",
+    "back": "Back to conversation",
+    "drillInTitle": "Run transcript",
+    "notFound": "Run not found — it may have been deleted."
   },
   "step": "Step {{n}}",
   "error": {

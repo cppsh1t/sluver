@@ -44,6 +44,7 @@ import { ChapterOverviewToolCard } from "./tool-cards/chapter-overview-tool-card
 import { TimelineToolCard } from "./tool-cards/timeline-tool-card";
 import { GrepToolCard } from "./tool-cards/grep-tool-card";
 import { ActivateSkillToolCard } from "./tool-cards/activate-skill-tool-card";
+import { SubagentBlock } from "./subagent-block";
 import { summarizeToolCall } from "./tool-summary";
 import { ToolBody, ToolSummaryLine } from "./tool-cards/tool-body";
 
@@ -87,11 +88,18 @@ export function ToolCard({ tool, worldId, conversationId }: ToolCardProps) {
   }
   if (tool.toolName === "activate_skill") {
     // Agent Skills (ADR-0043): render the activation summary (skill name,
-    // location, instruction line count, bundled files) instead of the generic
-    // JSON fallback — the SKILL.md body is model instructions and can be
-    // several KB, so it is counted, never dumped. read_skill_file keeps the
+    // location, instruction line count, bundled files) instead of the
+    // generic JSON fallback — the SKILL.md body is model instructions and can
+    // be several KB, so it is counted, never dumped. read_skill_file keeps the
     // generic fallback (out of scope by design).
     return <ActivateSkillToolCard tool={tool} />;
+  }
+  if (tool.toolName === "dispatch_subagent") {
+    // Subagent dispatch (ADR-0050 D10): a live-aware block — role, task
+    // digest, child-run status, per-run Stop, approve-all, drill-in —
+    // instead of the generic JSON fallback. The block anchors on the
+    // parentToolCallId back-link while live and the persisted runId after.
+    return <SubagentBlock tool={tool} worldId={worldId} />;
   }
   return <GenericToolCard tool={tool} worldId={worldId} conversationId={conversationId} />;
 }

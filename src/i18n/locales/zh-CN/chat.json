@@ -3,7 +3,7 @@
   "role": {
     "explorer": "探索者",
     "writer": "写手",
-    "pickerLabel": "角色"
+    "orchestrator": "协调者"
   },
   "list": {
     "empty": "还没有对话",
@@ -189,6 +189,26 @@
     "toolConsentTitle": "工具调用需要批准",
     "toolConsentBody": "工具「{{tool}}」正在等待你的批准",
     "toolConsentBodyMulti": "{{count}} 个工具正在等待你的批准"
+  },
+  "subagent": {
+    "runTitle": "子代理运行",
+    "status": {
+      "running": "运行中",
+      "awaitingApproval": "待审批（{{count}}）",
+      "completed": "已完成",
+      "stopped": "已停止",
+      "aborted": "已中止",
+      "error": "出错",
+      "unconfigured": "未配置模型"
+    },
+    "stop": "停止",
+    "stopLabel": "停止此子代理运行",
+    "approveAll": "全部同意（{{count}}）",
+    "openLabel": "查看子代理「{{role}}」的运行记录",
+    "taskDigestLabel": "任务：{{task}}",
+    "back": "返回对话",
+    "drillInTitle": "运行记录",
+    "notFound": "找不到该运行记录——它可能已被删除。"
   },
   "step": "第 {{n}} 步",
   "error": {
