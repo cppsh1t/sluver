@@ -318,6 +318,25 @@ const SPACE_MIGRATION_012: &str = r#"
     ALTER TABLE agent_configs ADD COLUMN max_steps INTEGER;
 "#;
 
+/// Migration 13 for `space.db`: replace the per-role full system-prompt
+/// override with a `context_note`. The full-prompt override is removed to
+/// protect the structured (XML-sectioned) registry prompts: a user edit
+/// that breaks the section boundaries would silently degrade the role's
+/// instructions. `context_note` is additive — the frontend inserts its
+/// trimmed value at the END of the role prompt's `<context>` block
+/// (`injectContextNote` in `src/lib/ai-roles/index.ts`), so users get a
+/// custom-guidance escape hatch without any ability to rewrite the
+/// operational sections. Empty string (the DEFAULT) means "no note".
+/// Pre-release destructive: any stored `system_prompt` overrides are
+/// dropped with the column. Added as a separate migration so existing
+/// `space.db` files pick up the change via rusqlite_migration's
+/// incremental tracking — modifying `SPACE_MIGRATION_002` or
+/// `SPACE_MIGRATION_006` would NOT re-run for already-migrated databases.
+const SPACE_MIGRATION_013: &str = r#"
+    ALTER TABLE agent_configs DROP COLUMN system_prompt;
+    ALTER TABLE agent_configs ADD COLUMN context_note TEXT NOT NULL DEFAULT '';
+"#;
+
 // ─── world DB schema ────────────────────────────────────────────────────────
 // Tier 3 of the three-database design (ADR-0007). One file per World at
 // `spaces/{spaceId}/worlds/{worldId}.db`. Schema is byte-for-byte identical
@@ -485,6 +504,7 @@ const SPACE_SLICE: &[M] = &[
     M::up(SPACE_MIGRATION_010),
     M::up(SPACE_MIGRATION_011),
     M::up(SPACE_MIGRATION_012),
+    M::up(SPACE_MIGRATION_013),
 ];
 pub const SPACE_MIGRATIONS: Migrations = Migrations::from_slice(SPACE_SLICE);
 

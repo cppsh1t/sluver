@@ -36,11 +36,14 @@ pub struct AgentConfig {
     /// `context_compaction_turn_age`); defaults to disabled (`enabled = false`,
     /// `turn_age = 3`) on seed and on migration of pre-existing rows.
     pub context_compaction: ContextCompaction,
-    /// Per-role system prompt override. Empty string = use the code-defined
-    /// default (see `src/lib/ai-roles/index.ts` `ROLE_BEHAVIOR`). A non-empty
-    /// value overrides the role's system prompt for this Space. Defaults to
-    /// empty on seed and on migration of pre-existing rows.
-    pub system_prompt: String,
+    /// Per-role context note: a user-authored guideline inserted at the END
+    /// of the role prompt's `<context>` block by the frontend
+    /// (`injectContextNote` in `src/lib/ai-roles/index.ts`). Empty string =
+    /// no note (the code-defined prompt is used verbatim). Unlike the
+    /// removed `system_prompt` override, the note can never rewrite the
+    /// operational sections of the structured prompt. Defaults to empty on
+    /// seed and on migration of pre-existing rows (SPACE_MIGRATION_013).
+    pub context_note: String,
     /// User-editable per-role loop step budget. `None` (NULL, the default
     /// on seed and on migration of pre-existing rows) = use the frontend
     /// `ROLE_REGISTRY` default (30 for loop roles); a value overrides it

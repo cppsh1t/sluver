@@ -310,7 +310,7 @@ pub fn run() {
             commands::ai::update_agent_config_model,
             commands::ai::update_agent_config_auto_execute,
             commands::ai::update_agent_config_context_compaction,
-            commands::ai::update_agent_config_system_prompt,
+            commands::ai::update_agent_config_context_note,
             commands::ai::update_agent_config_shell_tool,
             commands::ai::update_agent_config_max_steps,
             commands::ai::get_models_dev_catalog,

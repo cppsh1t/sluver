@@ -1080,7 +1080,7 @@ fn agent_config_serialization_shape() {
             enabled: false,
             turn_age: 3,
         },
-        system_prompt: "".into(),
+        context_note: "".into(),
         max_steps: Some(50),
         created_at: "2026-01-01T00:00:00.000Z".into(),
         updated_at: "2026-01-01T00:00:00.000Z".into(),
@@ -1103,8 +1103,8 @@ fn agent_config_serialization_shape() {
         "camelCase contextCompaction: {json}"
     );
     assert!(
-        json.contains("\"systemPrompt\":\"\""),
-        "camelCase systemPrompt: {json}"
+        json.contains("\"contextNote\":\"\""),
+        "camelCase contextNote: {json}"
     );
     assert!(
         json.contains("\"maxSteps\":50"),
@@ -1124,6 +1124,7 @@ fn agent_config_serialization_shape() {
         "snake_case leak: {json}"
     );
     assert!(!json.contains("system_prompt"), "snake_case leak: {json}");
+    assert!(!json.contains("context_note"), "snake_case leak: {json}");
     assert!(!json.contains("max_steps"), "snake_case leak: {json}");
 }
 

@@ -84,14 +84,15 @@ fn meta_fresh_install_schema() {
     );
 }
 
-/// space.db fresh install: twelve migrations → user_version 12, exactly
+/// space.db fresh install: thirteen migrations → user_version 13, exactly
 /// the {worlds, space_config, provider_credentials, agent_configs,
 /// skills, agent_config_skills} table set, and a single named index
 /// idx_worlds_name (the UNIQUE constraints on agent_configs.name /
 /// provider_credentials.provider_id / skills.name and the
 /// agent_config_skills composite PK are column/table-level and produce
 /// only NULL-sql autoindexes). v11 seeds agent_config rows only; v12
-/// adds the max_steps column only.
+/// adds the max_steps column only; v13 swaps system_prompt for
+/// context_note.
 #[test]
 fn space_fresh_install_schema() {
     let mut conn = Connection::open_in_memory().expect("open in-memory space db");
@@ -101,7 +102,7 @@ fn space_fresh_install_schema() {
 
     assert_eq!(
         user_version(&conn),
-        12,
+        13,
         "space user_version after to_latest"
     );
     assert_eq!(
@@ -114,16 +115,24 @@ fn space_fresh_install_schema() {
             "space_config",
             "worlds",
         ],
-        "space table set at v12"
+        "space table set at v13"
     );
     assert_eq!(
         named_indexes(&conn),
         ["idx_worlds_name"],
-        "space named index set at v12"
+        "space named index set at v13"
     );
     assert!(
         has_column(&conn, "agent_configs", "max_steps"),
         "v12 adds agent_configs.max_steps"
+    );
+    assert!(
+        has_column(&conn, "agent_configs", "context_note"),
+        "v13 adds agent_configs.context_note"
+    );
+    assert!(
+        !has_column(&conn, "agent_configs", "system_prompt"),
+        "v13 drops agent_configs.system_prompt"
     );
 }
 
@@ -400,14 +409,15 @@ fn world_upgrade_path_step_by_step() {
     }
 }
 
-/// space.db upgrade path: step 0→12 on ONE connection, asserting
+/// space.db upgrade path: step 0→13 on ONE connection, asserting
 /// user_version and the per-step schema facts (tables and columns added,
 /// namer row seeded at v7, vision row seeded at v10, seven ADR-0050 rows
-/// seeded at v11, max_steps column added at v12).
+/// seeded at v11, max_steps column added at v12, system_prompt dropped and
+/// context_note added at v13).
 #[test]
 fn space_upgrade_path_step_by_step() {
     let mut conn = Connection::open_in_memory().expect("open in-memory space db");
-    for v in 0..=12 {
+    for v in 0..=13 {
         SPACE_MIGRATIONS
             .to_version(&mut conn, v)
             .unwrap_or_else(|e| panic!("space to_version({v}): {e}"));
@@ -559,7 +569,25 @@ fn space_upgrade_path_step_by_step() {
                     "v12 adds a column only — table set unchanged"
                 );
             }
-            _ => unreachable!("loop is bounded to 0..=12"),
+            13 => {
+                // Full-prompt override → context-note swap: system_prompt is
+                // DROPPED (pre-release destructive) and context_note lands
+                // with the empty-string default.
+                assert!(
+                    !has_column(&conn, "agent_configs", "system_prompt"),
+                    "v13 drops agent_configs.system_prompt"
+                );
+                assert!(
+                    has_column(&conn, "agent_configs", "context_note"),
+                    "v13 adds agent_configs.context_note"
+                );
+                assert_eq!(
+                    table_names(&conn).len(),
+                    6,
+                    "v13 swaps columns only — table set unchanged"
+                );
+            }
+            _ => unreachable!("loop is bounded to 0..=13"),
         }
     }
 }
@@ -640,7 +668,7 @@ fn space_v7_seeds_namer_row_and_stays_unique() {
         .to_latest(&mut conn)
         .expect("space to_latest");
 
-    let (name, model_id, created_at, updated_at, system_prompt): (
+    let (name, model_id, created_at, updated_at, context_note): (
         String,
         Option<String>,
         String,
@@ -648,7 +676,7 @@ fn space_v7_seeds_namer_row_and_stays_unique() {
         String,
     ) = conn
         .query_row(
-            "SELECT name, model_id, created_at, updated_at, system_prompt
+            "SELECT name, model_id, created_at, updated_at, context_note
                  FROM agent_configs
                  WHERE id = '01a00a6e-36b8-7302-8810-856d81dacb0c'",
             [],
@@ -674,8 +702,8 @@ fn space_v7_seeds_namer_row_and_stays_unique() {
         "fixed far-future literal"
     );
     assert_eq!(
-        system_prompt, "",
-        "namer system_prompt is the empty default"
+        context_note, "",
+        "namer context_note is the empty default"
     );
 
     // Idempotency: a second to_latest pass must not duplicate the seed row.
@@ -705,7 +733,7 @@ fn space_v10_seeds_vision_row_and_stays_unique() {
         .to_latest(&mut conn)
         .expect("space to_latest");
 
-    let (name, model_id, created_at, updated_at, system_prompt): (
+    let (name, model_id, created_at, updated_at, context_note): (
         String,
         Option<String>,
         String,
@@ -713,7 +741,7 @@ fn space_v10_seeds_vision_row_and_stays_unique() {
         String,
     ) = conn
         .query_row(
-            "SELECT name, model_id, created_at, updated_at, system_prompt
+            "SELECT name, model_id, created_at, updated_at, context_note
                  FROM agent_configs
                  WHERE id = '01a00a6e-36c0-7521-9a3f-3e7c2d9b4f60'",
             [],
@@ -739,8 +767,8 @@ fn space_v10_seeds_vision_row_and_stays_unique() {
         "fixed far-future literal"
     );
     assert_eq!(
-        system_prompt, "",
-        "vision system_prompt is the empty default"
+        context_note, "",
+        "vision context_note is the empty default"
     );
 
     // Idempotency: a second to_latest pass must not duplicate the seed row.
@@ -797,7 +825,7 @@ fn space_v11_seeds_seven_rows_with_defaults_and_stays_unique() {
             .query_row(
                 "SELECT name, model_id, auto_execute_dangerous_tools,
                         shell_tool_enabled, context_compaction_enabled,
-                        context_compaction_turn_age, system_prompt,
+                        context_compaction_turn_age, context_note,
                         created_at, updated_at
                  FROM agent_configs WHERE id = ?1",
                 [id],
@@ -823,7 +851,7 @@ fn space_v11_seeds_seven_rows_with_defaults_and_stays_unique() {
             shell_enabled,
             compaction_enabled,
             compaction_turn_age,
-            system_prompt,
+            context_note,
             created_at,
             updated_at,
         ) = row;
@@ -833,7 +861,7 @@ fn space_v11_seeds_seven_rows_with_defaults_and_stays_unique() {
         assert_eq!(shell_enabled, 0, "{name} shell_tool off");
         assert_eq!(compaction_enabled, 0, "{name} compaction disabled");
         assert_eq!(compaction_turn_age, 3, "{name} compaction turn_age 3");
-        assert_eq!(system_prompt, "", "{name} system_prompt empty default");
+        assert_eq!(context_note, "", "{name} context_note empty default");
         assert_eq!(
             created_at, "9999-12-31T23:59:59.999Z",
             "{name} fixed far-future created_at"
@@ -955,7 +983,7 @@ fn world_v15_deletes_conversations_and_cascades() {
 fn to_latest_twice_is_idempotent_for_all_kinds() {
     let cases: [(&str, &Migrations, i64); 3] = [
         ("meta", &META_MIGRATIONS, 1),
-        ("space", &SPACE_MIGRATIONS, 12),
+        ("space", &SPACE_MIGRATIONS, 13),
         ("world", &WORLD_MIGRATIONS, 15),
     ];
     for (name, migrations, latest) in cases {
