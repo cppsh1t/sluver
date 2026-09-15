@@ -208,13 +208,16 @@ fn with_space_rejects_invalid_id() {
     let manager = DbManager::new(tmp.path().to_path_buf()).expect("manager new");
 
     let err = manager
-        .with_space("../../etc/passwd", |_| Ok::<(), DbError>(()))
+        .with_space("../../sluver-traversal-probe", |_| Ok::<(), DbError>(()))
         .expect_err("traversal id must reject");
     assert!(matches!(err, DbError::InvalidInput(_)));
 
-    // The traversal directory was NOT created.
+    // The traversal target was NOT created. The probe name is deliberately
+    // unique: on Linux `tmp/../..` resolves to `/`, so a literal
+    // "../../etc/passwd" check would test for the REAL /etc/passwd and
+    // always fail there.
     assert!(
-        !tmp.path().join("../../etc/passwd").exists(),
+        !tmp.path().join("../../sluver-traversal-probe").exists(),
         "path traversal must not reach the filesystem"
     );
 }
