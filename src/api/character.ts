@@ -5,7 +5,7 @@
  * registry, `worldId` selects the per-World DB within it.
  */
 
-import type { Character, CharacterId, CharacterPhase, CharacterSummary, PhaseId, WorldId } from '@/types';
+import type { Character, CharacterId, CharacterPhase, CharacterSummary, PhaseId, SummaryPage, WorldId } from '@/types';
 import { call } from './client';
 import type {
   CreateCharacterInput,
@@ -33,9 +33,25 @@ export function listCharacterSummaries(spaceId: string, worldId: WorldId): Promi
   return call<CharacterSummary[]>('list_character_summaries', { spaceId, worldId });
 }
 
-/** Substring search across name, aliases, description, notes, and tags. Returns matching summaries. */
-export function searchCharacters(spaceId: string, worldId: WorldId, query: string): Promise<CharacterSummary[]> {
-  return call<CharacterSummary[]>('search_characters', { spaceId, worldId, query });
+/**
+ * Substring search across name, aliases, description, notes, and tags.
+ * Returns one PAGE of matching summaries — 50 per page (`totalCount`
+ * carries the full match count; `truncated` reports further pages).
+ * Deterministic name ordering makes offset pages stable — walk `offset`
+ * 0, 50, 100, … while `truncated` is true.
+ *
+ * @param spaceId The Space owning the World.
+ * @param worldId The World to search.
+ * @param query   Substring to search for (case-insensitive).
+ * @param offset  Pagination offset in results (0-based); omit for 0.
+ */
+export function searchCharacters(
+  spaceId: string,
+  worldId: WorldId,
+  query: string,
+  offset?: number,
+): Promise<SummaryPage<CharacterSummary>> {
+  return call<SummaryPage<CharacterSummary>>('search_characters', { spaceId, worldId, query, offset });
 }
 
 export function updateCharacter(

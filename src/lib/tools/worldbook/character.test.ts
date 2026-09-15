@@ -150,9 +150,10 @@ describe("query tools", () => {
     expect(result).toEqual(summaries);
   });
 
-  it("search_characters passes the query", async () => {
+  it("search_characters passes the query (offset omitted → undefined)", async () => {
     const summaries = [{ id: characterId, name: "Elric", tags: [] }];
-    vi.mocked(searchCharacters).mockResolvedValue(summaries);
+    const page = { results: summaries, totalCount: 1, truncated: false };
+    vi.mocked(searchCharacters).mockResolvedValue(page);
 
     const result = await tools.search_characters.execute(
       { query: "wolf" },
@@ -160,8 +161,27 @@ describe("query tools", () => {
       call,
     );
 
-    expect(searchCharacters).toHaveBeenCalledWith(spaceId, worldId, "wolf");
-    expect(result).toEqual(summaries);
+    expect(searchCharacters).toHaveBeenCalledWith(
+      spaceId,
+      worldId,
+      "wolf",
+      undefined,
+    );
+    expect(result).toEqual(page);
+  });
+
+  it("search_characters forwards an explicit offset for pagination", async () => {
+    const page = { results: [], totalCount: 51, truncated: false };
+    vi.mocked(searchCharacters).mockResolvedValue(page);
+
+    const result = await tools.search_characters.execute(
+      { query: "wolf", offset: 50 },
+      ctx,
+      call,
+    );
+
+    expect(searchCharacters).toHaveBeenCalledWith(spaceId, worldId, "wolf", 50);
+    expect(result).toEqual(page);
   });
 
   it("get_character passes the id", async () => {
