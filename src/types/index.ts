@@ -97,6 +97,9 @@ export {
   type GrepResult,
 } from './grep';
 
+// ─── Search pagination (search_* page shape) ───────────────────────────────
+export { summaryPageSchema, type SummaryPage } from './search';
+
 // ─── Novel structure ──────────────────────────────────────────────────────
 export {
   novelSchema,
