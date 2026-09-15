@@ -2,9 +2,10 @@
  * Subagent block — the specialized `dispatch_subagent` ToolCard renderer
  * (ADR-0050 D10).
  *
- * One block per dispatch tool call: role name, task digest (first line),
- * live status, per-run Stop, approve-all, and click-to-drill into the run's
- * own transcript. N parallel dispatches render as N blocks in tool-call
+ * One block per dispatch tool call: role name + live status in the header,
+ * the full dispatched task prompt in a content section below the header,
+ * per-run Stop, approve-all, and click-to-drill into the run's own
+ * transcript. N parallel dispatches render as N blocks in tool-call
  * order (each anchors on its own `parentToolCallId` back-link while live,
  * on the persisted `runId` once the tool result lands).
  *
@@ -53,6 +54,7 @@ import type { WorldId } from "@/types";
 import { cn } from "@/lib/utils";
 import type { ToolBlockData } from "./message-render";
 import { asString, isRecord, unwrapToolOutput } from "./tool-summary";
+import { ToolDurationLabel } from "./tool-cards/tool-body";
 
 // ─── Drill-in context (provided by the chat route, D10) ────────────────────
 
@@ -268,17 +270,12 @@ export function SubagentBlock({ tool, worldId }: SubagentBlockProps) {
         <code className="shrink-0 rounded bg-secondary px-1.5 py-0.5 font-mono text-[0.6875rem] font-medium text-secondary-foreground">
           {roleName ?? tool.toolName}
         </code>
-        {taskDigest && (
-          <span
-            className="min-w-0 truncate text-[0.6875rem] text-muted-foreground"
-            title={taskDigest}
-          >
-            {taskDigest}
-          </span>
-        )}
         <span className={cn("ml-auto shrink-0 text-[0.6875rem]", statusLabelClass(state))}>
           {statusLabel}
         </span>
+        {/* Dispatch duration naturally equals the whole child-run wall time
+            (dispatch_subagent blocks until the child finishes) — desired. */}
+        <ToolDurationLabel durationMs={tool.durationMs} />
         {canDrill && (
           <HugeiconsIcon
             icon={ChevronRightIcon}
@@ -288,6 +285,19 @@ export function SubagentBlock({ tool, worldId }: SubagentBlockProps) {
           />
         )}
       </button>
+
+      {/* Full dispatched task prompt — always visible, scroll-capped only
+          (PayloadBlock max-height pattern). The first-line digest lives on
+          solely as the drill-in breadcrumb payload. */}
+      {input?.task && (
+        <div className="border-t border-border/60 px-2.5 py-1.5">
+          <div className="max-h-48 overflow-y-auto">
+            <p className="whitespace-pre-wrap break-words text-[0.6875rem] leading-relaxed text-muted-foreground">
+              {input.task}
+            </p>
+          </div>
+        </div>
+      )}
 
       {(showStop || showApproveAll) && (
         <div className="flex items-center gap-2 border-t border-border/60 px-2.5 py-1.5">
