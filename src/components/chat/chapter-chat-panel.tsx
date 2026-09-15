@@ -272,7 +272,7 @@ export function ChapterChatPanel({
   }
 
   return (
-    <aside className="flex w-96 shrink-0 flex-col border-l bg-background">
+    <aside className="flex w-[clamp(24rem,30vw,34rem)] shrink-0 flex-col border-l bg-background">
       {/* ── Header: title + collapse + corner conversation menu ─────────── */}
       <div className="flex items-center justify-between gap-1 border-b px-3 py-1.5">
         <h2 className="truncate text-sm font-semibold tracking-tight">

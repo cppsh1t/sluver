@@ -474,8 +474,17 @@ function ChapterWorkspacePage() {
           </div>
         </div>
         {/* Scrollable content */}
+        {/* Edit mode: fills the column (no width cap — a cap leaves a dead
+            zone between the content and the chat panel on wide windows) with
+            a comfortable px-8 manuscript gutter. Read mode keeps the
+            centered max-w-3xl reading column untouched. */}
         <div ref={readScrollRef} className="flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-3xl px-4 py-6">
+          <div
+            className={cn(
+              "w-full py-6",
+              mode === "edit" ? "px-8" : "mx-auto max-w-3xl px-4",
+            )}
+          >
             {/* Chapter header */}
             {chTitleEditing ? (
               <Input
