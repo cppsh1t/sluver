@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createRoute, useParams } from "@tanstack/react-router";
+import { createRoute, useNavigate, useParams } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
@@ -26,6 +26,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Add01Icon,
+  ArrowLeft02Icon,
   PencilEdit01Icon,
 } from "@hugeicons/core-free-icons";
 import { SceneCard } from "@/components/worldbook/scene-card";
@@ -143,6 +144,7 @@ function ChapterWorkspacePage() {
   const nid = novelId as NovelId;
   const cid = chapterId as ChapterId;
   const { mode, setMode } = useWorkspaceMode();
+  const navigate = useNavigate();
 
   // ─── Data ────────────────────────────────────────────────────────────────
   const { data: chapters = [] } = useChapters(spaceId, wid, nid);
@@ -427,8 +429,30 @@ function ChapterWorkspacePage() {
     <div className="flex flex-1 overflow-hidden">
       {/* ─── Center area ─────────────────────────────────────────────────── */}
       <div className="relative flex flex-1 flex-col overflow-hidden">
-        {/* Top toolbar: mode toggle */}
-        <div className="flex justify-end border-b px-4 py-2">
+        {/* Top toolbar: back (edit mode — read mode has it in the sidebar) + mode toggle */}
+        <div className="flex items-center justify-between border-b px-4 py-2">
+          <div className="flex items-center">
+            {mode === "edit" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="-ml-1 justify-start px-1 text-muted-foreground"
+                onClick={() =>
+                  navigate({
+                    to: "/space/$spaceId/world/$worldId/novels",
+                    params: { spaceId, worldId },
+                  })
+                }
+              >
+                <HugeiconsIcon
+                  icon={ArrowLeft02Icon}
+                  strokeWidth={2}
+                  data-icon="inline-start"
+                />
+                {t("novel:workspace.back")}
+              </Button>
+            )}
+          </div>
           <div className="flex rounded-md bg-muted p-0.5" role="group">
             {(["edit", "read"] as const).map((m) => (
               <button
