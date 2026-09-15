@@ -63,6 +63,13 @@ export interface ToolBlockData {
   readonly error: { code: string; message: string } | null;
   /** Present when this tool call is awaiting user approval. */
   readonly pendingApproval?: PendingApproval;
+  /**
+   * Execution duration in ms (consent wait excluded). Live segments carry
+   * it directly; persisted blocks pick it up from the session-lifetime
+   * `toolDurations` cache (`ConversationView.toolDurations`) — absent for
+   * runs older than the current app session.
+   */
+  readonly durationMs?: number;
 }
 
 /**
@@ -280,12 +287,17 @@ function safeStringify(value: unknown): string {
  * that carries an entry in `messageUsages`. The cache-read / cache-write
  * annotation is attached only to the turn's last assistant message, and only
  * when `lastTurnUsage` is present (ephemeral — see {@link TokenFooterBlock}).
+ *
+ * Persisted tool-call cards pick their `durationMs` up from
+ * `toolDurations` (the session-lifetime runtime cache swept at run
+ * finalization — see `ConversationView.toolDurations`).
  */
 function blocksForMessages(
   messages: readonly SessionMessage[],
   messageUsages: Record<string, MessageUsage>,
   lastAssistantId: string | null,
   lastTurnUsage: LanguageModelUsage | undefined,
+  toolDurations: Record<string, number>,
 ): RenderBlock[] {
   // Pre-pass: toolCallId → result output (scan tool-role msgs + any stray
   // tool-result parts on assistant messages).
@@ -366,6 +378,9 @@ function blocksForMessages(
                   status: results.has(tc.toolCallId) ? "done" : "running",
                   output: results.get(tc.toolCallId) ?? null,
                   error: null,
+                  ...(toolDurations[tc.toolCallId] !== undefined
+                    ? { durationMs: toolDurations[tc.toolCallId] }
+                    : {}),
                 },
               });
             }
@@ -423,6 +438,7 @@ function toolBlockFromLive(
     status: tc.status,
     output: tc.output,
     error: tc.error,
+    durationMs: tc.durationMs,
     pendingApproval,
   };
 }
@@ -449,6 +465,9 @@ function toolBlockFromLive(
  *   (ADR-0030 §5/§6). Supplies the cache-read / cache-write annotation
  *   attached to the turn's last assistant message; `undefined` between turns
  *   and on first load ⇒ historical footers render without the cache paren.
+ * @param toolDurations session-lifetime per-toolCallId durations
+ *   (`ConversationView.toolDurations`); attaches `durationMs` to persisted
+ *   tool cards. Defaults to `{}` (no durations — e.g. tests).
  */
 export function buildBlocks(
   messages: readonly SessionMessage[],
@@ -458,6 +477,7 @@ export function buildBlocks(
   stopReason: "aborted" | null = null,
   messageUsages: Record<string, MessageUsage> = {},
   lastTurnUsage?: LanguageModelUsage,
+  toolDurations: Record<string, number> = {},
 ): RenderBlock[] {
   // Last persisted assistant id — gates which footer (if any) gets the
   // ephemeral cache annotation. Reverse scan; `null` when there is none.
@@ -474,6 +494,7 @@ export function buildBlocks(
     messageUsages,
     lastAssistantId,
     lastTurnUsage,
+    toolDurations,
   );
 
   // Optimistic user echo for the in-flight turn. The runtime appends the user

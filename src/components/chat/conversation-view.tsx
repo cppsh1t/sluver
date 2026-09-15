@@ -241,6 +241,7 @@ export function ConversationView({
     view.stopReason,
     view.messageUsages,
     view.lastTurnUsage,
+    view.toolDurations,
   );
 
   const isEmpty = blocks.length === 0 && !agentLoading && view.error === null;

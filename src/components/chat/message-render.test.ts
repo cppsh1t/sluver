@@ -186,3 +186,55 @@ describe("buildBlocks with attachments", () => {
     expect(blocks.some((b) => b.id === "__pending_user__")).toBe(false);
   });
 });
+
+describe("buildBlocks tool durations (session-lifetime cache)", () => {
+  // Persisted thread shape: assistant tool-call part + a tool-role message
+  // carrying the matching tool-result (folded into the card pre-pass).
+  const toolCallMsg: SessionMessage = {
+    id: "a1",
+    sessionId: "s1",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    role: "assistant",
+    content: [
+      { type: "tool-call", toolCallId: "tc1", toolName: "list_characters", input: { limit: 5 } },
+    ],
+  };
+  const toolResultMsg: SessionMessage = {
+    id: "t1",
+    sessionId: "s1",
+    createdAt: "2026-01-01T00:00:01.000Z",
+    role: "tool",
+    content: [
+      { type: "tool-result", toolCallId: "tc1", toolName: "list_characters", output: { type: "text", value: "[]" } },
+    ],
+  };
+
+  it("attaches durationMs from the toolDurations map to persisted tool cards", () => {
+    const blocks = buildBlocks(
+      [toolCallMsg, toolResultMsg],
+      null,
+      false,
+      null,
+      null,
+      {},
+      undefined,
+      { tc1: 1400 },
+    );
+    const block = blocks.find((b) => b.id === "a1#tool-tc1");
+    expect(block?.kind).toBe("tool");
+    if (block?.kind === "tool") {
+      expect(block.tool.status).toBe("done");
+      expect(block.tool.durationMs).toBe(1400);
+    }
+  });
+
+  it("leaves durationMs undefined when no toolDurations map is passed", () => {
+    const blocks = buildBlocks([toolCallMsg, toolResultMsg], null, false, null);
+    const block = blocks.find((b) => b.id === "a1#tool-tc1");
+    expect(block?.kind).toBe("tool");
+    if (block?.kind === "tool") {
+      expect(block.tool.status).toBe("done");
+      expect(block.tool.durationMs).toBeUndefined();
+    }
+  });
+});
