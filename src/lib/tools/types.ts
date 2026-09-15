@@ -250,16 +250,19 @@ export interface SubagentDispatchInput {
  *
  * - `"completed"`  — the child run finished (`stop`/`length`/`max-steps`/…).
  * - `"aborted"`    — the PARENT run was stopped and the abort cascaded (D4).
- * - `"stopped"`    — this child alone was stopped via `SubagentRunner.stop`.
+ * - `"stopped"`    — this child alone was stopped via `SubagentRunner.stop`
+ *   (the UI Stop button — a USER action; the finalMessage states it
+ *   explicitly so the Orchestrator never mistakes it for a self-stop).
  * - `"error"`      — the child run errored (or the dispatch itself failed).
  * - `"unconfigured"` — the role's AgentConfig has no bound model; NO
  *   conversation was created (`runId` is `null`). The Orchestrator reports
  *   this to the user (D6 — explicit-fail over silent-hide).
  *
- * `finalMessage` is the child's last assistant text (partial text for
- * aborted/stopped runs; the error description for errored runs; guidance for
- * `unconfigured`) — NEVER the transcript. `usage` carries the child run's
- * summed input/output tokens.
+ * `finalMessage` is the child's last assistant text (the error description
+ * for errored runs; guidance for `unconfigured`) — NEVER the transcript.
+ * For `stopped` runs it leads with an explicit user-stop notice (keeping
+ * any partial output); for `aborted` runs it is whatever partial text
+ * exists. `usage` carries the child run's summed input/output tokens.
  *
  * ## Never rejects
  *

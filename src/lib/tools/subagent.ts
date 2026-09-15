@@ -100,7 +100,7 @@ export function subagentTools(): Record<string, ToolDef> {
         "ONE dispatch = ONE fresh one-shot run: the subagent starts with no memory of this conversation, sees ONLY the task brief you write, does its work through its own tools (database reads and writes, web research where the role carries it), and returns its final report message. " +
         "Write the brief accordingly — include every id, name, and requirement the subagent needs; never refer to \"above\" or \"as discussed\". " +
         "Dispatches emitted as SIBLING calls in one step run concurrently and all block until they finish — prefer that for independent work (e.g. one writer per scene); sequence dispatches across steps when a later task depends on an earlier result. " +
-        "The result carries { runId, status, finalMessage, usage }: status \"completed\" with the subagent's final report; \"unconfigured\" when that role has no model bound (tell the user to bind one in Settings and ask how to proceed); \"aborted\"/\"stopped\" with whatever partial text exists; \"error\" with the failure. " +
+        "The result carries { runId, status, finalMessage, usage }: status \"completed\" with the subagent's final report; \"unconfigured\" when that role has no model bound (tell the user to bind one in Settings and ask how to proceed); \"stopped\" when the USER stopped that run from the UI (finalMessage says so; acknowledge the stop and ask the user before re-dispatching the same task); \"aborted\" when your own run was stopped and the abort cascaded into the child (whatever partial text exists); \"error\" with the failure. " +
         "Do not re-dispatch a task that already succeeded; inspect the report and decide.",
       inputSchema,
       consentLevel: "auto",
