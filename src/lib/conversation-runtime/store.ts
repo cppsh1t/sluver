@@ -2078,14 +2078,21 @@ export function createConversationRuntimeStore(
         //    action on the child's own slot) maps to "stopped"; the parent
         //    cascade below aborts reason-less → "aborted". Fires exactly
         //    once per aborted run, whichever path triggered it.
-        let abortSource: "aborted" | "stopped" = "aborted";
+        // Boxed on purpose: closure writes don't participate in
+        // straight-line control-flow narrowing, so a plain `let` would be
+        // read back as its literal "aborted" initializer (TS2367 on the
+        // `=== "stopped"` check below). Property reads keep the declared
+        // union across the intervening calls.
+        const abortSource: { source: "aborted" | "stopped" } = {
+          source: "aborted",
+        };
         const unsubSource = handle.subscribe((event) => {
           if (event.type === "abort") {
-            abortSource =
+            abortSource.source =
               event.reason === SUBAGENT_STOP_REASON ? "stopped" : "aborted";
             logger.info("subagent.run_stopped", {
               run_id: conversation.id,
-              source: abortSource,
+              source: abortSource.source,
             });
           }
         });
@@ -2108,12 +2115,24 @@ export function createConversationRuntimeStore(
         let status: SubagentDispatchResult["status"];
         let finalMessage: string;
         switch (result.finishReason) {
-          case "aborted":
-            status = abortSource;
+          case "aborted": {
+            status = abortSource.source;
             // Partial text: result.messages carries best-effort salvaged
             // assistant output (D3 — whatever exists plus the status).
-            finalMessage = lastAssistantText(result.messages);
+            const partial = lastAssistantText(result.messages);
+            if (abortSource.source === "stopped") {
+              // A user stop must be unmistakable to the Orchestrator: the
+              // bare "stopped" status doesn't say WHO stopped the run, so
+              // the model could re-dispatch a task the user just killed.
+              // State the cause explicitly, keeping any partial output.
+              finalMessage = partial
+                ? `The user stopped this subagent run. Partial output before the stop:\n${partial}`
+                : "The user stopped this subagent run.";
+            } else {
+              finalMessage = partial;
+            }
             break;
+          }
           case "error":
             status = "error";
             finalMessage = result.error

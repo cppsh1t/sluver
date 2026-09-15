@@ -1136,7 +1136,8 @@ describe("subagent dispatch runtime", () => {
 
     await expect(promise).resolves.toMatchObject({
       status: "stopped",
-      finalMessage: "Half a scene…",
+      finalMessage:
+        "The user stopped this subagent run. Partial output before the stop:\nHalf a scene…",
     });
   });
 
@@ -1222,7 +1223,11 @@ describe("subagent dispatch runtime", () => {
     );
     await flush();
     await flush();
-    await expect(promise).resolves.toMatchObject({ status: "stopped" });
+    await expect(promise).resolves.toMatchObject({
+      status: "stopped",
+      // The user-stop notice leads; the partial text rides along.
+      finalMessage: expect.stringContaining("The user stopped this subagent run"),
+    });
 
     // The dispatch contract's authoritative word wins over driveRun's
     // generic stopReason, which alone would read "aborted".
