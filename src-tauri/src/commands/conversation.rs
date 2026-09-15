@@ -61,8 +61,9 @@ fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<Message> {
 // ─── commands ───────────────────────────────────────────────────────────────
 
 /// List `kind = "world"` conversations, newest first. Chapter conversations
-/// are NOT returned here — they are looked up per-chapter by future commands
-/// (ADR Q6b). The `meta->>'kind'` filter uses SQLite's JSON1 extension.
+/// are NOT returned here — they are looked up per-chapter by
+/// `list_chapter_conversations` below (ADR Q6b). The `meta->>'kind'` filter
+/// uses SQLite's JSON1 extension.
 #[tracing::instrument(skip(state))]
 #[tauri::command]
 pub fn list_conversations(
@@ -79,6 +80,52 @@ pub fn list_conversations(
         )?;
         let rows = stmt
             .query_map([], row_to_conversation)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    })
+}
+
+/// List `kind = "chapter"` conversations bound to ONE chapter, newest first
+/// — the per-chapter companion of `list_conversations` above (which returns
+/// `kind = "world"` rows only, ADR Q6b). World-kind rows and chapter rows
+/// for other chapters stay out.
+///
+/// CRITICAL: the `meta` JSON column carries **camelCase** keys (models use
+/// `#[serde(rename_all = "camelCase")]`, and `create_conversation` writes
+/// `{"kind":"chapter","chapterId":...}`) — the JSON path below MUST be
+/// `chapterId`, not `chapter_id`, or the filter silently matches nothing.
+#[tracing::instrument(skip(state), fields(world_id = %world_id, chapter_id = %chapter_id))]
+#[tauri::command]
+pub fn list_chapter_conversations(
+    space_id: String,
+    world_id: String,
+    chapter_id: String,
+    state: State<'_, DbManager>,
+) -> Result<Vec<Conversation>, DbError> {
+    do_list_chapter_conversations(&state, &space_id, &world_id, &chapter_id)
+}
+
+/// `list_chapter_conversations` implementation over a bare `&DbManager` —
+/// the `do_*` split per the crate's no-mock-runtime test convention (see
+/// `commands/space.rs`). The command wrapper above only adds tracing.
+pub(crate) fn do_list_chapter_conversations(
+    mgr: &DbManager,
+    space_id: &str,
+    world_id: &str,
+    chapter_id: &str,
+) -> Result<Vec<Conversation>, DbError> {
+    // UUID-shape guard — same `validate_id` check `with_world` runs on
+    // space_id/world_id; every entity id is validated at the boundary.
+    DbManager::validate_id(chapter_id)?;
+    mgr.with_world(space_id, world_id, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT id, agent_config_name, title, meta, created_at, updated_at
+             FROM conversations
+             WHERE meta->>'kind' = 'chapter' AND meta->>'chapterId' = ?1
+             ORDER BY updated_at DESC",
+        )?;
+        let rows = stmt
+            .query_map(params![chapter_id], row_to_conversation)?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     })

@@ -1066,3 +1066,179 @@ fn delete_conversation_without_children_and_unknown_id() {
         "expected NotFound(\"Conversation\", _), got {err:?}"
     );
 }
+
+// ─── list_chapter_conversations (per-chapter list) ──────────────────────────
+
+/// Pin a conversation's `updated_at` directly — `create_conversation`
+/// stamps `now_iso()` and same-millisecond collisions are possible, so
+/// ordering tests pin deterministic sentinels (same precedent as the
+/// sentinel pins in the delete_messages/update_message bump tests above).
+fn pin_updated_at(fx: &WorldFixture, conv: &str, updated_at: &str) {
+    with_world(fx, |conn| {
+        conn.execute(
+            "UPDATE conversations SET updated_at = ?1 WHERE id = ?2",
+            params![updated_at, conv],
+        )?;
+        Ok(())
+    })
+    .expect("pin updated_at");
+}
+
+/// The per-chapter filter returns ONLY chapter-kind rows bound to the
+/// target chapter: a world-kind conversation and a chapter-kind row for a
+/// DIFFERENT chapter must both stay out (ADR Q6b — the chapter companion
+/// of `subagent_conversations_stay_hidden_from_list_filter`).
+#[test]
+fn list_chapter_conversations_returns_only_target_chapter_rows() {
+    let fx = make_space_with_world();
+    let chapter = uuid_shape(80);
+    let other_chapter = uuid_shape(81);
+
+    let target = do_create_conversation(
+        &fx.mgr,
+        &fx.space_id,
+        &fx.world_id,
+        CreateConversationInput {
+            agent_config_name: "writer".into(),
+            kind: "chapter".into(),
+            chapter_id: Some(chapter.clone()),
+            parent_conversation_id: None,
+            parent_tool_call_id: None,
+            role: None,
+            title: None,
+        },
+    )
+    .expect("create chapter conversation for the target chapter");
+
+    let _world = do_create_conversation(
+        &fx.mgr,
+        &fx.space_id,
+        &fx.world_id,
+        CreateConversationInput {
+            agent_config_name: "writer".into(),
+            kind: "world".into(),
+            chapter_id: None,
+            parent_conversation_id: None,
+            parent_tool_call_id: None,
+            role: None,
+            title: None,
+        },
+    )
+    .expect("create world conversation");
+
+    let _other = do_create_conversation(
+        &fx.mgr,
+        &fx.space_id,
+        &fx.world_id,
+        CreateConversationInput {
+            agent_config_name: "writer".into(),
+            kind: "chapter".into(),
+            chapter_id: Some(other_chapter),
+            parent_conversation_id: None,
+            parent_tool_call_id: None,
+            role: None,
+            title: None,
+        },
+    )
+    .expect("create chapter conversation for a different chapter");
+
+    assert_eq!(count(&fx, "conversations"), 3, "all three rows persisted");
+
+    let listed = do_list_chapter_conversations(&fx.mgr, &fx.space_id, &fx.world_id, &chapter)
+        .expect("list conversations for the target chapter");
+
+    assert_eq!(
+        listed.len(),
+        1,
+        "world-kind and other-chapter rows must stay out"
+    );
+    assert_eq!(listed[0].id, target.id);
+    assert_eq!(
+        listed[0].meta,
+        serde_json::json!({ "kind": "chapter", "chapterId": chapter }),
+        "meta round-trips with the camelCase chapterId key"
+    );
+}
+
+/// Results are ordered `updated_at DESC` (newest first), mirroring
+/// `list_conversations` — the per-chapter list is a recency list too.
+#[test]
+fn list_chapter_conversations_orders_by_updated_at_desc() {
+    let fx = make_space_with_world();
+    let chapter = uuid_shape(82);
+
+    let oldest = do_create_conversation(
+        &fx.mgr,
+        &fx.space_id,
+        &fx.world_id,
+        CreateConversationInput {
+            agent_config_name: "writer".into(),
+            kind: "chapter".into(),
+            chapter_id: Some(chapter.clone()),
+            parent_conversation_id: None,
+            parent_tool_call_id: None,
+            role: None,
+            title: None,
+        },
+    )
+    .expect("create oldest chapter conversation");
+
+    let middle = do_create_conversation(
+        &fx.mgr,
+        &fx.space_id,
+        &fx.world_id,
+        CreateConversationInput {
+            agent_config_name: "writer".into(),
+            kind: "chapter".into(),
+            chapter_id: Some(chapter.clone()),
+            parent_conversation_id: None,
+            parent_tool_call_id: None,
+            role: None,
+            title: None,
+        },
+    )
+    .expect("create middle chapter conversation");
+
+    let newest = do_create_conversation(
+        &fx.mgr,
+        &fx.space_id,
+        &fx.world_id,
+        CreateConversationInput {
+            agent_config_name: "writer".into(),
+            kind: "chapter".into(),
+            chapter_id: Some(chapter.clone()),
+            parent_conversation_id: None,
+            parent_tool_call_id: None,
+            role: None,
+            title: None,
+        },
+    )
+    .expect("create newest chapter conversation");
+
+    pin_updated_at(&fx, &oldest.id, "2026-01-01T00:00:01.000Z");
+    pin_updated_at(&fx, &middle.id, "2026-01-01T00:00:02.000Z");
+    pin_updated_at(&fx, &newest.id, "2026-01-01T00:00:03.000Z");
+
+    let listed = do_list_chapter_conversations(&fx.mgr, &fx.space_id, &fx.world_id, &chapter)
+        .expect("list conversations for the chapter");
+
+    assert_eq!(
+        listed.iter().map(|c| c.id.clone()).collect::<Vec<_>>(),
+        vec![newest.id, middle.id, oldest.id],
+        "newest first (updated_at DESC)"
+    );
+}
+
+/// `chapter_id` runs through the same UUID-shape guard as every other
+/// entity id at the command boundary — malformed input is an
+/// `InvalidInput`, never a silent empty list.
+#[test]
+fn list_chapter_conversations_rejects_non_uuid_chapter_id() {
+    let fx = make_space_with_world();
+    let err = do_list_chapter_conversations(&fx.mgr, &fx.space_id, &fx.world_id, "not-a-uuid")
+        .expect_err("malformed chapter_id must be rejected");
+    assert!(
+        matches!(err, DbError::InvalidInput(_)),
+        "expected InvalidInput, got {err:?}"
+    );
+}
