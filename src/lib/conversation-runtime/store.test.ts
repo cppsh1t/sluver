@@ -16,9 +16,16 @@
  * / loading-retry), parent-abort cascade → "aborted", and per-child stop →
  * "stopped" via the abort-reason channel.
  *
+ * Plus the chapter anchor context injection: a `kind === "chapter"`
+ * conversation's Agent system prompt gains a `<chapter_context>` block
+ * (chapterId + title from a mocked `getChapter`), world-kind conversations
+ * gain nothing, and a rejecting `getChapter` degrades to a block-less but
+ * fully runnable Agent.
+ *
  * The heavy collaborators are mocked at their module boundaries
  * (`@/lib/ai`, `@/lib/ai-store`, `@/lib/ai-roles`, `@/api/conversation`,
- * `@/lib/notify`, `@/lib/logger`); the store under test is REAL.
+ * `@/api/novel`, `@/lib/notify`, `@/lib/logger`); the store under test is
+ * REAL.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -33,10 +40,11 @@ import {
   type ModelResolver,
   type PersistErrorHandler,
 } from "./store";
-import type {
-  AgentLoopRunResult,
-  LanguageModel,
-  SessionMessage,
+import {
+  AgentLoop,
+  type AgentLoopRunResult,
+  type LanguageModel,
+  type SessionMessage,
 } from "@/lib/ai";
 import type { SubagentRunner, ToolContext } from "@/lib/tools/types";
 import {
@@ -45,7 +53,11 @@ import {
   loadMessages as loadMessagesIpc,
   updateMessage as updateMessageIpc,
 } from "@/api/conversation";
+import { getChapter } from "@/api/novel";
+import { logger } from "@/lib/logger";
 import {
+  chapterIdSchema,
+  chapterSchema,
   conversationSchema,
   spaceIdSchema,
   type Conversation,
@@ -127,6 +139,12 @@ vi.mock("@/api/conversation", () => ({
   updateMessage: vi.fn(async () => {}),
   // ADR-0050 D2 — hidden subagent run creation (flat linkage fields).
   createConversation: vi.fn(),
+}));
+
+// Chapter context injection — only `getChapter` is on the store's import
+// surface from `@/api/novel`; each test scripts its own outcome.
+vi.mock("@/api/novel", () => ({
+  getChapter: vi.fn(),
 }));
 
 // ─── Fixtures ──────────────────────────────────────────────────────────────
@@ -264,6 +282,7 @@ beforeEach(() => {
   agentMocks.replaceMessage.mockReset();
   agentMocks.contexts.length = 0;
   runCounter = 0;
+  vi.mocked(getChapter).mockReset();
   // Default createConversation: a valid kind=subagent row with a fresh id
   // (individual tests may override). Mirrors the Rust command's read-back.
   let convCounter = 0;
@@ -1342,5 +1361,97 @@ describe("subagent dispatch runtime", () => {
       .getState()
       .ensureRuntime(WORLD_ID, makeConversation("conv-idle"), loadingResolver, noopPersistError);
     expect(() => store.getState().approveAllForRun(WORLD_ID, "conv-idle")).not.toThrow();
+  });
+});
+
+// ─── Chapter anchor context injection ──────────────────────────────────────
+
+describe("chapter context injection", () => {
+  /** A full Chapter row fixture (parsed to satisfy the branded ids). */
+  const chapter = chapterSchema.parse({
+    id: "ch-7",
+    novelId: "nv-1",
+    title: "The Ice Throne",
+    summary: "",
+    sceneIds: [],
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
+
+  function makeChapterConversation(): Conversation {
+    return makeConversation("conv-ch", { kind: "chapter", chapterId: "ch-7" });
+  }
+
+  /**
+   * The systemPrompt handed to the (module-mocked) AgentLoop on its latest
+   * construction — constructAgent's `effectiveSystemPrompt` lands here, so
+   * this is the seam the block-injection assertions read.
+   */
+  function lastLoopSystemPrompt(): string {
+    const calls = vi.mocked(AgentLoop).mock.calls;
+    const last = calls[calls.length - 1];
+    if (!last) throw new Error("AgentLoop was not constructed");
+    return last[0].systemPrompt;
+  }
+
+  it("injects a <chapter_context> block with the chapterId and title for chapter-kind conversations", async () => {
+    vi.mocked(getChapter).mockResolvedValue(chapter);
+    const store = createConversationRuntimeStore(SPACE_ID);
+    await store
+      .getState()
+      .ensureRuntime(WORLD_ID, makeChapterConversation(), readyResolver, noopPersistError);
+    await flush();
+    await flush(); // constructAgent awaits getChapter before Agent.open
+
+    expect(vi.mocked(getChapter)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(getChapter)).toHaveBeenCalledWith(
+      SPACE_ID,
+      WORLD_ID,
+      chapterIdSchema.parse("ch-7"),
+    );
+
+    const prompt = lastLoopSystemPrompt();
+    expect(prompt).toContain("<chapter_context>");
+    expect(prompt).toContain("ch-7");
+    expect(prompt).toContain("The Ice Throne");
+    expect(prompt).toContain("nv-1");
+  });
+
+  it("does not inject the block (nor fetch a chapter) for world-kind conversations", async () => {
+    const store = createConversationRuntimeStore(SPACE_ID);
+    await store
+      .getState()
+      .ensureRuntime(WORLD_ID, makeConversation("conv-w"), readyResolver, noopPersistError);
+    await flush();
+
+    expect(vi.mocked(getChapter)).not.toHaveBeenCalled();
+    expect(lastLoopSystemPrompt()).not.toContain("<chapter_context>");
+  });
+
+  it("still constructs a runnable agent when getChapter rejects: block skipped, failure logged", async () => {
+    vi.mocked(getChapter).mockRejectedValue(new Error("chapter gone"));
+    const store = createConversationRuntimeStore(SPACE_ID);
+    await store
+      .getState()
+      .ensureRuntime(WORLD_ID, makeChapterConversation(), readyResolver, noopPersistError);
+    await flush();
+    await flush();
+
+    // Construction succeeded — no view error, and a run goes through.
+    expect(viewOf(store, "conv-ch").error).toBeNull();
+    agentMocks.run.mockReturnValue(makeRunHandle());
+    await store
+      .getState()
+      .send(WORLD_ID, "conv-ch", "hi", readyResolver, noopPersistError, noopAutoTitle, visionUnknown);
+    await flush();
+    expect(agentMocks.run).toHaveBeenCalledTimes(1);
+
+    // Degradation is deterministic: the whole block is absent.
+    expect(lastLoopSystemPrompt()).not.toContain("<chapter_context>");
+    expect(logger.warn).toHaveBeenCalledWith("chat.chapter_context.failed", {
+      chapter_id: "ch-7",
+      world_id: WORLD_ID,
+      error: "chapter gone",
+    });
   });
 });

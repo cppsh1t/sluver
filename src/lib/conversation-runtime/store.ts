@@ -57,6 +57,7 @@ import {
   getPhaseImage,
   getWorldImage,
 } from "@/api/image";
+import { getChapter } from "@/api/novel";
 import { getSceneImage } from "@/api/scene-image";
 import { createAgentEventLogger } from "@/lib/ai/agent-logging";
 import {
@@ -80,6 +81,7 @@ import type {
 } from "@/lib/tools/types";
 import {
   characterIdSchema,
+  chapterIdSchema,
   eventIdSchema,
   itemIdSchema,
   locationIdSchema,
@@ -90,6 +92,7 @@ import {
   worldIdSchema,
 } from "@/types";
 import type {
+  Chapter,
   Conversation,
   ContextCompaction,
   ConversationId,
@@ -967,6 +970,63 @@ const LOOK_AT_PROMPT_BLOCK = [
 ].join("\n");
 
 /**
+ * Build the `<chapter_context>` block injected into the effective system
+ * prompt when the conversation is chapter-anchored (`meta.kind ===
+ * "chapter"` — the chapter-editor chat panel). One `getChapter` read at
+ * Agent-construction time tells the model WHICH chapter it is attached to,
+ * so it can call `get_chapter_overview` with the right id and target scene
+ * edits correctly.
+ *
+ * Tolerant by design: a rejecting `getChapter` (chapter deleted, race with
+ * another window, IPC hiccup) logs a warn and resolves `null` — the block
+ * is skipped and Agent construction proceeds. A fetched chapter whose title
+ * is blank degrades to the title-less form. Like the roster/skills/look_at
+ * machinery blocks, it is additive: it never removes or rewrites the role
+ * prompt.
+ *
+ * NOTE (accepted trade-off): the Agent is cached per conversation for the
+ * Space window lifetime (ADR-0024), so a chapter renamed mid-window will
+ * NOT refresh an already-constructed agent's prompt — the stale title rides
+ * until the window (and its runtime cache) is torn down. The chapter_id
+ * anchor itself is stable, so tool calls stay correctly targeted.
+ */
+async function buildChapterContextBlock(
+  conversation: Conversation,
+  spaceId: SpaceId,
+  worldId: string,
+): Promise<string | null> {
+  const meta = conversation.meta;
+  if (meta.kind !== "chapter") return null;
+
+  let chapter: Chapter;
+  try {
+    chapter = await getChapter(
+      spaceId,
+      worldId as WorldId,
+      chapterIdSchema.parse(meta.chapterId),
+    );
+  } catch (e) {
+    logger.warn("chat.chapter_context.failed", {
+      chapter_id: meta.chapterId,
+      world_id: worldId,
+      error: e instanceof Error ? e.message : String(e),
+    });
+    return null;
+  }
+
+  // Graceful title degradation: a blank title drops the quoted segment
+  // rather than rendering `""` (the id + novel_id remain the real anchor).
+  const title = chapter.title.trim();
+  const titleSegment = title.length > 0 ? `"${title}" ` : "";
+  return [
+    "<chapter_context>",
+    `This conversation is attached to the chapter ${titleSegment}(chapter_id: ${meta.chapterId}, novel_id: ${chapter.novelId}).`,
+    "Call get_chapter_overview with this chapter_id for the chapter's scenes, summaries, and structure before answering chapter-specific questions or editing scenes.",
+    "</chapter_context>",
+  ].join("\n");
+}
+
+/**
  * Construct a stateful {@link Agent} for a conversation. Resolves the role
  * definition from the registry (ADR-0050 D1), builds a `TauriSessionStore`
  * + `AgentLoop`, and loads history via the async `Agent.open` factory.
@@ -1148,6 +1208,14 @@ async function constructAgent(
   // ADR-0043 §3 catalog — appended AFTER the role prompt. It is additive
   // machinery, not user content: the context note never removes it. Skipped
   // entirely when the role has no enabled skills.
+  // Chapter anchor context — appended last: present only for chapter-
+  // anchored conversations and only when the `getChapter` read succeeded
+  // (see buildChapterContextBlock for the caching trade-off).
+  const chapterContextBlock = await buildChapterContextBlock(
+    conversation,
+    spaceId,
+    worldId,
+  );
   const effectiveSystemPrompt = [
     baseSystemPrompt,
     ...(roleDefinition.kind === "conversational"
@@ -1155,6 +1223,7 @@ async function constructAgent(
       : []),
     LOOK_AT_PROMPT_BLOCK,
     ...(skills.length > 0 ? [buildAvailableSkillsBlock(skills)] : []),
+    ...(chapterContextBlock !== null ? [chapterContextBlock] : []),
   ].join("\n\n");
   const loop = new AgentLoop({
     model,
