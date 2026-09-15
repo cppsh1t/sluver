@@ -1,5 +1,11 @@
 use super::*;
+use crate::commands::conversation::{do_append_messages, do_create_conversation};
+use crate::models::attachment::AttachmentInput;
+use crate::models::conversation::{
+    AppendMessagesInput, Conversation, CreateConversationInput, MessageInput,
+};
 use crate::testutil::{make_space_with_world, uuid_shape, with_world, WorldFixture};
+use base64::Engine as _;
 
 const NOW: &str = "2026-01-01T00:00:00.000Z";
 
@@ -835,6 +841,365 @@ fn delete_novel_cascades_chapters_scenes_junctions() {
     assert_eq!(
         junctions_after, 0,
         "junction rows must cascade all the way down"
+    );
+}
+
+// ─── chapter/novel delete → conversation sweep (meta.chapterId linkage) ──────
+
+/// Create a `kind = "chapter"` conversation anchored to `chapter_id` via
+/// the real create path (server-built meta, camelCase `chapterId`).
+fn chapter_conversation(fx: &WorldFixture, chapter_id: &str) -> Conversation {
+    do_create_conversation(
+        &fx.mgr,
+        &fx.space_id,
+        &fx.world_id,
+        CreateConversationInput {
+            agent_config_name: "writer".into(),
+            kind: "chapter".into(),
+            chapter_id: Some(chapter_id.to_string()),
+            parent_conversation_id: None,
+            parent_tool_call_id: None,
+            role: None,
+            title: None,
+        },
+    )
+    .expect("create chapter conversation")
+}
+
+/// Create a `kind = "world"` conversation — the chat-list kind, anchored to
+/// nothing; it must survive chapter/novel deletes (dies only with the
+/// World itself).
+fn world_conversation(fx: &WorldFixture) -> Conversation {
+    do_create_conversation(
+        &fx.mgr,
+        &fx.space_id,
+        &fx.world_id,
+        CreateConversationInput {
+            agent_config_name: "writer".into(),
+            kind: "world".into(),
+            chapter_id: None,
+            parent_conversation_id: None,
+            parent_tool_call_id: None,
+            role: None,
+            title: None,
+        },
+    )
+    .expect("create world conversation")
+}
+
+/// Count chapter-kind conversations bound to one chapter — the exact
+/// `meta` JSON predicate the sweep and `list_chapter_conversations` use.
+fn conversations_bound_to(fx: &WorldFixture, chapter_id: &str) -> i64 {
+    count(
+        fx,
+        "SELECT COUNT(*) FROM conversations
+         WHERE meta->>'kind' = 'chapter' AND meta->>'chapterId' = ?1",
+        &[&chapter_id],
+    )
+}
+
+/// Count `kind = "world"` conversations (the `list_conversations` filter).
+fn world_conversation_count(fx: &WorldFixture) -> i64 {
+    count(
+        fx,
+        "SELECT COUNT(*) FROM conversations WHERE meta->>'kind' = 'world'",
+        &[],
+    )
+}
+
+/// Deleting a chapter must sweep its chapter-bound conversations — the
+/// anchor lives in `meta` JSON (`kind`/`chapterId`), invisible to the FK
+/// machinery that handles scenes (the F4 json_extract sweep precedent
+/// from `do_delete_conversation`). A world-kind conversation and another
+/// chapter's conversation survive untouched.
+#[test]
+fn delete_chapter_sweeps_chapter_conversations_only() {
+    let fx = make_space_with_world();
+    let (novel, chapter, _scene) = novel_chapter_scene(&fx);
+    let other_chapter = do_create_chapter(
+        &fx.mgr,
+        &fx.space_id,
+        &fx.world_id,
+        &novel.id,
+        &chapter_input("C2"),
+        None,
+    )
+    .expect("create second chapter");
+
+    let _bound = chapter_conversation(&fx, &chapter.id);
+    let _world = world_conversation(&fx);
+    let _other = chapter_conversation(&fx, &other_chapter.id);
+    assert_eq!(
+        count(&fx, "SELECT COUNT(*) FROM conversations", &[]),
+        3,
+        "all three conversations persisted"
+    );
+
+    do_delete_chapter(&fx.mgr, &fx.space_id, &fx.world_id, &chapter.id, None)
+        .expect("delete chapter");
+
+    assert_eq!(
+        conversations_bound_to(&fx, &chapter.id),
+        0,
+        "chapter-bound conversation swept with its chapter"
+    );
+    assert_eq!(
+        conversations_bound_to(&fx, &other_chapter.id),
+        1,
+        "another chapter's conversation is untouched"
+    );
+    assert_eq!(
+        world_conversation_count(&fx),
+        1,
+        "world-kind conversation survives chapter deletion"
+    );
+}
+
+/// Deleting a novel sweeps the chapter-bound conversations of ALL its
+/// chapters — the chapters themselves vanish via the FK cascade, so the
+/// sweep must resolve them BEFORE the novels DELETE runs. The world-kind
+/// conversation shares the world.db but is novel-independent: novel
+/// deletion happens inside a live world.db, so it SURVIVES (world
+/// conversations die only with the World).
+#[test]
+fn delete_novel_sweeps_all_chapter_conversations() {
+    let fx = make_space_with_world();
+    let (novel, chapter, _scene) = novel_chapter_scene(&fx);
+    let chapter2 = do_create_chapter(
+        &fx.mgr,
+        &fx.space_id,
+        &fx.world_id,
+        &novel.id,
+        &chapter_input("C2"),
+        None,
+    )
+    .expect("create second chapter");
+
+    let _bound1 = chapter_conversation(&fx, &chapter.id);
+    let _bound2 = chapter_conversation(&fx, &chapter2.id);
+    let _world = world_conversation(&fx);
+    assert_eq!(
+        count(&fx, "SELECT COUNT(*) FROM conversations", &[]),
+        3,
+        "all three conversations persisted"
+    );
+
+    do_delete_novel(&fx.mgr, &fx.space_id, &fx.world_id, &novel.id, None).expect("delete novel");
+
+    assert_eq!(
+        conversations_bound_to(&fx, &chapter.id),
+        0,
+        "chapter 1's conversation swept"
+    );
+    assert_eq!(
+        conversations_bound_to(&fx, &chapter2.id),
+        0,
+        "chapter 2's conversation swept"
+    );
+    assert_eq!(
+        world_conversation_count(&fx),
+        1,
+        "world conversation survives novel deletion (lives until the World does)"
+    );
+    assert_eq!(
+        count(&fx, "SELECT COUNT(*) FROM conversations", &[]),
+        1,
+        "only the world conversation remains"
+    );
+}
+
+/// The sweep rides the FK cascade chain: a swept conversation's messages
+/// AND their attachment blobs must be gone too
+/// (conversations → messages → message_attachments, WORLD_MIGRATION 013).
+#[test]
+fn delete_chapter_sweep_cascades_messages_and_attachments() {
+    let fx = make_space_with_world();
+    let (_novel, chapter, _scene) = novel_chapter_scene(&fx);
+    let conv = chapter_conversation(&fx, &chapter.id);
+
+    do_append_messages(
+        &fx.mgr,
+        &fx.space_id,
+        &fx.world_id,
+        &AppendMessagesInput {
+            conversation_id: conv.id.clone(),
+            messages: vec![MessageInput {
+                id: uuid_shape(90),
+                body: serde_json::json!({ "role": "user", "content": "hi" }),
+                created_at: NOW.to_string(),
+                usage_input_tokens: None,
+                usage_output_tokens: None,
+                attachments: vec![AttachmentInput {
+                    id: uuid_shape(91),
+                    position: 0,
+                    kind: "image".into(),
+                    mime: "image/png".into(),
+                    filename: "pic.png".into(),
+                    data_base64: base64::engine::general_purpose::STANDARD
+                        .encode([0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]),
+                }],
+            }],
+        },
+    )
+    .expect("seed message + attachment");
+    assert_eq!(count(&fx, "SELECT COUNT(*) FROM messages", &[]), 1);
+    assert_eq!(
+        count(&fx, "SELECT COUNT(*) FROM message_attachments", &[]),
+        1
+    );
+
+    do_delete_chapter(&fx.mgr, &fx.space_id, &fx.world_id, &chapter.id, None)
+        .expect("delete chapter");
+
+    assert_eq!(
+        count(&fx, "SELECT COUNT(*) FROM conversations", &[]),
+        0,
+        "swept conversation row gone"
+    );
+    assert_eq!(
+        count(&fx, "SELECT COUNT(*) FROM messages", &[]),
+        0,
+        "messages cascade with the swept conversation"
+    );
+    assert_eq!(
+        count(&fx, "SELECT COUNT(*) FROM message_attachments", &[]),
+        0,
+        "attachment blobs cascade with their messages"
+    );
+}
+
+/// Create a `kind = "subagent"` run conversation parented to `parent_id`
+/// via the real create path (server-built meta, camelCase
+/// `parentConversationId` — the ADR-0050 D2 linkage).
+fn subagent_conversation(fx: &WorldFixture, parent_id: &str) -> Conversation {
+    do_create_conversation(
+        &fx.mgr,
+        &fx.space_id,
+        &fx.world_id,
+        CreateConversationInput {
+            agent_config_name: "writer".into(),
+            kind: "subagent".into(),
+            chapter_id: None,
+            parent_conversation_id: Some(parent_id.to_string()),
+            parent_tool_call_id: Some(format!("call-{parent_id}")),
+            role: Some("researcher".into()),
+            title: None,
+        },
+    )
+    .expect("create subagent conversation")
+}
+
+/// Count subagent run conversations parented to one conversation — the
+/// exact `meta` JSON predicate the F4 child sweep in `do_delete_conversation`
+/// and the chapter/novel two-level sweeps use.
+fn subagent_children_of(fx: &WorldFixture, parent_id: &str) -> i64 {
+    count(
+        fx,
+        "SELECT COUNT(*) FROM conversations
+         WHERE meta->>'kind' = 'subagent'
+           AND meta->>'parentConversationId' = ?1",
+        &[&parent_id],
+    )
+}
+
+/// Deleting a chapter sweeps the chapter-bound conversation AND its
+/// subagent run children — the parent linkage lives in `meta` JSON
+/// (`parentConversationId`), invisible to the FK machinery AND to the
+/// chapter sweep itself, so the children must be resolved BEFORE their
+/// `kind = "chapter"` parents are deleted (two-level orphan closure; cf.
+/// `do_delete_conversation`'s F4 sweep). A world-kind conversation and a
+/// subagent run parented to IT survive untouched.
+#[test]
+fn delete_chapter_sweeps_subagent_children() {
+    let fx = make_space_with_world();
+    let (_novel, chapter, _scene) = novel_chapter_scene(&fx);
+
+    let bound = chapter_conversation(&fx, &chapter.id);
+    let _child = subagent_conversation(&fx, &bound.id);
+    let world = world_conversation(&fx);
+    let _world_child = subagent_conversation(&fx, &world.id);
+    assert_eq!(
+        count(&fx, "SELECT COUNT(*) FROM conversations", &[]),
+        4,
+        "all four conversations persisted"
+    );
+
+    do_delete_chapter(&fx.mgr, &fx.space_id, &fx.world_id, &chapter.id, None)
+        .expect("delete chapter");
+
+    assert_eq!(
+        conversations_bound_to(&fx, &chapter.id),
+        0,
+        "chapter-bound conversation swept with its chapter"
+    );
+    assert_eq!(
+        subagent_children_of(&fx, &bound.id),
+        0,
+        "subagent child swept with its chapter-bound parent"
+    );
+    assert_eq!(
+        world_conversation_count(&fx),
+        1,
+        "world-kind conversation survives chapter deletion"
+    );
+    assert_eq!(
+        subagent_children_of(&fx, &world.id),
+        1,
+        "subagent parented to the world conversation is untouched"
+    );
+    assert_eq!(
+        count(&fx, "SELECT COUNT(*) FROM conversations", &[]),
+        2,
+        "only the world conversation and its subagent child remain"
+    );
+}
+
+/// Deleting a novel sweeps the chapter-bound conversations of ALL its
+/// chapters AND their subagent run children — same two-level closure as
+/// the chapter variant, with the children resolved against the chapter
+/// parents BEFORE either the parent sweep or the novels DELETE runs. The
+/// world conversation and its own subagent child survive.
+#[test]
+fn delete_novel_sweeps_subagent_children() {
+    let fx = make_space_with_world();
+    let (novel, chapter, _scene) = novel_chapter_scene(&fx);
+
+    let bound = chapter_conversation(&fx, &chapter.id);
+    let _child = subagent_conversation(&fx, &bound.id);
+    let world = world_conversation(&fx);
+    let _world_child = subagent_conversation(&fx, &world.id);
+    assert_eq!(
+        count(&fx, "SELECT COUNT(*) FROM conversations", &[]),
+        4,
+        "all four conversations persisted"
+    );
+
+    do_delete_novel(&fx.mgr, &fx.space_id, &fx.world_id, &novel.id, None).expect("delete novel");
+
+    assert_eq!(
+        conversations_bound_to(&fx, &chapter.id),
+        0,
+        "chapter-bound conversation swept with its novel"
+    );
+    assert_eq!(
+        subagent_children_of(&fx, &bound.id),
+        0,
+        "subagent child swept with its chapter-bound parent"
+    );
+    assert_eq!(
+        world_conversation_count(&fx),
+        1,
+        "world conversation survives novel deletion"
+    );
+    assert_eq!(
+        subagent_children_of(&fx, &world.id),
+        1,
+        "subagent parented to the world conversation is untouched"
+    );
+    assert_eq!(
+        count(&fx, "SELECT COUNT(*) FROM conversations", &[]),
+        2,
+        "only the world conversation and its subagent child remain"
     );
 }
 

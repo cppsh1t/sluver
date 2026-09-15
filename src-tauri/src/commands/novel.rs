@@ -688,6 +688,24 @@ pub fn delete_novel(
 
 /// Testable core of [`delete_novel`] — see [`do_create_novel`] for the
 /// `&DbManager` + `Option<&AppHandle>` pattern.
+///
+/// CASCADE DISCLOSURE: deleting a novel removes its chapters (FK ON DELETE
+/// CASCADE) and, explicitly swept FIRST inside the same transaction, every
+/// chapter-bound conversation (`meta.kind = "chapter"`,
+/// `meta.chapterId` ∈ the novel's chapters — the F4 json_extract sweep
+/// precedent from `do_delete_conversation`; the `meta` JSON linkage is
+/// invisible to the FK machinery) TOGETHER WITH their subagent run
+/// children (`meta.kind = "subagent"`, `meta.parentConversationId` —
+/// swept BEFORE the parents, else the orphaned children would outlive
+/// their anchor forever). The sweeps must resolve the chapter ids BEFORE
+/// the `DELETE FROM novels` — the FK cascade that follows would take the
+/// join source (the chapter rows) with it. Swept conversations'
+/// messages + attachment blobs ride the FK cascade chain
+/// (conversations → messages → message_attachments). World-kind
+/// conversations and subagent runs parented to them are novel-independent
+/// and survive; zero swept rows is fine — only a missing NOVEL is a
+/// NotFound (and the transaction rollback keeps that error path
+/// side-effect-free).
 pub(crate) fn do_delete_novel(
     mgr: &DbManager,
     space_id: &str,
@@ -696,10 +714,44 @@ pub(crate) fn do_delete_novel(
     app: Option<&AppHandle>,
 ) -> Result<(), DbError> {
     let result = mgr.with_world(space_id, world_id, |conn| {
-        let deleted = conn.execute("DELETE FROM novels WHERE id = ?1", params![id])?;
+        let tx = conn.transaction()?;
+
+        // Two-level sweep, children first, while the chapter rows still
+        // exist to join against. Subagent run conversations parented to the
+        // novel's chapter-bound conversations are linked only via
+        // `meta.parentConversationId` (ADR-0050 D2) — invisible to both the
+        // FK machinery and the parent sweep below — so they must be
+        // resolved BEFORE their `kind = "chapter"` parents are deleted;
+        // once the parents are gone, the subquery finds nothing (the F4
+        // child-sweep precedent from `do_delete_conversation`).
+        tx.execute(
+            "DELETE FROM conversations
+             WHERE meta->>'kind' = 'subagent'
+               AND meta->>'parentConversationId' IN (
+                   SELECT id FROM conversations
+                    WHERE meta->>'kind' = 'chapter'
+                      AND meta->>'chapterId' IN (SELECT id FROM chapters WHERE novel_id = ?1)
+               )",
+            params![id],
+        )?;
+
+        // Then the chapter-bound conversations — the FK cascade that
+        // follows the novels DELETE would take the join source (the
+        // chapter rows) with it. camelCase `chapterId` path matches the
+        // shape `create_conversation` writes and
+        // `list_chapter_conversations` filters on.
+        tx.execute(
+            "DELETE FROM conversations
+             WHERE meta->>'kind' = 'chapter'
+               AND meta->>'chapterId' IN (SELECT id FROM chapters WHERE novel_id = ?1)",
+            params![id],
+        )?;
+
+        let deleted = tx.execute("DELETE FROM novels WHERE id = ?1", params![id])?;
         if deleted == 0 {
             return Err(DbError::NotFound("Novel", id.to_string()));
         }
+        tx.commit()?;
         Ok(())
     });
     if let (Ok(()), Some(app)) = (&result, app) {
@@ -1014,6 +1066,21 @@ pub fn delete_chapter(
 
 /// Testable core of [`delete_chapter`] — see [`do_create_novel`] for the
 /// `&DbManager` + `Option<&AppHandle>` pattern.
+///
+/// CASCADE DISCLOSURE: deleting a chapter removes its scenes (FK ON DELETE
+/// CASCADE) and, explicitly swept FIRST inside the same transaction, its
+/// chapter-bound conversations (`meta.kind = "chapter"`,
+/// `meta.chapterId` = this chapter — the F4 json_extract sweep precedent
+/// from `do_delete_conversation`; the `meta` JSON linkage is invisible to
+/// the FK machinery) TOGETHER WITH their subagent run children
+/// (`meta.kind = "subagent"`, `meta.parentConversationId` — swept BEFORE
+/// the parents, else the orphaned children would outlive their anchor
+/// forever). Swept conversations' messages + attachment blobs ride the
+/// FK cascade chain (conversations → messages → message_attachments,
+/// WORLD_MIGRATION 013). World-kind conversations, subagent runs parented
+/// to them, and other-chapter conversations are untouched; zero swept
+/// rows is fine — only a missing CHAPTER is a NotFound (and the
+/// transaction rollback keeps that error path side-effect-free).
 pub(crate) fn do_delete_chapter(
     mgr: &DbManager,
     space_id: &str,
@@ -1022,10 +1089,40 @@ pub(crate) fn do_delete_chapter(
     app: Option<&AppHandle>,
 ) -> Result<(), DbError> {
     let result = mgr.with_world(space_id, world_id, |conn| {
-        let deleted = conn.execute("DELETE FROM chapters WHERE id = ?1", params![id])?;
+        let tx = conn.transaction()?;
+
+        // Two-level sweep, children first. Subagent run conversations
+        // parented to this chapter's conversations are linked only via
+        // `meta.parentConversationId` (ADR-0050 D2) — invisible to both the
+        // FK machinery and the parent sweep below — so they must be
+        // resolved BEFORE their `kind = "chapter"` parents are deleted;
+        // once the parents are gone, the subquery finds nothing (the F4
+        // child-sweep precedent from `do_delete_conversation`).
+        tx.execute(
+            "DELETE FROM conversations
+             WHERE meta->>'kind' = 'subagent'
+               AND meta->>'parentConversationId' IN (
+                   SELECT id FROM conversations
+                    WHERE meta->>'kind' = 'chapter' AND meta->>'chapterId' = ?1
+               )",
+            params![id],
+        )?;
+
+        // Then the chapter-bound conversations — their anchor is the `meta`
+        // JSON column, invisible to the FK cascade that handles scenes.
+        // camelCase `chapterId` path matches the shape `create_conversation`
+        // writes and `list_chapter_conversations` filters on.
+        tx.execute(
+            "DELETE FROM conversations
+             WHERE meta->>'kind' = 'chapter' AND meta->>'chapterId' = ?1",
+            params![id],
+        )?;
+
+        let deleted = tx.execute("DELETE FROM chapters WHERE id = ?1", params![id])?;
         if deleted == 0 {
             return Err(DbError::NotFound("Chapter", id.to_string()));
         }
+        tx.commit()?;
         Ok(())
     });
     if let (Ok(()), Some(app)) = (&result, app) {
