@@ -75,3 +75,25 @@ export function formatTokenCount(tokens: number): string {
 export function formatCompactCount(n: number, locale: string): string {
   return new Intl.NumberFormat(locale, { notation: "compact" }).format(n);
 }
+
+/**
+ * Compact locale-agnostic duration formatter for tool-card readouts
+ * (`230ms` / `1.4s` / `2m 3s`), mirroring the technical-readout convention
+ * of {@link formatTokenCount} — units are SI-style and never localized.
+ *
+ * - `< 1000` → rounded whole `ms` (sub-100ms calls read `230ms`, not `0.2s`)
+ * - `< 60_000` → seconds with one decimal, dropping a trailing `.0`
+ *   (`1400` → `"1.4s"`, `5000` → `"5s"`)
+ * - otherwise → `m` / `m s` with rounded leftover seconds (`123456` →
+ *   `"2m 3s"`; exact minutes drop the seconds part, `60000` → `"1m"`)
+ */
+export function formatDurationMs(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60_000) {
+    const s = ms / 1000;
+    return `${Number.isInteger(s) ? s : s.toFixed(1)}s`;
+  }
+  const m = Math.floor(ms / 60_000);
+  const rem = Math.round((ms % 60_000) / 1000);
+  return rem === 0 ? `${m}m` : `${m}m ${rem}s`;
+}
