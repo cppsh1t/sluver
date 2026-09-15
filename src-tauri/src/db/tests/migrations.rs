@@ -701,10 +701,7 @@ fn space_v7_seeds_namer_row_and_stays_unique() {
         updated_at, "9999-12-31T23:59:59.999Z",
         "fixed far-future literal"
     );
-    assert_eq!(
-        context_note, "",
-        "namer context_note is the empty default"
-    );
+    assert_eq!(context_note, "", "namer context_note is the empty default");
 
     // Idempotency: a second to_latest pass must not duplicate the seed row.
     SPACE_MIGRATIONS
@@ -766,10 +763,7 @@ fn space_v10_seeds_vision_row_and_stays_unique() {
         updated_at, "9999-12-31T23:59:59.999Z",
         "fixed far-future literal"
     );
-    assert_eq!(
-        context_note, "",
-        "vision context_note is the empty default"
-    );
+    assert_eq!(context_note, "", "vision context_note is the empty default");
 
     // Idempotency: a second to_latest pass must not duplicate the seed row.
     SPACE_MIGRATIONS
