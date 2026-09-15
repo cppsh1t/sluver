@@ -5,7 +5,7 @@
  * Character participation is managed via `characterRefs` junction rows.
  */
 
-import type { Event, EventId, EventSummary, WorldId } from '@/types';
+import type { Event, EventId, EventSummary, SummaryPage, WorldId } from '@/types';
 import { call } from './client';
 import type { CreateEventInput, UpdateEventInput } from './types';
 
@@ -26,9 +26,25 @@ export function listEventSummaries(spaceId: string, worldId: WorldId): Promise<E
   return call<EventSummary[]>('list_event_summaries', { spaceId, worldId });
 }
 
-/** Substring search across name, description, notes, tags, start time, and end time. Returns matching summaries. */
-export function searchEvents(spaceId: string, worldId: WorldId, query: string): Promise<EventSummary[]> {
-  return call<EventSummary[]>('search_events', { spaceId, worldId, query });
+/**
+ * Substring search across name, description, notes, tags, start time,
+ * and end time. Returns one PAGE of matching summaries — 50 per page
+ * (`totalCount` carries the full match count; `truncated` reports
+ * further pages). Deterministic name ordering makes offset pages
+ * stable — walk `offset` 0, 50, 100, … while `truncated` is true.
+ *
+ * @param spaceId The Space owning the World.
+ * @param worldId The World to search.
+ * @param query   Substring to search for (case-insensitive).
+ * @param offset  Pagination offset in results (0-based); omit for 0.
+ */
+export function searchEvents(
+  spaceId: string,
+  worldId: WorldId,
+  query: string,
+  offset?: number,
+): Promise<SummaryPage<EventSummary>> {
+  return call<SummaryPage<EventSummary>>('search_events', { spaceId, worldId, query, offset });
 }
 
 export function updateEvent(

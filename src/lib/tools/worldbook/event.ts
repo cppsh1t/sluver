@@ -65,14 +65,23 @@ export function eventTools(): Record<string, ToolDef> {
 
     search_events: {
       description:
-        "Search events by substring match across name, description, notes, tags, start time, and end time. Returns matching event summaries (id, name, tags, startAt, endAt) — call get_event for full fields on specific hits.",
+        "Search events by substring match across name, description, notes, tags, start time, and end time. Returns matching event summaries (id, name, tags, startAt, endAt) as a page object { results, totalCount, truncated } — call get_event for full fields on specific hits. " +
+        "Results are paginated: one call returns up to 50 matches (totalCount carries the full match count); when truncated is true and completeness matters, pass offset (50, 100, …) to fetch the next stable page.",
       inputSchema: z.object({
         query: z.string().min(1).describe("Substring to search for (case-insensitive)."),
+        offset: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe(
+            "Pagination offset in results. One call returns the first 50 matches; when truncated is true, pass 50, 100, … to walk subsequent pages. Ordering is deterministic, so pages are stable.",
+          ),
       }),
       consentLevel: "auto",
       execute: async (input, ctx) => {
-        const { query } = input as { query: string };
-        return searchEvents(ctx.spaceId, ctx.worldId, query);
+        const { query, offset } = input as { query: string; offset?: number };
+        return searchEvents(ctx.spaceId, ctx.worldId, query, offset);
       },
     },
 

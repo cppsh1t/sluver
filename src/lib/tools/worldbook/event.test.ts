@@ -7,7 +7,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
-import { createEvent, deleteEvent, getEvent, updateEvent } from "@/api/event";
+import {
+  createEvent,
+  deleteEvent,
+  getEvent,
+  searchEvents,
+  updateEvent,
+} from "@/api/event";
 import {
   clearEventImage,
   prepareImage,
@@ -303,6 +309,22 @@ describe("clear_event_image", () => {
 
     expect(clearEventImage).toHaveBeenCalledWith(spaceId, worldId, eventId);
     expect(result).toEqual({ cleared: true, id: "ev-1" });
+  });
+});
+
+describe("search_events", () => {
+  it("forwards the query and an explicit offset as a page request", async () => {
+    const page = { results: [], totalCount: 75, truncated: true };
+    vi.mocked(searchEvents).mockResolvedValue(page);
+
+    const result = await tools.search_events.execute(
+      { query: "battle", offset: 50 },
+      ctx,
+      call,
+    );
+
+    expect(searchEvents).toHaveBeenCalledWith(spaceId, worldId, "battle", 50);
+    expect(result).toEqual(page);
   });
 });
 
