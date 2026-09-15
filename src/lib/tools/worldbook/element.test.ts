@@ -13,6 +13,7 @@ import {
   deleteItem,
   getItem,
   getLocation,
+  searchLocations,
   updateLocation,
 } from "@/api/element";
 import {
@@ -345,6 +346,22 @@ describe("image-from-attachment tools", () => {
       message: expect.stringContaining("missing.png"),
     });
     expect(prepareImage).not.toHaveBeenCalled();
+  });
+});
+
+describe("search_locations", () => {
+  it("forwards the query and an explicit offset as a page request", async () => {
+    const page = { results: [], totalCount: 120, truncated: true };
+    vi.mocked(searchLocations).mockResolvedValue(page);
+
+    const result = await locationTools().search_locations.execute(
+      { query: "city", offset: 50 },
+      ctx,
+      call,
+    );
+
+    expect(searchLocations).toHaveBeenCalledWith(spaceId, worldId, "city", 50);
+    expect(result).toEqual(page);
   });
 });
 

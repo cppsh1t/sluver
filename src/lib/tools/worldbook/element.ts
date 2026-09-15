@@ -69,6 +69,14 @@ const idSchema = z.object({ id: z.string().describe("The element's UUID.") });
 
 const searchSchema = z.object({
   query: z.string().min(1).describe("Substring to search for (case-insensitive)."),
+  offset: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe(
+      "Pagination offset in results. One call returns the first 50 matches; when truncated is true, pass 50, 100, … to walk subsequent pages. Ordering is deterministic, so pages are stable.",
+    ),
 });
 
 // ─── Location ─────────────────────────────────────────────────────────────
@@ -84,12 +92,13 @@ export function locationTools(): Record<string, ToolDef> {
     },
     search_locations: {
       description:
-        "Search locations by substring match across name, description, notes, and tags. Returns matching location summaries (id, name, tags) — call get_location for full fields on specific hits.",
+        "Search locations by substring match across name, description, notes, and tags. Returns matching location summaries (id, name, tags) as a page object { results, totalCount, truncated } — call get_location for full fields on specific hits. " +
+        "Results are paginated: one call returns up to 50 matches (totalCount carries the full match count); when truncated is true and completeness matters, pass offset (50, 100, …) to fetch the next stable page.",
       inputSchema: searchSchema,
       consentLevel: "auto",
       execute: async (input, ctx) => {
-        const { query } = input as { query: string };
-        return searchLocations(ctx.spaceId, ctx.worldId, query);
+        const { query, offset } = input as { query: string; offset?: number };
+        return searchLocations(ctx.spaceId, ctx.worldId, query, offset);
       },
     },
     get_location: {
@@ -238,12 +247,13 @@ export function itemTools(): Record<string, ToolDef> {
     },
     search_items: {
       description:
-        "Search items by substring match across name, description, notes, and tags. Returns matching item summaries (id, name, tags) — call get_item for full fields on specific hits.",
+        "Search items by substring match across name, description, notes, and tags. Returns matching item summaries (id, name, tags) as a page object { results, totalCount, truncated } — call get_item for full fields on specific hits. " +
+        "Results are paginated: one call returns up to 50 matches (totalCount carries the full match count); when truncated is true and completeness matters, pass offset (50, 100, …) to fetch the next stable page.",
       inputSchema: searchSchema,
       consentLevel: "auto",
       execute: async (input, ctx) => {
-        const { query } = input as { query: string };
-        return searchItems(ctx.spaceId, ctx.worldId, query);
+        const { query, offset } = input as { query: string; offset?: number };
+        return searchItems(ctx.spaceId, ctx.worldId, query, offset);
       },
     },
     get_item: {
@@ -389,12 +399,13 @@ export function loreTools(): Record<string, ToolDef> {
     },
     search_lores: {
       description:
-        "Search lore entries by substring match across name, description, notes, and tags. Returns matching lore summaries (id, name, tags) — call get_lore for full fields on specific hits.",
+        "Search lore entries by substring match across name, description, notes, and tags. Returns matching lore summaries (id, name, tags) as a page object { results, totalCount, truncated } — call get_lore for full fields on specific hits. " +
+        "Results are paginated: one call returns up to 50 matches (totalCount carries the full match count); when truncated is true and completeness matters, pass offset (50, 100, …) to fetch the next stable page.",
       inputSchema: searchSchema,
       consentLevel: "auto",
       execute: async (input, ctx) => {
-        const { query } = input as { query: string };
-        return searchLores(ctx.spaceId, ctx.worldId, query);
+        const { query, offset } = input as { query: string; offset?: number };
+        return searchLores(ctx.spaceId, ctx.worldId, query, offset);
       },
     },
     get_lore: {

@@ -15,6 +15,7 @@ import type {
   Lore,
   LoreId,
   LoreSummary,
+  SummaryPage,
   WorldId,
 } from '@/types';
 import { call } from './client';
@@ -43,9 +44,25 @@ export function listLocationSummaries(spaceId: string, worldId: WorldId): Promis
   return call<LocationSummary[]>('list_location_summaries', { spaceId, worldId });
 }
 
-/** Substring search across name, description, notes, and tags. Returns matching summaries. */
-export function searchLocations(spaceId: string, worldId: WorldId, query: string): Promise<LocationSummary[]> {
-  return call<LocationSummary[]>('search_locations', { spaceId, worldId, query });
+/**
+ * Substring search across name, description, notes, and tags.
+ * Returns one PAGE of matching summaries — 50 per page (`totalCount`
+ * carries the full match count; `truncated` reports further pages).
+ * Deterministic name ordering makes offset pages stable — walk `offset`
+ * 0, 50, 100, … while `truncated` is true.
+ *
+ * @param spaceId The Space owning the World.
+ * @param worldId The World to search.
+ * @param query   Substring to search for (case-insensitive).
+ * @param offset  Pagination offset in results (0-based); omit for 0.
+ */
+export function searchLocations(
+  spaceId: string,
+  worldId: WorldId,
+  query: string,
+  offset?: number,
+): Promise<SummaryPage<LocationSummary>> {
+  return call<SummaryPage<LocationSummary>>('search_locations', { spaceId, worldId, query, offset });
 }
 
 export function updateLocation(
@@ -80,9 +97,25 @@ export function listItemSummaries(spaceId: string, worldId: WorldId): Promise<It
   return call<ItemSummary[]>('list_item_summaries', { spaceId, worldId });
 }
 
-/** Substring search across name, description, notes, and tags. Returns matching summaries. */
-export function searchItems(spaceId: string, worldId: WorldId, query: string): Promise<ItemSummary[]> {
-  return call<ItemSummary[]>('search_items', { spaceId, worldId, query });
+/**
+ * Substring search across name, description, notes, and tags.
+ * Returns one PAGE of matching summaries — 50 per page (`totalCount`
+ * carries the full match count; `truncated` reports further pages).
+ * Deterministic name ordering makes offset pages stable — walk `offset`
+ * 0, 50, 100, … while `truncated` is true.
+ *
+ * @param spaceId The Space owning the World.
+ * @param worldId The World to search.
+ * @param query   Substring to search for (case-insensitive).
+ * @param offset  Pagination offset in results (0-based); omit for 0.
+ */
+export function searchItems(
+  spaceId: string,
+  worldId: WorldId,
+  query: string,
+  offset?: number,
+): Promise<SummaryPage<ItemSummary>> {
+  return call<SummaryPage<ItemSummary>>('search_items', { spaceId, worldId, query, offset });
 }
 
 export function updateItem(
@@ -117,9 +150,25 @@ export function listLoreSummaries(spaceId: string, worldId: WorldId): Promise<Lo
   return call<LoreSummary[]>('list_lore_summaries', { spaceId, worldId });
 }
 
-/** Substring search across name, description, notes, and tags. Returns matching summaries. */
-export function searchLores(spaceId: string, worldId: WorldId, query: string): Promise<LoreSummary[]> {
-  return call<LoreSummary[]>('search_lores', { spaceId, worldId, query });
+/**
+ * Substring search across name, description, notes, and tags.
+ * Returns one PAGE of matching summaries — 50 per page (`totalCount`
+ * carries the full match count; `truncated` reports further pages).
+ * Deterministic name ordering makes offset pages stable — walk `offset`
+ * 0, 50, 100, … while `truncated` is true.
+ *
+ * @param spaceId The Space owning the World.
+ * @param worldId The World to search.
+ * @param query   Substring to search for (case-insensitive).
+ * @param offset  Pagination offset in results (0-based); omit for 0.
+ */
+export function searchLores(
+  spaceId: string,
+  worldId: WorldId,
+  query: string,
+  offset?: number,
+): Promise<SummaryPage<LoreSummary>> {
+  return call<SummaryPage<LoreSummary>>('search_lores', { spaceId, worldId, query, offset });
 }
 
 export function updateLore(
