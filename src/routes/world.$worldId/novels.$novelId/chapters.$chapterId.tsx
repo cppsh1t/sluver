@@ -34,6 +34,7 @@ import type { SaveStatus, ScenePatch } from "@/components/worldbook/scene-card";
 import { SceneImageGallery } from "@/components/worldbook/scene-image-gallery";
 import { SceneRefSidebar } from "@/components/worldbook/scene-ref-sidebar";
 import { SceneTimelineRail } from "@/components/worldbook/scene-timeline-rail";
+import { ChapterChatPanel } from "@/components/chat/chapter-chat-panel";
 import { toErrorPayload } from "@/api/client";
 import { translateError } from "@/i18n/errors";
 import { cn } from "@/lib/utils";
@@ -622,8 +623,20 @@ function ChapterWorkspacePage() {
         )}
       </div>
 
-      {/* ─── Right sidebar (read mode only) ──────────────────────────────── */}
-      {mode === "read" && (
+      {/* ─── Right panel ──────────────────────────────────────────────────── */}
+      {/* Edit mode: agent chat panel (chapter-anchored conversations). Read
+          mode: chapter reference sidebar. Both share the SAME collapse state
+          (`rightCollapsed`) so the toggle stays consistent across modes. */}
+      {mode === "edit" ? (
+        <ChapterChatPanel
+          spaceId={spaceId}
+          worldId={wid}
+          novelId={nid}
+          chapterId={cid}
+          collapsed={rightCollapsed}
+          onToggleCollapsed={() => setRightCollapsed((v) => !v)}
+        />
+      ) : (
         <SceneRefSidebar
           spaceId={spaceId}
           worldId={wid}
