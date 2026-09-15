@@ -58,6 +58,7 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -307,6 +308,11 @@ export function ChapterChatPanel({
                 {t("chat:list.new")}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
+              {/* base-ui: MenuGroupLabel requires an ancestor Menu.Group —
+                  a bare label crashes the menu on open. The group also wires
+                  aria-labelledby to the label. Children keep their indent to
+                  keep this hotfix diff minimal. */}
+              <DropdownMenuGroup>
               <DropdownMenuLabel>{t("chat:panel.conversationsLabel")}</DropdownMenuLabel>
               {conversations.length === 0 ? (
                 <p className="px-2 py-1.5 text-xs text-muted-foreground">
@@ -428,6 +434,7 @@ export function ChapterChatPanel({
                   })}
                 </div>
               )}
+              </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
