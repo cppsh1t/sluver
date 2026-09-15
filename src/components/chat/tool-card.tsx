@@ -46,7 +46,7 @@ import { GrepToolCard } from "./tool-cards/grep-tool-card";
 import { ActivateSkillToolCard } from "./tool-cards/activate-skill-tool-card";
 import { SubagentBlock } from "./subagent-block";
 import { summarizeToolCall } from "./tool-summary";
-import { ToolBody, ToolSummaryLine } from "./tool-cards/tool-body";
+import { ToolBody, ToolDurationLabel, ToolSummaryLine } from "./tool-cards/tool-body";
 
 interface ToolCardProps {
   readonly tool: ToolBlockData;
@@ -255,6 +255,7 @@ function GenericToolCard({ tool, worldId, conversationId }: ToolCardProps) {
         >
           {labelText}
         </span>
+        <ToolDurationLabel durationMs={tool.durationMs} />
         <HugeiconsIcon
           icon={ChevronDownIcon}
           strokeWidth={2}

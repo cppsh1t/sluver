@@ -33,6 +33,7 @@ import { useTranslation } from "react-i18next";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Globe02Icon } from "@hugeicons/core-free-icons";
 
+import { formatDurationMs } from "@/lib/format";
 import type { ToolBlockData } from "../message-render";
 import {
   asString,
@@ -68,6 +69,16 @@ export function ToolSummaryLine({ summary }: { readonly summary: ToolSummary }) 
       {base}
       {t("chat:tool.nameQuote", { name: summary.headline })}
     </>
+  );
+}
+
+/** Muted `· 1.4s` suffix for tool-card headers; renders nothing without a duration. */
+export function ToolDurationLabel({ durationMs }: { readonly durationMs: number | undefined }) {
+  if (durationMs === undefined) return null;
+  return (
+    <span className="shrink-0 font-mono text-[0.6875rem] tabular-nums text-muted-foreground/70">
+      · {formatDurationMs(durationMs)}
+    </span>
   );
 }
 
