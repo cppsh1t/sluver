@@ -1,0 +1,102 @@
+name: Release
+
+# Push a version tag to build all three platforms and publish a GitHub Release:
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# Platform matrix:
+# - macOS:   Universal binary (aarch64 + x86_64), ad-hoc signed (no Apple
+#            Developer account). Users bypass Gatekeeper on first launch
+#            (right-click → Open, or `xattr -cr /Applications/Sluver.app`).
+# - Linux:   ubuntu-22.04 for old-glibc compatibility (AppImage/deb/rpm run on
+#            older distros; building on 24.04 would require GLIBC_2.39+).
+# - Windows: NSIS installer + MSI.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: --target universal-apple-darwin
+            targets: aarch64-apple-darwin,x86_64-apple-darwin
+          - platform: ubuntu-22.04
+            args: ""
+            targets: ""
+          - platform: windows-latest
+            args: ""
+            targets: ""
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # pnpm version is read from the "packageManager" field in package.json
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Rust setup
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.targets }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      # Tauri v2 prerequisites + patchelf/xdg-utils (needed when bundling
+      # AppImage/deb). Only on Ubuntu runners.
+      - name: Install Tauri system dependencies (Ubuntu)
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            xdg-utils
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      # tauri-action runs `pnpm tauri build`, which executes the configured
+      # beforeBuildCommand (`pnpm build`) automatically, then bundles per
+      # platform and uploads artifacts to the GitHub Release.
+      - name: Build and release (tauri-action)
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Sluver v__VERSION__"
+          releaseBody: |
+            See the assets below to download and install.
+
+            - **Windows**: `.msi` / NSIS `.exe` installer
+            - **macOS**: Universal `.dmg` (ad-hoc signed — on first launch, right-click the app and choose "Open", or run `xattr -cr /Applications/Sluver.app`)
+            - **Linux**: `.AppImage` / `.deb` / `.rpm`
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}

@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  frontend:
+    name: Frontend (lint / type-check / test / build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      # pnpm version is read from the "packageManager" field in package.json
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint (oxlint)
+        run: pnpm lint
+
+      - name: Type-check (tsc --noEmit)
+        run: pnpm type-check
+
+      - name: Test (vitest)
+        run: pnpm test
+
+      - name: Build (tsc + vite build)
+        run: pnpm build
+
+  rust:
+    name: Rust (fmt / clippy / test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      # Tauri v2 Linux prerequisites (wry → webkit2gtk-4.1, tray-icon →
+      # libayatana-appindicator, decorum → gtk3/rsvg via webkit deps).
+      # Compile-only job: no bundling, so patchelf/xdg-utils not needed here.
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Format check (rustfmt)
+        run: cargo fmt --all -- --check
+        working-directory: src-tauri
+
+      - name: Clippy
+        run: cargo clippy --lib --tests
+        working-directory: src-tauri
+
+      - name: Test (cargo test --lib)
+        run: cargo test --lib
+        working-directory: src-tauri
