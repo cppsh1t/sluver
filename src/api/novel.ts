@@ -17,6 +17,7 @@ import type {
   Scene,
   SceneId,
   SceneSummary,
+  SummaryPage,
   WorldId,
 } from '@/types';
 import { call } from './client';
@@ -48,9 +49,25 @@ export function listNovelSummaries(spaceId: string, worldId: WorldId): Promise<N
   return call<NovelSummary[]>('list_novel_summaries', { spaceId, worldId });
 }
 
-/** Substring search across title, description, author, and tags. Returns matching summaries. */
-export function searchNovels(spaceId: string, worldId: WorldId, query: string): Promise<NovelSummary[]> {
-  return call<NovelSummary[]>('search_novels', { spaceId, worldId, query });
+/**
+ * Substring search across title, description, author, and tags.
+ * Returns one PAGE of matching summaries — 50 per page (`totalCount`
+ * carries the full match count; `truncated` reports further pages).
+ * Deterministic title ordering makes offset pages stable — walk `offset`
+ * 0, 50, 100, … while `truncated` is true.
+ *
+ * @param spaceId The Space owning the World.
+ * @param worldId The World to search.
+ * @param query   Substring to search for (case-insensitive).
+ * @param offset  Pagination offset in results (0-based); omit for 0.
+ */
+export function searchNovels(
+  spaceId: string,
+  worldId: WorldId,
+  query: string,
+  offset?: number,
+): Promise<SummaryPage<NovelSummary>> {
+  return call<SummaryPage<NovelSummary>>('search_novels', { spaceId, worldId, query, offset });
 }
 
 export function updateNovel(
@@ -103,9 +120,25 @@ export function listChapterSummaries(spaceId: string, worldId: WorldId, novelId:
   return call<ChapterSummary[]>('list_chapter_summaries', { spaceId, worldId, novelId });
 }
 
-/** Substring search across title and summary. Returns matching summaries. */
-export function searchChapters(spaceId: string, worldId: WorldId, query: string): Promise<ChapterSummary[]> {
-  return call<ChapterSummary[]>('search_chapters', { spaceId, worldId, query });
+/**
+ * Substring search across title and summary.
+ * Returns one PAGE of matching summaries — 50 per page (`totalCount`
+ * carries the full match count; `truncated` reports further pages).
+ * Deterministic title ordering makes offset pages stable — walk `offset`
+ * 0, 50, 100, … while `truncated` is true.
+ *
+ * @param spaceId The Space owning the World.
+ * @param worldId The World to search.
+ * @param query   Substring to search for (case-insensitive).
+ * @param offset  Pagination offset in results (0-based); omit for 0.
+ */
+export function searchChapters(
+  spaceId: string,
+  worldId: WorldId,
+  query: string,
+  offset?: number,
+): Promise<SummaryPage<ChapterSummary>> {
+  return call<SummaryPage<ChapterSummary>>('search_chapters', { spaceId, worldId, query, offset });
 }
 
 export function updateChapter(
@@ -154,9 +187,25 @@ export function listSceneSummaries(spaceId: string, worldId: WorldId, chapterId:
   return call<SceneSummary[]>('list_scene_summaries', { spaceId, worldId, chapterId });
 }
 
-/** Substring search across title, summary, content, start time, and end time. Returns matching summaries. */
-export function searchScenes(spaceId: string, worldId: WorldId, query: string): Promise<SceneSummary[]> {
-  return call<SceneSummary[]>('search_scenes', { spaceId, worldId, query });
+/**
+ * Substring search across title, summary, content, start time, and end
+ * time. Returns one PAGE of matching summaries — 50 per page
+ * (`totalCount` carries the full match count; `truncated` reports
+ * further pages). Deterministic title ordering makes offset pages
+ * stable — walk `offset` 0, 50, 100, … while `truncated` is true.
+ *
+ * @param spaceId The Space owning the World.
+ * @param worldId The World to search.
+ * @param query   Substring to search for (case-insensitive).
+ * @param offset  Pagination offset in results (0-based); omit for 0.
+ */
+export function searchScenes(
+  spaceId: string,
+  worldId: WorldId,
+  query: string,
+  offset?: number,
+): Promise<SummaryPage<SceneSummary>> {
+  return call<SummaryPage<SceneSummary>>('search_scenes', { spaceId, worldId, query, offset });
 }
 
 export function updateScene(

@@ -13,6 +13,7 @@ import {
   getScene,
   reorderChapters,
   reorderScenes,
+  searchScenes,
   updateNovel,
   updateScene,
 } from "@/api/novel";
@@ -621,6 +622,22 @@ describe("scene gallery tools", () => {
 
     expect(listSceneImageIds).toHaveBeenCalledWith(spaceId, worldId, sceneId);
     expect(result).toBe(metas);
+  });
+});
+
+describe("search_scenes", () => {
+  it("forwards the query and an explicit offset as a page request", async () => {
+    const page = { results: [], totalCount: 64, truncated: true };
+    vi.mocked(searchScenes).mockResolvedValue(page);
+
+    const result = await sceneTools().search_scenes.execute(
+      { query: "harbor", offset: 50 },
+      ctx,
+      call,
+    );
+
+    expect(searchScenes).toHaveBeenCalledWith(spaceId, worldId, "harbor", 50);
+    expect(result).toEqual(page);
   });
 });
 

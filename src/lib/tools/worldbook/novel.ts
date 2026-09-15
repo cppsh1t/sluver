@@ -89,14 +89,23 @@ export function novelTools(): Record<string, ToolDef> {
     },
     search_novels: {
       description:
-        "Search novels by substring match across title, description, author, and tags. Returns matching novel summaries (id, title, tags, author) — call get_novel for full fields on specific hits.",
+        "Search novels by substring match across title, description, author, and tags. Returns matching novel summaries (id, title, tags, author) as a page object { results, totalCount, truncated } — call get_novel for full fields on specific hits. " +
+        "Results are paginated: one call returns up to 50 matches (totalCount carries the full match count); when truncated is true and completeness matters, pass offset (50, 100, …) to fetch the next stable page.",
       inputSchema: z.object({
         query: z.string().min(1).describe("Substring to search for (case-insensitive)."),
+        offset: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe(
+            "Pagination offset in results. One call returns the first 50 matches; when truncated is true, pass 50, 100, … to walk subsequent pages. Ordering is deterministic, so pages are stable.",
+          ),
       }),
       consentLevel: "auto",
       execute: async (input, ctx) => {
-        const { query } = input as { query: string };
-        return searchNovels(ctx.spaceId, ctx.worldId, query);
+        const { query, offset } = input as { query: string; offset?: number };
+        return searchNovels(ctx.spaceId, ctx.worldId, query, offset);
       },
     },
     get_novel: {
@@ -254,14 +263,23 @@ export function chapterTools(): Record<string, ToolDef> {
     },
     search_chapters: {
       description:
-        "Search chapters by substring match across title and summary. Returns matching chapter summaries (id, title) — call get_chapter for full fields on specific hits.",
+        "Search chapters by substring match across title and summary. Returns matching chapter summaries (id, title) as a page object { results, totalCount, truncated } — call get_chapter for full fields on specific hits. " +
+        "Results are paginated: one call returns up to 50 matches (totalCount carries the full match count); when truncated is true and completeness matters, pass offset (50, 100, …) to fetch the next stable page.",
       inputSchema: z.object({
         query: z.string().min(1).describe("Substring to search for (case-insensitive)."),
+        offset: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe(
+            "Pagination offset in results. One call returns the first 50 matches; when truncated is true, pass 50, 100, … to walk subsequent pages. Ordering is deterministic, so pages are stable.",
+          ),
       }),
       consentLevel: "auto",
       execute: async (input, ctx) => {
-        const { query } = input as { query: string };
-        return searchChapters(ctx.spaceId, ctx.worldId, query);
+        const { query, offset } = input as { query: string; offset?: number };
+        return searchChapters(ctx.spaceId, ctx.worldId, query, offset);
       },
     },
     get_chapter: {
@@ -369,14 +387,23 @@ export function sceneTools(): Record<string, ToolDef> {
     },
     search_scenes: {
       description:
-        "Search scenes by substring match across title, summary, content, start time, and end time. Returns matching scene summaries (id, title) — call get_scene for full fields on specific hits.",
+        "Search scenes by substring match across title, summary, content, start time, and end time. Returns matching scene summaries (id, title) as a page object { results, totalCount, truncated } — call get_scene for full fields on specific hits. " +
+        "Results are paginated: one call returns up to 50 matches (totalCount carries the full match count); when truncated is true and completeness matters, pass offset (50, 100, …) to fetch the next stable page.",
       inputSchema: z.object({
         query: z.string().min(1).describe("Substring to search for (case-insensitive)."),
+        offset: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe(
+            "Pagination offset in results. One call returns the first 50 matches; when truncated is true, pass 50, 100, … to walk subsequent pages. Ordering is deterministic, so pages are stable.",
+          ),
       }),
       consentLevel: "auto",
       execute: async (input, ctx) => {
-        const { query } = input as { query: string };
-        return searchScenes(ctx.spaceId, ctx.worldId, query);
+        const { query, offset } = input as { query: string; offset?: number };
+        return searchScenes(ctx.spaceId, ctx.worldId, query, offset);
       },
     },
     get_scene: {
