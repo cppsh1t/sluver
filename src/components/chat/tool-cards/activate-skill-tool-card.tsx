@@ -48,6 +48,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { ToolBlockData } from "../message-render";
 import { asString, asStringArray, isRecord, unwrapToolOutput } from "../tool-summary";
+import { ToolDurationLabel } from "./tool-body";
 
 // ─── Defensive activation narrowing ────────────────────────────────────────
 
@@ -171,6 +172,7 @@ export function ActivateSkillToolCard({ tool }: ActivateSkillToolCardProps) {
         >
           {statusLine}
         </span>
+        <ToolDurationLabel durationMs={tool.durationMs} />
         <HugeiconsIcon
           icon={ChevronDownIcon}
           strokeWidth={2}

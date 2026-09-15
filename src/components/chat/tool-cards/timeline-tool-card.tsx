@@ -45,6 +45,7 @@ import { FormattedTime } from "@/components/timemapper/formatted-time";
 import { cn } from "@/lib/utils";
 import type { ToolBlockData } from "../message-render";
 import { asString, asStringArray, isRecord, unwrapToolOutput } from "../tool-summary";
+import { ToolDurationLabel } from "./tool-body";
 
 // ─── Defensive timeline narrowing ──────────────────────────────────────────
 
@@ -190,6 +191,7 @@ export function TimelineToolCard({ tool }: TimelineToolCardProps) {
         >
           {statusLine}
         </span>
+        <ToolDurationLabel durationMs={tool.durationMs} />
         <HugeiconsIcon
           icon={ChevronDownIcon}
           strokeWidth={2}

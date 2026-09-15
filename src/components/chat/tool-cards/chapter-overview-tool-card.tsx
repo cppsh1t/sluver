@@ -42,6 +42,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { ToolBlockData } from "../message-render";
 import { asString, isRecord, unwrapToolOutput } from "../tool-summary";
+import { ToolDurationLabel } from "./tool-body";
 
 // ─── Defensive overview narrowing ──────────────────────────────────────────
 
@@ -199,6 +200,7 @@ export function ChapterOverviewToolCard({ tool }: ChapterOverviewToolCardProps) 
         >
           {statusLine}
         </span>
+        <ToolDurationLabel durationMs={tool.durationMs} />
         <HugeiconsIcon
           icon={ChevronDownIcon}
           strokeWidth={2}

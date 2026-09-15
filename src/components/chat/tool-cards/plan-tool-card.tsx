@@ -54,6 +54,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { ToolBlockData } from "../message-render";
 import { isRecord, unwrapToolOutput } from "../tool-summary";
+import { ToolDurationLabel } from "./tool-body";
 
 // ─── Empty checkbox glyph ──────────────────────────────────────────────────
 
@@ -314,6 +315,7 @@ export function PlanToolCard({ tool }: PlanToolCardProps) {
         >
           {statusLine}
         </span>
+        <ToolDurationLabel durationMs={tool.durationMs} />
         <HugeiconsIcon
           icon={ChevronDownIcon}
           strokeWidth={2}

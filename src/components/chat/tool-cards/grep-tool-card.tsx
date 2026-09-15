@@ -49,6 +49,7 @@ import type { ToolBlockData } from "../message-render";
 import type { EntityType } from "../tool-summary";
 import { asString, isRecord, unwrapToolOutput } from "../tool-summary";
 import { ENTITY_ICONS } from "./entity-icons";
+import { ToolDurationLabel } from "./tool-body";
 
 // ─── Defensive grep narrowing ──────────────────────────────────────────────
 
@@ -217,6 +218,7 @@ export function GrepToolCard({ tool }: GrepToolCardProps) {
         >
           {statusLine}
         </span>
+        <ToolDurationLabel durationMs={tool.durationMs} />
         <HugeiconsIcon
           icon={ChevronDownIcon}
           strokeWidth={2}
