@@ -265,6 +265,13 @@ export interface ToolCallView {
   readonly output: unknown;
   /** From `tool_error`. */
   readonly error: { code: string; message: string } | null;
+  /**
+   * Pure execution duration in ms, EXCLUDING the consent-approval wait.
+   * `undefined` while running and forever for denied (or abort-auto-denied)
+   * calls — nothing executed, so no duration exists. Ephemeral live-run
+   * state; never persisted.
+   */
+  readonly durationMs?: number;
 }
 
 /** A pending tool-consent request awaiting user approval. */
@@ -292,8 +299,8 @@ export interface PendingApproval {
  *   assignable to it (no cast needed at the render layer).
  *
  * `text` / `toolName` / `inputDraft` / `input` / `status` / `output` / `error`
- * are intentionally mutable so delta handlers can replace them in place inside
- * a fresh array (see `handleEvent`).
+ * / `durationMs` are intentionally mutable so delta handlers can replace them
+ * in place inside a fresh array (see `handleEvent`).
  */
 export type StreamSegment =
   | { readonly kind: "step"; readonly stepNumber: number }
@@ -308,6 +315,7 @@ export type StreamSegment =
       status: "running" | "done" | "error";
       output: unknown;
       error: { code: string; message: string } | null;
+      durationMs: number | undefined;
     };
 
 /**
@@ -368,6 +376,17 @@ export interface ConversationView {
    * treat absence as "no data" and `null` as "provider reported unknown."
    */
   readonly messageUsages: Record<string, MessageUsage>;
+  /**
+   * Per-toolCallId execution durations in ms (consent wait excluded), in
+   * SESSION-CACHE lifetime (ADR-0024) — never persisted to the thread.
+   * Populated at run finalization by sweeping the still-present live stream
+   * segments (completed calls only; denied calls never appear); consumed by
+   * the persisted block path in `buildBlocks` so durations survive the
+   * `stream → null` transition. Accumulates across runs (toolCallIds are
+   * globally unique); lost only on app restart or conversation-cache
+   * eviction.
+   */
+  readonly toolDurations: Record<string, number>;
   /**
    * Ephemeral token usage for the most recent turn (ADR-0030 §5/§6). Carries
    * the full {@link LanguageModelUsage} shape — including cache/reasoning
@@ -572,6 +591,7 @@ export interface ConversationRuntimeState {
 export const EMPTY_VIEW: ConversationView = {
   messages: [],
   messageUsages: {},
+  toolDurations: {},
   // lastTurnUsage intentionally omitted — `undefined` until first turn.
   stream: null,
   isRunning: false,
@@ -867,7 +887,7 @@ function appendDelta(
 function patchToolSegment(
   segments: readonly StreamSegment[],
   toolCallId: string,
-  patch: Partial<Pick<ToolCallView, "toolName" | "status" | "output" | "error">>,
+  patch: Partial<Pick<ToolCallView, "toolName" | "status" | "output" | "error" | "durationMs">>,
 ): readonly StreamSegment[] {
   const idx = segments.findIndex(
     (s) => s.kind === "tool" && s.toolCallId === toolCallId,
@@ -1285,6 +1305,18 @@ export function createConversationRuntimeStore(
     // The gate sets a Promise resolver here; resolveApproval consumes it.
     const approvalResolvers = new Map<string, (approved: boolean) => void>();
 
+    // ── Tool-duration timing (ephemeral, runtime-only) ────────────────
+    // Keyed by the globally-unique toolCallId. The APPROVAL WAIT IS EXCLUDED
+    // from the displayed duration: approved tools time from approval
+    // (`gateApprovedAt` — the gate resolves, execute resumes on the next
+    // microtask, so approvedAt ≈ execute start); denied (or abort-auto-
+    // denied) tools get NO duration (nothing executed). Ungated tools time
+    // from the `tool_call` event (per-run `toolCallStartedAt` in driveRun).
+    // Store-scope, not per-run, because the gate outlives runs — per-run
+    // cleanup deletes only this run's ids (see detachRunListeners).
+    const gateRequestedAt = new Map<string, number>();
+    const gateApprovedAt = new Map<string, number>();
+
     /**
      * Create an ApprovalGate bound to a specific (worldId, conversationId).
      * The gate patches `stream.pendingApprovals` when a request arrives, and
@@ -1300,6 +1332,7 @@ export function createConversationRuntimeStore(
               return;
             }
             approvalResolvers.set(req.toolCallId, resolve);
+            gateRequestedAt.set(req.toolCallId, performance.now());
 
             // Auto-deny on abort — unblocks the execute so the run can end.
             req.abortSignal.addEventListener(
@@ -1389,6 +1422,9 @@ export function createConversationRuntimeStore(
           },
         };
       });
+      if (approved) {
+        gateApprovedAt.set(toolCallId, performance.now());
+      }
       resolver(approved);
     };
     // ── Shared run driver (send + subagent dispatch, ADR-0050 D3) ────────
@@ -1613,6 +1649,24 @@ export function createConversationRuntimeStore(
         }
       };
 
+      // ── Tool duration (ephemeral, runtime-only) ─────────────────────
+      // Pure execution time, EXCLUDING the consent-approval wait: the
+      // gate resolves then execute resumes on the next microtask, so
+      // `gateApprovedAt` ≈ execute start for approved (gated) tools;
+      // denied / abort-auto-denied calls never executed and carry no
+      // duration. Ungated tools time from the `tool_call` event.
+      const toolCallStartedAt = new Map<string, number>();
+      const toolDurationMs = (toolCallId: string): number | undefined => {
+        const approvedAt = gateApprovedAt.get(toolCallId);
+        if (approvedAt !== undefined) {
+          return Math.max(0, Math.round(performance.now() - approvedAt));
+        }
+        if (gateRequestedAt.has(toolCallId)) return undefined; // denied/auto-denied — no execution
+        const startedAt = toolCallStartedAt.get(toolCallId);
+        if (startedAt === undefined) return undefined;
+        return Math.max(0, Math.round(performance.now() - startedAt));
+      };
+
       // ── Event handler — mutates view.stream per AgentEvent ──
       // Registered synchronously after run(); the loop starts on the next
       // microtask, so this listener is attached before `run_start` fires.
@@ -1691,6 +1745,7 @@ export function createConversationRuntimeStore(
 
           case "tool_call":
             flushBatch();
+            toolCallStartedAt.set(event.toolCallId, performance.now());
             patchData(worldId, conversationId, (d) => {
               if (!d.view.stream) return d;
               const inputDraft = d.view.stream.pendingInputDraft;
@@ -1713,6 +1768,7 @@ export function createConversationRuntimeStore(
                         status: "running",
                         output: undefined,
                         error: null,
+                        durationMs: undefined,
                       },
                     ],
                   },
@@ -1734,7 +1790,7 @@ export function createConversationRuntimeStore(
                     segments: patchToolSegment(
                       d.view.stream.segments,
                       event.toolCallId,
-                      { toolName: event.toolName, status: "done", output: event.output },
+                      { toolName: event.toolName, status: "done", output: event.output, durationMs: toolDurationMs(event.toolCallId) },
                     ),
                   },
                 },
@@ -1759,6 +1815,7 @@ export function createConversationRuntimeStore(
                         toolName: event.toolName,
                         status: "error",
                         error: { code: event.error.code, message: event.error.message },
+                        durationMs: toolDurationMs(event.toolCallId),
                       },
                     ),
                   },
@@ -1832,6 +1889,14 @@ export function createConversationRuntimeStore(
       const unsubView = handle.subscribe(handleEvent);
       const unsubLogger = handle.subscribe(createAgentEventLogger(roleName));
       const detachRunListeners = (): void => {
+        // Per-run cleanup (ids are this run's toolCallIds — tool_call always
+        // precedes any gate request; the gate maps are store-scope because
+        // the gate outlives runs, so only these ids are deleted).
+        for (const id of toolCallStartedAt.keys()) {
+          toolCallStartedAt.delete(id);
+          gateRequestedAt.delete(id);
+          gateApprovedAt.delete(id);
+        }
         unsubView();
         unsubLogger();
       };
@@ -1865,6 +1930,17 @@ export function createConversationRuntimeStore(
                 outputTokens: result.totalUsage.outputTokens ?? null,
               };
             }
+            // Sweep the STILL-PRESENT stream's completed tool durations into
+            // the session-lifetime cache before this patch nulls the stream —
+            // `d` is the pre-patch state, so the segments (and their
+            // durationMs) are readable exactly here. Covers aborts too
+            // (ADR-0018 — the result always resolves through this path).
+            const nextToolDurations = { ...d.view.toolDurations };
+            for (const seg of d.view.stream?.segments ?? []) {
+              if (seg.kind === "tool" && seg.durationMs !== undefined) {
+                nextToolDurations[seg.toolCallId] = seg.durationMs;
+              }
+            }
             return {
               ...d,
               runHandle: null,
@@ -1872,6 +1948,7 @@ export function createConversationRuntimeStore(
                 ...d.view,
                 messages: updatedMessages,
                 messageUsages: nextMessageUsages,
+                toolDurations: nextToolDurations,
                 lastTurnUsage: result.totalUsage,
                 lastStepInputTokens:
                   result.steps[result.steps.length - 1]?.usage?.inputTokens,
@@ -1945,19 +2022,32 @@ export function createConversationRuntimeStore(
         .catch((e) => {
           flushBatch();
           detachRunListeners();
-          patchData(worldId, conversationId, (d) => ({
-            ...d,
-            runHandle: null,
-            view: {
-              ...d.view,
-              isRunning: false,
-              stream: null,
-              error: {
-                code: "RUN_FAILED",
-                message: e instanceof Error ? e.message : String(e),
+          patchData(worldId, conversationId, (d) => {
+            // Defensive path (ADR-0018 says unreachable) — but it nulls the
+            // stream independently of the .then sweep, so mirror it here:
+            // if the .then callback threw BEFORE its own patch, this is the
+            // last chance to rescue the live durations.
+            const nextToolDurations = { ...d.view.toolDurations };
+            for (const seg of d.view.stream?.segments ?? []) {
+              if (seg.kind === "tool" && seg.durationMs !== undefined) {
+                nextToolDurations[seg.toolCallId] = seg.durationMs;
+              }
+            }
+            return {
+              ...d,
+              runHandle: null,
+              view: {
+                ...d.view,
+                isRunning: false,
+                stream: null,
+                toolDurations: nextToolDurations,
+                error: {
+                  code: "RUN_FAILED",
+                  message: e instanceof Error ? e.message : String(e),
+                },
               },
-            },
-          }));
+            };
+          });
         });
 
       return handle;
