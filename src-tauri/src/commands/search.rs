@@ -1874,7 +1874,7 @@ pub async fn fetch_url_via_webview(
 }
 
 #[cfg(not(target_os = "windows"))]
-#[tracing::instrument(skip_all, fields(url_length = url.len()))]
+#[tracing::instrument(skip_all, fields(url_length = _url.len()))]
 #[tauri::command]
 pub async fn fetch_url_via_webview(
     _app: tauri::AppHandle,
