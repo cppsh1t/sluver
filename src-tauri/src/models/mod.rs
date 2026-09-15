@@ -12,6 +12,7 @@ pub mod note;
 pub mod novel;
 pub mod provider_credential;
 pub mod ref_counts;
+pub mod search;
 pub mod setting;
 pub mod skill;
 pub mod space;
@@ -20,4 +21,5 @@ pub mod world;
 pub mod world_config;
 
 pub use grep::{GrepMatchGroup, GrepResult, GrepSnippet};
+pub use search::SearchPage;
 pub use world_config::TimeMapperConfig;
