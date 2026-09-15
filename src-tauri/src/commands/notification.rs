@@ -30,8 +30,16 @@ use crate::db::DbError;
 #[tracing::instrument(skip(app, title, body))]
 pub fn show_notification(app: AppHandle, title: String, body: String) -> Result<(), DbError> {
     let identifier = app.config().identifier.clone();
-    notify_rust::Notification::new()
-        .app_id(&identifier)
+    let mut notification = notify_rust::Notification::new();
+    // Platform app identity: `app_id` (the WinRT AppUserModelID, ADR-0036)
+    // only exists in notify-rust's Windows backend. Other platforms take the
+    // ungated `appname` (XDG app_name used for grouping; silent no-op on
+    // macOS, where identity comes from the bundle).
+    #[cfg(target_os = "windows")]
+    notification.app_id(&identifier);
+    #[cfg(not(target_os = "windows"))]
+    notification.appname(&identifier);
+    notification
         .summary(&title)
         .body(&body)
         // DO NOT REMOVE: an unset sound name makes notify-rust pass
