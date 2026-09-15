@@ -12,6 +12,17 @@
     "untitled": "未命名",
     "rename": "重命名"
   },
+  "panel": {
+    "title": "章节助手",
+    "menuLabel": "对话选项",
+    "conversationsLabel": "本章对话",
+    "menuEmpty": "暂无对话",
+    "empty": "本章还没有对话。创建一个，和 AI 助手一起打磨这一章。",
+    "emptyAction": "开始新对话",
+    "createFailed": "创建对话失败",
+    "collapse": "收起面板",
+    "expand": "展开面板"
+  },
   "toast": {
     "renameSuccess": "已重命名对话",
     "renameFailed": "重命名对话失败",

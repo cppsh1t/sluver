@@ -12,6 +12,17 @@
     "untitled": "Untitled",
     "rename": "Rename"
   },
+  "panel": {
+    "title": "Chapter assistant",
+    "menuLabel": "Conversation options",
+    "conversationsLabel": "Chapter conversations",
+    "menuEmpty": "No conversations yet",
+    "empty": "No conversations for this chapter yet. Create one and polish this chapter with the AI assistant.",
+    "emptyAction": "Start a conversation",
+    "createFailed": "Failed to create conversation",
+    "collapse": "Collapse panel",
+    "expand": "Expand panel"
+  },
   "toast": {
     "renameSuccess": "Conversation renamed",
     "renameFailed": "Failed to rename conversation",
