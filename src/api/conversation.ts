@@ -5,7 +5,7 @@
  * is anchored to either the whole world or a single chapter (via `meta`).
  */
 
-import type { Conversation, ConversationId, Message, WorldId } from '@/types';
+import type { ChapterId, Conversation, ConversationId, Message, WorldId } from '@/types';
 import { call } from './client';
 import type { CreateConversationInput } from './types';
 
@@ -13,6 +13,19 @@ import type { CreateConversationInput } from './types';
 
 export function listConversations(spaceId: string, worldId: WorldId): Promise<Conversation[]> {
   return call<Conversation[]>('list_conversations', { spaceId, worldId });
+}
+
+/**
+ * List conversations anchored to a single chapter (`meta.kind === "chapter"`),
+ * newest-first (`updated_at DESC`, ordered backend-side). Complements
+ * `listConversations`, which returns only world-scoped rows.
+ */
+export function listChapterConversations(
+  spaceId: string,
+  worldId: WorldId,
+  chapterId: ChapterId,
+): Promise<Conversation[]> {
+  return call<Conversation[]>('list_chapter_conversations', { spaceId, worldId, chapterId });
 }
 
 /**

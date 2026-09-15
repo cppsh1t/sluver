@@ -105,6 +105,7 @@ export {
 export {
   conversationKeys,
   useConversations,
+  useChapterConversations,
   useCreateConversation,
   useDeleteConversation,
   useRenameConversation,

@@ -3,11 +3,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createConversation,
   deleteConversation,
+  listChapterConversations,
   listConversations,
   updateConversationTitle,
 } from "@/api";
 import type { CreateConversationInput } from "@/api";
-import type { Conversation, ConversationId, WorldId } from "@/types";
+import type { ChapterId, Conversation, ConversationId, WorldId } from "@/types";
 
 // ─── Query keys ───────────────────────────────────────────────────────────
 
@@ -18,6 +19,10 @@ import type { Conversation, ConversationId, WorldId } from "@/types";
 export const conversationKeys = {
   all: (spaceId: string, worldId: WorldId) =>
     ["conversations", spaceId, worldId] as const,
+  // Structural child of `all` — prefix invalidation from `all(...)` covers
+  // create/rename/delete/autoTitle mutations; no dual invalidation needed.
+  chapter: (spaceId: string, worldId: WorldId, chapterId: ChapterId) =>
+    ["conversations", spaceId, worldId, "chapter", chapterId] as const,
 };
 
 // ─── Queries ──────────────────────────────────────────────────────────────
@@ -27,6 +32,17 @@ export const useConversations = (spaceId: string, worldId: WorldId) =>
     queryKey: conversationKeys.all(spaceId, worldId),
     queryFn: () => listConversations(spaceId, worldId),
     enabled: !!spaceId && !!worldId,
+  });
+
+export const useChapterConversations = (
+  spaceId: string,
+  worldId: WorldId,
+  chapterId: ChapterId,
+) =>
+  useQuery({
+    queryKey: conversationKeys.chapter(spaceId, worldId, chapterId),
+    queryFn: () => listChapterConversations(spaceId, worldId, chapterId),
+    enabled: !!spaceId && !!worldId && !!chapterId,
   });
 
 // ─── Mutations ────────────────────────────────────────────────────────────
