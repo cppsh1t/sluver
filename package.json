@@ -9,6 +9,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "fix:linuxdeploy": "bash scripts/fix-linuxdeploy.sh",
     "lint": "oxlint .",
     "lint:fix": "oxlint . --fix",
     "type-check": "tsc --noEmit",
