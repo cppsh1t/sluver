@@ -1,6 +1,6 @@
 # ADR-0049: Web search multi-provider dispatch
 
-**Status**: accepted.
+**Status**: accepted. Amended 2026-09-19: the builtin SERP engines gained a Linux (WebKitGTK) path — see the amendment section at the end.
 
 ## Context
 
@@ -65,3 +65,15 @@ The `exa` provider routes on key presence. Without a key it uses the hosted keyl
 - `docs/web-search-tool-relevance-investigation.md` — root-cause investigation that motivated this ADR
 - ADR-0013 (API key plaintext storage), ADR-0046 (global-settings precedent in meta.db)
 - ADR-0014/0016 (logging stack; dispatch logs metadata only — never query text)
+
+## Amendment (2026-09-19): Linux WebKitGTK bridge for the builtin engines
+
+The decision's Windows-first posture is relaxed for the two builtin SERP engines only: `search_web_via_webview` and its shared hidden-window machinery now compile for Linux and drive a hidden **WebKitGTK** window instead of WebView2. What changed and what deliberately did not:
+
+- **New platform bridge, same contract.** `eval_js_string` gained a `#[cfg(target_os = "linux")]` implementation: `with_webview` → `webkit2gtk::WebView::evaluate_javascript` (WebKitGTK ≥ 2.40) → `javascriptcore::ValueExt::to_json`, producing the same JSON-encoded result shape as `ExecuteScript`. The JSON unwrap was extracted into a shared `unwrap_js_json_result` (unit-tested) used by both bridges.
+- **Everything else is untouched.** Window lifecycle (`create_hidden_nav_window` — gtk widget creation requires the main thread, so the `run_on_main_thread` pattern carries over), render polling, `looks_like_challenge`, both SERP parsers, settings, and dispatch semantics (Bing falls back to reqwest on ANY webview failure; Baidu errors immediately) are platform-agnostic and reused verbatim.
+- **Deps**: Linux target gains `webkit2gtk = "=2.0.2"` (pinned to wry's transitive version so `PlatformWebview::inner()` returns OUR crate instance) + `javascriptcore-rs`.
+- **Scope guard**: `fetch_url_via_webview` and `download_image_bytes_via_webview` remain Windows-only commands. They share the machinery but were not re-gated — enabling them is mechanical follow-up work, decided separately.
+- macOS remains stubbed (WKWebView `evaluateJavaScript` bridge not implemented); Baidu there still surfaces the "requires a platform webview" error, per the original failure semantics.
+
+Rationale: the original doc (`docs/web-search-builtin-engines-platform-support.md` §7) identified "getting JS return values back" as the ONLY missing piece on Linux — this amendment closes exactly that gap and nothing broader.
