@@ -18,12 +18,12 @@
 //     content via `readabilityrs` (Mozilla Readability port), returning
 //     plain text + metadata for the LLM.
 //   - `fetch_url_via_webview` — same extraction, but the page is rendered
-//     in a hidden WebView2 first (anti-bot bypass, Windows-only command).
-//     Shares its window lifecycle machinery with the builtin search
-//     engines.
+//     in a hidden platform webview first (anti-bot bypass; WebView2 on
+//     Windows, WebKitGTK on Linux, macOS stubs out with an error). Shares
+//     its window lifecycle machinery with the builtin search engines.
 //   - `download_image_bytes_via_webview` — image-byte variant of the same
 //     hidden-window machinery (pub(crate) helper for commands/image.rs's
-//     401/403/429 fallback, ADR-0052; not a command; Windows-only).
+//     401/403/429 fallback, ADR-0052; not a command; Windows + Linux).
 //
 // ## Redaction
 //
@@ -57,7 +57,7 @@ use tauri::Manager;
 /// Bing search endpoint (GET with `q` + `adlt` query params).
 const BING_SEARCH_URL: &str = "https://www.bing.com/search";
 
-/// Baidu search endpoint (GET with `wd` + `ie` query params). WebView2-only —
+/// Baidu search endpoint (GET with `wd` + `ie` query params). Webview-only —
 /// Baidu TLS-fingerprints plain reqwest connections away.
 const BAIDU_SEARCH_URL: &str = "https://www.baidu.com/s";
 
@@ -288,10 +288,10 @@ pub(crate) fn do_set_web_search_settings(
 /// error internally (Bing falls back, Baidu propagates).
 ///
 /// Routing (see `app.webSearch` settings):
-///   - `builtin-bing` — WebView2 Bing SERP; ANY webview failure (non-Windows,
+///   - `builtin-bing` — webview Bing SERP; ANY webview failure (macOS,
 ///     timeout, challenge, zero results) falls back to the original reqwest
 ///     Bing scrape.
-///   - `builtin-baidu` — WebView2 Baidu SERP; errors propagate (no fallback —
+///   - `builtin-baidu` — webview Baidu SERP; errors propagate (no fallback —
 ///     plain HTTP is TLS-blocked by Baidu).
 ///   - `exa` — keyed `api.exa.ai` REST when a key is configured; NO key
 ///     falls back to the keyless hosted MCP endpoint (`mcp.exa.ai`) instead
@@ -467,8 +467,8 @@ fn http_client() -> Result<reqwest::Client, DbError> {
 }
 
 /// The ORIGINAL server-side Bing scrape (pre-ADR-0049 `search_web` body),
-/// kept verbatim as the fallback for when the WebView2 Bing engine fails
-/// (non-Windows, timeout, challenge page, zero parseable results).
+/// kept verbatim as the fallback for when the webview Bing engine fails
+/// (macOS, timeout, challenge page, zero parseable results).
 async fn bing_search_reqwest(
     query: &str,
     accept_language: &str,
@@ -1849,14 +1849,16 @@ async fn poll_until_selector(
 // fetch_url_via_webview
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// Fetch a URL using a hidden WebView2 browser engine, bypassing anti-bot
-/// protections that block plain HTTP requests (403 Forbidden, Cloudflare JS
-/// challenges, etc.). The fully rendered HTML is extracted via native
-/// `ICoreWebView2::ExecuteScript` and processed through the same Readability
+/// Fetch a URL using a hidden platform webview (WebView2 on Windows,
+/// WebKitGTK on Linux), bypassing anti-bot protections that block plain
+/// HTTP requests (403 Forbidden, Cloudflare JS challenges, etc.). The fully
+/// rendered HTML is extracted via the platform JS bridge
+/// ([`eval_js_string`]) and processed through the same Readability
 /// pipeline as [`fetch_url`].
 ///
-/// **Windows-only.** On macOS/Linux, returns an "unsupported" error — the
-/// WebView2 COM interop has no WKWebView/WebKitGTK equivalent wired up yet.
+/// **Windows + Linux.** On macOS, returns an "unsupported" error — no
+/// WKWebView JS-result bridge is wired up yet (the platform support doc's
+/// future-unlock section).
 ///
 /// The agent gets both `fetch_url` (fast HTTP) and this command (slower
 /// browser engine, ~3-5s per fetch). Use this when `fetch_url` returns an
@@ -1875,9 +1877,9 @@ async fn poll_until_selector(
 ///    extraction (reuse [`extract_page`]).
 ///
 /// `locale` is accepted for API parity with [`fetch_url`] but not yet wired
-/// to WebView2's `Accept-Language` (requires `WebResourceRequested`
-/// interception — deferred for now).
-#[cfg(target_os = "windows")]
+/// to the webview's `Accept-Language` (requires request interception —
+/// deferred for now).
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 #[tracing::instrument(skip_all, fields(url_length = url.len(), content_length))]
 #[tauri::command]
 pub async fn fetch_url_via_webview(
@@ -1956,7 +1958,10 @@ pub async fn fetch_url_via_webview(
     })
 }
 
-#[cfg(not(target_os = "windows"))]
+/// macOS-only stub — no WKWebView JS-result bridge is wired up yet (the
+/// `evaluateJavaScript` equivalent of [`eval_js_string`]; see the platform
+/// support doc), mirroring [`search_web_via_webview`]'s stub shape.
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
 #[tracing::instrument(skip_all, fields(url_length = _url.len()))]
 #[tauri::command]
 pub async fn fetch_url_via_webview(
@@ -1966,7 +1971,7 @@ pub async fn fetch_url_via_webview(
     _max_length: Option<usize>,
 ) -> Result<FetchedPage, DbError> {
     Err(DbError::Internal(
-        "webview fetch is currently only supported on Windows".into(),
+        "webview fetch requires a platform webview (Windows or Linux)".into(),
     ))
 }
 
@@ -2123,19 +2128,21 @@ fn looks_like_challenge(html: &str) -> bool {
 
 /// In-page fetch driver injected via [`eval_js_string`].
 ///
-/// `ICoreWebView2::ExecuteScript` cannot await promises, so the async IIFE
-/// runs detached, parks its result on `window.__sluverImg`, and the
-/// comma-operator tail hands ExecuteScript an immediate benign sync value
-/// (`"started"`) to marshal. The fetch targets `location.href`: the window
-/// navigated to the image URL, so the request is same-origin (cookies
-/// apply) and carries the real Edge TLS fingerprint — exactly what the CDN
-/// challenges key on. Bytes travel as base64 because ExecuteScript results
-/// are JSON strings (UTF-16, not binary-safe): the binary string is
-/// assembled in 0x8000-byte chunks (`String.fromCharCode.apply` overflows
-/// the argument list on whole buffers) and `btoa`'d. The leading `delete`
-/// clears any result parked by a previous retry attempt so the poll below
-/// never reads stale state.
-#[cfg(target_os = "windows")]
+/// Neither platform JS bridge can await promises (WebView2's
+/// `ExecuteScript` and WebKitGTK's `evaluate_javascript` are both
+/// callback-based), so the async IIFE runs detached, parks its result on
+/// `window.__sluverImg`, and the comma-operator tail hands the bridge an
+/// immediate benign sync value (`"started"`) to marshal. The fetch targets
+/// `location.href`: the window navigated to the image URL, so the request
+/// is same-origin (cookies apply) and carries the platform engine's real
+/// browser TLS fingerprint — exactly what the CDN challenges key on. Bytes
+/// travel as base64 because both bridges marshal results as JSON strings
+/// (not binary-safe): the binary string is assembled in 0x8000-byte
+/// chunks (`String.fromCharCode.apply` overflows the argument list on
+/// whole buffers) and `btoa`'d. The leading `delete` clears any result
+/// parked by a previous retry attempt so the poll below never reads
+/// stale state.
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 const WEBVIEW_IMAGE_FETCH_JS: &str = r#"delete window.__sluverImg, (async () => {
     try {
         const r = await fetch(location.href);
@@ -2161,7 +2168,7 @@ const WEBVIEW_IMAGE_FETCH_JS: &str = r#"delete window.__sluverImg, (async () => 
 
 /// Poll probe: `"pending"` until the IIFE parks its result, then the
 /// JSON-stringified result object.
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 const WEBVIEW_IMAGE_POLL_JS: &str =
     r#"window.__sluverImg === undefined ? "pending" : JSON.stringify(window.__sluverImg)"#;
 
@@ -2172,13 +2179,13 @@ const WEBVIEW_IMAGE_POLL_JS: &str =
 /// clear after a few seconds). `Err(detail)` — hard failure, where
 /// `detail` is built from status / content-type / short error only (never
 /// the URL or payload bytes — redaction policy).
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 async fn webview_image_fetch_attempt(
     window: &tauri::WebviewWindow,
 ) -> Result<Option<Vec<u8>>, String> {
     // Kick off the detached fetch IIFE. 5s timeout: the eval returns the
-    // "started" sentinel synchronously — only ExecuteScript dispatch
-    // latency is on the clock here, not the fetch itself.
+    // "started" sentinel synchronously — only JS-bridge dispatch latency
+    // is on the clock here, not the fetch itself.
     eval_js_string(
         window,
         WEBVIEW_IMAGE_FETCH_JS,
@@ -2189,7 +2196,7 @@ async fn webview_image_fetch_attempt(
 
     // Poll the parked result every 500ms under a 15s overall budget. The
     // per-eval timeout is also 15s: the COMPLETING poll marshals the
-    // multi-MB base64 string across the ExecuteScript bridge, which can
+    // multi-MB base64 string across the platform JS bridge, which can
     // legitimately take seconds on large images.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
     let raw = loop {
@@ -2248,9 +2255,10 @@ async fn webview_image_fetch_attempt(
     Err(detail)
 }
 
-/// Fetch image bytes through a hidden WebView2 window — the anti-bot
-/// fallback behind `commands::image::download_image_bytes_with_fallback`
-/// (called ONLY for reqwest 401/403/429, Windows only).
+/// Fetch image bytes through a hidden platform webview (WebView2 on
+/// Windows, WebKitGTK on Linux) — the anti-bot fallback behind
+/// `commands::image::download_image_bytes_with_fallback` (called ONLY for
+/// reqwest 401/403/429; macOS stubs out).
 ///
 /// Reuses the shared hidden-window machinery: the window navigates
 /// DIRECTLY to the image URL (label prefix `webview-image-`), waits for
@@ -2265,7 +2273,7 @@ async fn webview_image_fetch_attempt(
 /// **Redaction:** failures collapse to `DbError::Internal` whose detail
 /// uses only status / content-type / short error strings — the URL and
 /// payload bytes are never embedded (ADR-0048/0016).
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 pub(crate) async fn download_image_bytes_via_webview(
     app: &tauri::AppHandle,
     url: &Url,
@@ -2312,18 +2320,18 @@ pub(crate) async fn download_image_bytes_via_webview(
     outcome
 }
 
-/// Non-Windows stub — mirrors [`fetch_url_via_webview`]'s
+/// macOS-only stub — mirrors [`fetch_url_via_webview`]'s
 /// unsupported-platform error so
 /// `commands::image::download_image_bytes_with_fallback` compiles
-/// everywhere (and surfaces the plain reqwest error off-Windows, since the
+/// everywhere (and surfaces the plain reqwest error on macOS, since the
 /// `is_webview_fallback_status` gating already ran).
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
 pub(crate) async fn download_image_bytes_via_webview(
     _app: &tauri::AppHandle,
     _url: &Url,
 ) -> Result<Vec<u8>, DbError> {
     Err(DbError::Internal(
-        "webview image fetch is currently only supported on Windows".into(),
+        "webview image fetch requires a platform webview (Windows or Linux)".into(),
     ))
 }
 
@@ -2342,8 +2350,9 @@ pub(crate) async fn download_image_bytes_via_webview(
 ///
 /// **Pipeline:**
 /// 1. `reqwest` GET (reuses `CHROME_UA` + `REQUEST_TIMEOUT_SECS` from
-///    `fetch_url`; on 401/403/429 retries through a hidden WebView2 —
-///    `commands::search::download_image_bytes_via_webview`, ADR-0052)
+///    `fetch_url`; on 401/403/429 retries through a hidden platform
+///    webview — `commands::search::download_image_bytes_via_webview`,
+///    ADR-0052)
 /// 2. `image::load_from_memory` auto-detects format (JPEG / PNG / WebP)
 /// 3. Center-crop to `aspect` — cuts the longer dimension in half from each
 ///    side so the source center stays in frame
@@ -2402,9 +2411,9 @@ pub async fn fetch_and_prepare_image(
     // ── 2. Download bytes (reuse the Chrome UA + timeout from fetch_url) ─
     // Shared helper (`commands::image::download_image_bytes_with_fallback`)
     // — identical client builder, UA, accept header, and timeout as before
-    // the extraction, plus a transparent hidden-WebView2 retry when the
-    // CDN answers 401/403/429 (Windows only, ADR-0052). The `app` handle
-    // feeds that fallback; it is covered by `skip_all` above.
+    // the extraction, plus a transparent hidden-platform-webview retry
+    // when the CDN answers 401/403/429 (Windows + Linux, ADR-0052). The
+    // `app` handle feeds that fallback; it is covered by `skip_all` above.
     let bytes =
         crate::commands::image::download_image_bytes_with_fallback(Some(&app), &target).await?;
 

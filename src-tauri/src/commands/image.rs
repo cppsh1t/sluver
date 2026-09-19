@@ -394,17 +394,19 @@ pub(crate) fn is_webview_fallback_status(status: reqwest::StatusCode) -> bool {
     matches!(status.as_u16(), 401 | 403 | 429)
 }
 
-/// [`download_image_bytes`] + transparent WebView2 fallback (ADR-0052).
+/// [`download_image_bytes`] + transparent platform-webview fallback
+/// (ADR-0052).
 ///
 /// The fast path is always plain reqwest. When — and only when — the
 /// reqwest attempt fails with 401/403/429
 /// ([`is_webview_fallback_status`]) and an `AppHandle` is available, the
-/// download is retried inside a hidden WebView2 window
-/// (`commands::search::download_image_bytes_via_webview`): a same-origin
-/// in-page `fetch` with the real Edge TLS fingerprint and the app's shared
-/// WebView2 cookie profile, which is what the CDN challenge actually keys
-/// on. Both commands with a URL source (`fetch_and_prepare_image`,
-/// `prepare_image`) route through here.
+/// download is retried inside a hidden platform webview (WebView2 on
+/// Windows, WebKitGTK on Linux —
+/// `commands::search::download_image_bytes_via_webview`): a same-origin
+/// in-page `fetch` with the platform engine's real browser TLS fingerprint
+/// and the app's shared webview cookie profile, which is what the CDN
+/// challenge actually keys on. Both commands with a URL source
+/// (`fetch_and_prepare_image`, `prepare_image`) route through here.
 ///
 /// `app: None` (unit tests, non-window contexts) skips the fallback and
 /// converts the error directly — the exact pre-fallback behavior.
