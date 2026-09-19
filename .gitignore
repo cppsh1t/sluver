@@ -31,3 +31,4 @@ PLAN.md
 # Code-notes skill output (root-level only — anchored so it can never match
 # source dirs like src/components/notes/).
 /notes
+.omo
