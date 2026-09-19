@@ -1,14 +1,16 @@
 /**
- * WebView fetch tool — fetch a URL via a real browser engine (WebView2).
+ * WebView fetch tool — fetch a URL via a real browser engine (platform
+ * webview: WebView2 on Windows, WebKitGTK on Linux).
  *
  * Wraps the server-side `fetch_url_via_webview` command (see `@/api/search`).
  * The agent uses this as a fallback when `web_fetch` fails with 403 Forbidden
- * or when the page requires JavaScript to render content. The hidden WebView2
- * window loads the page in a real browser engine, letting Cloudflare/anti-bot
- * JS challenges resolve naturally, then extracts `document.documentElement
- * .outerHTML` via native `ExecuteScript` and runs the same Readability +
- * Markdown extraction as `web_fetch` (same `FetchedPage` shape, same image
- * handling — see `webfetch.ts` for the full image-gathering notes).
+ * or when the page requires JavaScript to render content. The hidden
+ * platform webview window loads the page in a real browser engine, letting
+ * Cloudflare/anti-bot JS challenges resolve naturally, then extracts
+ * `document.documentElement.outerHTML` via the platform JS bridge and runs
+ * the same Readability + Markdown extraction as `web_fetch` (same
+ * `FetchedPage` shape, same image handling — see `webfetch.ts` for the full
+ * image-gathering notes).
  *
  * **Slower** than `web_fetch` (~3-5s per fetch vs <1s). The tool description
  * guides the agent to try `web_fetch` first and fall back here on failure.
@@ -45,7 +47,8 @@ export function webViewFetchTools(): Record<string, ToolDef> {
   return {
     web_fetch_via_browser: {
       description:
-        "Fetch a URL using a REAL browser engine (WebView2), bypassing anti-bot protections. " +
+        "Fetch a URL using a REAL browser engine (platform webview: WebView2 on Windows, " +
+        "WebKitGTK on Linux), bypassing anti-bot protections. " +
         "Use this ONLY when `web_fetch` returned an error (e.g. 403 Forbidden, access denied) " +
         "or when the page requires JavaScript to render content. " +
         "Slower than `web_fetch` (3-5 seconds per fetch) but handles Cloudflare/JS challenges. " +

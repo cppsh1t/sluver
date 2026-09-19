@@ -90,11 +90,12 @@ export function fetchUrl(
 }
 
 /**
- * Fetch a URL using a hidden WebView2 browser engine. Slower than `fetchUrl`
- * (~3-5s) but bypasses anti-bot protections (403, Cloudflare JS challenges)
- * that block plain HTTP. Returns the same `FetchedPage` format.
+ * Fetch a URL using a hidden platform webview (WebView2 on Windows,
+ * WebKitGTK on Linux). Slower than `fetchUrl` (~3-5s) but bypasses anti-bot
+ * protections (403, Cloudflare JS challenges) that block plain HTTP. Returns
+ * the same `FetchedPage` format.
  *
- * Windows-only — on other platforms the command returns an error.
+ * macOS — the command returns an error (no WKWebView bridge wired up).
  */
 export function fetchUrlViaWebview(
   url: string,
