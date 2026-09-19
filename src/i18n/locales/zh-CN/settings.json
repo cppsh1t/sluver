@@ -92,7 +92,6 @@
     "getKey": "获取 Key",
     "keyRequiredHint": "此引擎需要 API Key 才能使用，未填写时搜索会失败。",
     "keylessHint": "未填 Key 时使用免 key 每日约 50 次额度（无需代理）",
-    "windowsOnlyHint": "仅限 Windows",
     "saveSuccess": "网络搜索设置已保存",
     "saveFailed": "保存网络搜索设置失败",
     "loadFailed": "加载网络搜索设置失败"

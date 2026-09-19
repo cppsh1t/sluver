@@ -359,7 +359,7 @@ function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     {
       value: "builtin-baidu",
       label: t("settings:webSearch.provider.builtinBaidu.name"),
-      description: `${t("settings:webSearch.provider.builtinBaidu.description")} · ${t("settings:webSearch.windowsOnlyHint")}`,
+      description: t("settings:webSearch.provider.builtinBaidu.description"),
       keyed: false,
     },
     {

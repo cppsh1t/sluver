@@ -92,7 +92,6 @@
     "getKey": "Get a key",
     "keyRequiredHint": "This engine requires an API key — searches will fail without one.",
     "keylessHint": "Without a key, uses the keyless tier (~50 searches/day, no proxy needed)",
-    "windowsOnlyHint": "Windows only",
     "saveSuccess": "Web search settings saved",
     "saveFailed": "Failed to save web search settings",
     "loadFailed": "Failed to load web search settings"

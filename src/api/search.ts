@@ -150,8 +150,8 @@ export function fetchAndPrepareImage(
 /**
  * Search engine backing the agent's `web_search` tool (ADR-0049).
  *
- * - `builtin-bing` / `builtin-baidu` — keyless WebView2 SERP scraping
- *   (Baidu is Windows-only).
+ * - `builtin-bing` / `builtin-baidu` — keyless SERP scraping through a
+ *   hidden platform webview (WebView2 on Windows, WebKitGTK on Linux).
  * - The rest are BYOK REST providers requiring an entry in
  *   {@link WebSearchApiKeys}.
  */
