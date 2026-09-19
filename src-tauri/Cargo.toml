@@ -166,3 +166,19 @@ windows = { version = "0.61", default-features = false }
 # unpackaged app in dev builds.
 winreg = "0.55"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# WebKitGTK bridge for the builtin SERP engines (commands/search.rs) — the
+# Linux counterpart of the Windows WebView2 COM path. Pinned `=2.0.2` to
+# match what wry 0.55 pulls transitively; a mismatched version would be a
+# SEPARATE crate instance whose `WebView` type `PlatformWebview::inner()`
+# (wry's re-export) never returns. `v2_40` unlocks `evaluate_javascript`,
+# the non-deprecated replacement for `run_javascript` (already enabled
+# transitively via wry's `linux-body` feature; explicit here so the code
+# cannot silently break if wry's feature set changes).
+webkit2gtk = { version = "=2.0.2", features = ["v2_40"] }
+# `javascriptcore` (lib name; package `javascriptcore-rs`, same version line
+# webkit2gtk 2.0.2 uses): `ValueExt::to_json` serializes the
+# `evaluate_javascript` result into the same JSON-encoded string shape
+# WebView2's `ExecuteScript` produces, so the unwrap logic stays shared.
+javascriptcore-rs = "1.1"
+
