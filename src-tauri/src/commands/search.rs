@@ -3,8 +3,9 @@
 // Commands living here:
 //   - `search_web` — dispatches to the provider configured in
 //     `app.webSearch` (meta.db settings KV):
-//       - keyless builtin engines rendered in a hidden WebView2 window
-//         (Bing SERP, with the original reqwest scrape as fallback; Baidu
+//       - keyless builtin engines rendered in a hidden webview window
+//         (WebView2 on Windows, WebKitGTK on Linux):
+//         Bing SERP, with the original reqwest scrape as fallback; Baidu
 //         SERP, webview-only — plain HTTP is TLS-blocked by Baidu),
 //       - four BYOK REST providers (Tavily / Serper / Jina / Brave), and
 //       - Exa, which routes on key presence: a configured key takes the
@@ -17,11 +18,12 @@
 //     content via `readabilityrs` (Mozilla Readability port), returning
 //     plain text + metadata for the LLM.
 //   - `fetch_url_via_webview` — same extraction, but the page is rendered
-//     in a hidden WebView2 first (anti-bot bypass). Shares its window
-//     lifecycle machinery with the builtin search engines.
+//     in a hidden WebView2 first (anti-bot bypass, Windows-only command).
+//     Shares its window lifecycle machinery with the builtin search
+//     engines.
 //   - `download_image_bytes_via_webview` — image-byte variant of the same
 //     hidden-window machinery (pub(crate) helper for commands/image.rs's
-//     401/403/429 fallback, ADR-0052; not a command).
+//     401/403/429 fallback, ADR-0052; not a command; Windows-only).
 //
 // ## Redaction
 //
@@ -47,8 +49,9 @@ use url::Url;
 use crate::db::{DbError, DbManager};
 
 // `tauri::Manager` provides `app.get_webview_window()` — only needed by the
-// Windows paths (`fetch_url_via_webview` + the builtin search engines).
-#[cfg(target_os = "windows")]
+// hidden-webview paths (`fetch_url_via_webview` + the builtin search
+// engines) compiled on Windows and Linux.
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 use tauri::Manager;
 
 /// Bing search endpoint (GET with `q` + `adlt` query params).
@@ -336,8 +339,9 @@ pub(crate) async fn dispatch_web_search(
 
     let results = match provider {
         WebSearchProvider::BuiltinBing => {
-            // Keyless Bing via hidden WebView2 SERP. ANY webview failure
-            // falls back to the original reqwest scrape path below.
+            // Keyless Bing via hidden webview SERP (WebView2 on Windows,
+            // WebKitGTK on Linux). ANY webview failure falls back to the
+            // original reqwest scrape path below.
             match search_web_via_webview(app, SearchEngine::Bing, query, accept_language, limit)
                 .await
             {
@@ -353,7 +357,7 @@ pub(crate) async fn dispatch_web_search(
             }
         }
         WebSearchProvider::BuiltinBaidu => {
-            // Keyless Baidu via hidden WebView2 SERP. No reqwest fallback —
+            // Keyless Baidu via hidden webview SERP. No reqwest fallback —
             // Baidu TLS-blocks non-browser clients. 安全验证 and other
             // failures surface immediately (no retry loop).
             search_web_via_webview(app, SearchEngine::Baidu, query, accept_language, limit).await?
@@ -1547,30 +1551,39 @@ fn extract_title(html: &str) -> Option<String> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Hidden-WebView2 machinery (shared by fetch_url_via_webview + search)
+// Hidden-webview machinery (shared by fetch_url_via_webview + search)
 // ═══════════════════════════════════════════════════════════════════════════
 //
 // Both the URL fetcher and the builtin search engines drive the same hidden
 // window lifecycle; the steps below were extracted (behavior-identical) from
 // the original inline `fetch_url_via_webview` body:
 //   1. `create_hidden_nav_window` — build on the main thread (WebView2
-//      deadlock avoidance), `on_page_load(Finished)` → `Notify`.
+//      window creation has main-thread affinity — same pattern as
+//      `window_manager::ensure_space_window`; on Linux, gtk widget
+//      creation likewise must happen on the gtk main thread),
+//      `on_page_load(Finished)` → `Notify`.
 //   2. `wait_for_page_load` — await the notify with a timeout.
 //   3. `eval_js_string` / `eval_rendered_html` / `poll_until_selector` —
-//      extract rendered state via native `ICoreWebView2::ExecuteScript`.
+//      extract rendered state via the platform JS bridge
+//      (`ICoreWebView2::ExecuteScript` on Windows,
+//      `webkit2gtk evaluate_javascript` on Linux).
 // Callers own the close discipline: the window is ALWAYS closed, success or
 // failure (see the `let outcome = { ... }.await; let _ = window.close();`
 // pattern in both commands below).
+//
+// macOS has no bridge wired up yet (WKWebView `evaluateJavaScript` would be
+// the equivalent) — everything below is windows+linux only.
 
 /// Build a hidden, non-decorated `WebviewWindow` navigating to `target` on
-/// the main thread (WebView2 window creation has main-thread affinity —
-/// same pattern as `window_manager::ensure_space_window`).
+/// the main thread (window creation has main-thread affinity — same pattern
+/// as `window_manager::ensure_space_window`).
 ///
-/// `loaded` is notified when `PageLoadEvent::Finished` fires. Uses
+/// `loaded` is notified when `PageLoadEvent::Finished` fires (wry maps
+/// WebKitGTK's `LoadEvent::Finished` to the same payload on Linux). Uses
 /// `tokio::sync::oneshot` (not `std::sync::mpsc`) so the build-wait is a
 /// non-blocking `.await` on the tokio runtime. Returns the built window
 /// handle (re-resolved via `get_webview_window` after the build result).
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 async fn create_hidden_nav_window(
     app: &tauri::AppHandle,
     label: &str,
@@ -1618,7 +1631,7 @@ async fn create_hidden_nav_window(
 /// Await the `PageLoadEvent::Finished` notification with a timeout.
 /// Anti-bot challenge pages can legitimately take 10-15s, so callers pass a
 /// generous ceiling (30s).
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 async fn wait_for_page_load(
     loaded: &tokio::sync::Notify,
     timeout: std::time::Duration,
@@ -1634,6 +1647,28 @@ async fn wait_for_page_load(
         })
 }
 
+/// Normalize a JSON-encoded JS evaluation result into a plain string.
+///
+/// Both platform bridges hand back the script's return value as a JSON
+/// string: WebView2's `ExecuteScript` and WebKitGTK's `jsc_value_to_json`
+/// share that contract (a string return arrives as `"..."`, a number as a
+/// bare literal). Unwrap one JSON layer for strings; stringify other values
+/// via `Value::to_string()`; non-JSON text (e.g. `undefined`) passes
+/// through best-effort.
+fn unwrap_js_json_result(json_string: String) -> Result<String, DbError> {
+    if json_string.is_empty() {
+        return Err(DbError::Internal(
+            "JS evaluation returned an empty result".into(),
+        ));
+    }
+
+    match serde_json::from_str::<serde_json::Value>(&json_string) {
+        Ok(serde_json::Value::String(s)) => Ok(s),
+        Ok(other) => Ok(other.to_string()),
+        Err(_) => Ok(json_string), // best-effort fallback
+    }
+}
+
 /// Evaluate an arbitrary JS expression in a WebView2 window and return the
 /// result as a string, via native `ICoreWebView2::ExecuteScript`.
 ///
@@ -1641,9 +1676,9 @@ async fn wait_for_page_load(
 /// discards the JS return value. To get a value back to Rust, we drop down
 /// to the platform webview via `with_webview` and invoke `ExecuteScript`,
 /// which provides the result via a completion callback. The result arrives
-/// as a JSON-encoded value (double-quoted for a string return), which we
-/// unwrap via `serde_json` — non-string values (e.g. a number from a
-/// `.length` count) stringify via `Value::to_string()`.
+/// as a JSON-encoded value (double-quoted for a string return), which
+/// [`unwrap_js_json_result`] unwraps — non-string values (e.g. a number
+/// from a `.length` count) stringify via `Value::to_string()`.
 ///
 /// The `with_webview` closure runs synchronously on the webview thread; we
 /// bridge the `ExecuteScript` result back to the async caller via an
@@ -1697,25 +1732,73 @@ async fn eval_js_string(
     .map_err(|e| DbError::Internal(format!("spawn_blocking join error: {e}")))??;
 
     let json_string = raw_result.map_err(DbError::Internal)?;
-
-    // WebView2 returns the JS result as a JSON-encoded value. For a string
-    // return the raw value is "\"<...>\"" — unwrap one JSON string layer.
-    if json_string.is_empty() {
-        return Err(DbError::Internal(
-            "ExecuteScript returned empty result".into(),
-        ));
-    }
-
-    match serde_json::from_str::<serde_json::Value>(&json_string) {
-        Ok(serde_json::Value::String(s)) => Ok(s),
-        Ok(other) => Ok(other.to_string()),
-        Err(_) => Ok(json_string), // best-effort fallback
-    }
+    unwrap_js_json_result(json_string)
 }
 
-/// Extract the fully rendered HTML of a WebView2 window
+/// Linux (WebKitGTK) counterpart of the WebView2 `ExecuteScript` bridge
+/// above — the piece ADR-0049's "future unlock path" identified as the only
+/// gap: Tauri can create hidden windows on Linux, but `eval` is
+/// fire-and-forget there too.
+///
+/// Via `with_webview` we reach wry's `webkit2gtk::WebView` and call
+/// `evaluate_javascript` (WebKitGTK ≥ 2.40), whose GLib async callback hands
+/// back a `javascriptcore::Value`. `ValueExt::to_json` serializes it to the
+/// same JSON-encoded shape `ExecuteScript` returns on Windows (string
+/// return → `"..."`), so the unwrap logic is shared via
+/// [`unwrap_js_json_result`].
+///
+/// The `with_webview` closure runs on the event-loop thread, which owns the
+/// GLib main context that `evaluate_javascript` requires (its gtk-rs
+/// wrapper asserts ownership); the callback fires on that same thread and
+/// forwards through an `mpsc` channel consumed inside `spawn_blocking` —
+/// mirroring the Windows bridge's deadlock-avoidance shape.
+#[cfg(target_os = "linux")]
+async fn eval_js_string(
+    window: &tauri::WebviewWindow,
+    js: &str,
+    timeout: std::time::Duration,
+) -> Result<String, DbError> {
+    use javascriptcore::ValueExt;
+    use std::sync::mpsc;
+    use webkit2gtk::WebViewExt;
+
+    let (tx, rx) = mpsc::channel::<Result<String, String>>();
+    // The with_webview closure must be 'static — own the script text.
+    let js = js.to_string();
+
+    window
+        .with_webview(move |wv: tauri::webview::PlatformWebview| {
+            let webview = wv.inner();
+            // `None` alone is ambiguous for `Option<&impl IsA<Cancellable>>`.
+            let cancellable: Option<&webkit2gtk::gio::Cancellable> = None;
+            webview.evaluate_javascript(&js, None, None, cancellable, move |result| {
+                // to_json(0) mirrors ExecuteScript's JSON encoding; NULL
+                // (non-JSON-serializable value) → empty string, which
+                // unwrap_js_json_result surfaces as an error.
+                let value = result
+                    .map(|v| v.to_json(0).map(|s| s.to_string()).unwrap_or_default())
+                    .map_err(|e| format!("evaluate_javascript error: {e}"));
+                let _ = tx.send(value);
+            });
+        })
+        .map_err(|e| DbError::Internal(format!("with_webview dispatch failed: {e}")))?;
+
+    // Bridge sync mpsc → async (avoid blocking the tokio runtime).
+    let raw_result = tokio::task::spawn_blocking(move || {
+        rx.recv_timeout(timeout).map_err(|e| {
+            DbError::Internal(format!("evaluate_javascript channel timed out: {e}"))
+        })
+    })
+    .await
+    .map_err(|e| DbError::Internal(format!("spawn_blocking join error: {e}")))??;
+
+    let json_string = raw_result.map_err(DbError::Internal)?;
+    unwrap_js_json_result(json_string)
+}
+
+/// Extract the fully rendered HTML of a hidden webview window
 /// (`document.documentElement.outerHTML`, 15s script timeout).
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 async fn eval_rendered_html(
     window: &tauri::WebviewWindow,
     timeout: std::time::Duration,
@@ -1730,7 +1813,7 @@ async fn eval_rendered_html(
 /// results container is populated. A deadline of ~8s covers slow Bing/Baidu
 /// hydration without turning a dead page into a long hang (the page-load
 /// wait already consumed the generous share of the budget).
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 async fn poll_until_selector(
     window: &tauri::WebviewWindow,
     selector_css_count_js: &str,
@@ -1903,7 +1986,7 @@ enum SearchEngine {
     Baidu,
 }
 
-/// Run a keyless SERP search in a hidden WebView2 window.
+/// Run a keyless SERP search in a hidden webview window.
 ///
 /// Flow: build engine URL → create hidden window (label prefix
 /// `webview-searcher-`) → wait for page load (30s, anti-bot JS budget) →
@@ -1911,15 +1994,20 @@ enum SearchEngine {
 /// hydration budget) → extract outerHTML → parse with the engine parser →
 /// ALWAYS close the window.
 ///
+/// Platform: Windows (hidden WebView2) and Linux (hidden WebKitGTK — a
+/// real WebKit engine with a real cookie jar and the user's residential
+/// IP, satisfying the same anti-bot expectations WebView2 does; only the
+/// JS-result bridge differs, see [`eval_js_string`]).
+///
 /// Failure semantics: an anti-bot challenge page, a hydration timeout, or
 /// zero parseable results are ALL errors (the Bing caller falls back to the
 /// reqwest scrape; the Baidu caller surfaces the error). Baidu 安全验证
 /// pages surface immediately — no retry loop by design.
 ///
 /// `locale` is accepted for parity with the dispatch signature but not yet
-/// wired to WebView2's `Accept-Language` (same deferral as
+/// wired to the webview's `Accept-Language` (same deferral as
 /// [`fetch_url_via_webview`]).
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 async fn search_web_via_webview(
     app: &tauri::AppHandle,
     engine: SearchEngine,
@@ -1988,10 +2076,12 @@ async fn search_web_via_webview(
     outcome
 }
 
-/// Non-Windows stub — the SERP engines are WebView2-only. The Bing caller
-/// treats this as just another webview failure and falls back to the
-/// reqwest scrape; the Baidu caller surfaces the error to the user.
-#[cfg(not(target_os = "windows"))]
+/// macOS-only stub — no WKWebView JS-result bridge is wired up yet (the
+/// `evaluateJavaScript` equivalent of [`eval_js_string`]; see the platform
+/// support doc §future). The Bing caller treats this as just another
+/// webview failure and falls back to the reqwest scrape; the Baidu caller
+/// surfaces the error to the user.
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
 async fn search_web_via_webview(
     _app: &tauri::AppHandle,
     engine: SearchEngine,
@@ -2001,10 +2091,10 @@ async fn search_web_via_webview(
 ) -> Result<Vec<SearchResult>, DbError> {
     match engine {
         SearchEngine::Bing => Err(DbError::Internal(
-            "bing webview search is only supported on Windows".into(),
+            "bing webview search requires a platform webview (Windows or Linux)".into(),
         )),
         SearchEngine::Baidu => Err(DbError::Internal(
-            "baidu search engine requires WebView2 (Windows only)".into(),
+            "baidu search engine requires a platform webview (Windows or Linux)".into(),
         )),
     }
 }

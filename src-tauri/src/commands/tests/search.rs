@@ -452,3 +452,34 @@ fn exa_keyless_status_err_maps_429_to_quota_hint() {
         "exa keyless search failed: initialize returned HTTP 502 Bad Gateway"
     );
 }
+
+// ─── JS-bridge result unwrapping (shared by both platform bridges) ──────────
+
+#[test]
+fn unwrap_js_json_result_unwraps_string_layer() {
+    // WebView2 ExecuteScript / WebKitGTK jsc_value_to_json both hand back a
+    // JSON-encoded value: a string return arrives quoted + JSON-escaped.
+    let out = unwrap_js_json_result(r#""<html>\"attr\"</html>""#.into()).unwrap();
+    assert_eq!(out, "<html>\"attr\"</html>");
+}
+
+#[test]
+fn unwrap_js_json_result_stringifies_numbers_and_null() {
+    // Selector-count polls evaluate to a bare number.
+    assert_eq!(unwrap_js_json_result("5".into()).unwrap(), "5");
+    assert_eq!(unwrap_js_json_result("null".into()).unwrap(), "null");
+}
+
+#[test]
+fn unwrap_js_json_result_passes_non_json_through() {
+    // `undefined` (WebKitGTK) and other non-JSON text pass through as-is.
+    assert_eq!(
+        unwrap_js_json_result("undefined".into()).unwrap(),
+        "undefined"
+    );
+}
+
+#[test]
+fn unwrap_js_json_result_rejects_empty() {
+    assert!(unwrap_js_json_result(String::new()).is_err());
+}
