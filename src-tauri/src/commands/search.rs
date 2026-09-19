@@ -1785,9 +1785,8 @@ async fn eval_js_string(
 
     // Bridge sync mpsc → async (avoid blocking the tokio runtime).
     let raw_result = tokio::task::spawn_blocking(move || {
-        rx.recv_timeout(timeout).map_err(|e| {
-            DbError::Internal(format!("evaluate_javascript channel timed out: {e}"))
-        })
+        rx.recv_timeout(timeout)
+            .map_err(|e| DbError::Internal(format!("evaluate_javascript channel timed out: {e}")))
     })
     .await
     .map_err(|e| DbError::Internal(format!("spawn_blocking join error: {e}")))??;
