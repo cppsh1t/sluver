@@ -1,6 +1,6 @@
 # ADR-0052: Image download WebView2 fallback
 
-**Status**: accepted.
+**Status**: accepted (amended 2026-09-19 — platform scope widened to Linux, see §4).
 
 ## Context
 
@@ -30,7 +30,7 @@ A failed fallback preserves the ORIGINAL HTTP error. The model keeps seeing `fet
 
 ### 4. Platform and surface scope
 
-Windows-only, behind a `cfg` with a stub elsewhere; non-Windows keeps reqwest-only behavior and the original error, matching the Windows-first posture of ADR-0036 and ADR-0049's `builtin-baidu`. The frontend is untouched: Tauri auto-injects the `AppHandle` parameter into `fetch_and_prepare_image` / `prepare_image`, so tool semantics, the TS wrappers, and every tool description stay byte-identical. The model neither knows about nor chooses the transport.
+**Amended 2026-09-19**: originally Windows-only. The WebKitGTK JS-result bridge added for ADR-0049's builtin engines (see `docs/web-search-builtin-engines-platform-support.md`) had already made the hidden-window machinery platform-agnostic, so the widening was a pure `cfg` flip plus platform-neutral comment wording — zero logic changes, the in-page JS byte-identical. The fallback now runs on Windows (WebView2) and Linux (WebKitGTK); macOS keeps the stub: reqwest-only behavior and the original error, matching the no-WKWebView-bridge posture of ADR-0049's `builtin-baidu` on that platform. The frontend is untouched: Tauri auto-injects the `AppHandle` parameter into `fetch_and_prepare_image` / `prepare_image`, so tool semantics, the TS wrappers, and every tool description stay byte-identical. The model neither knows about nor chooses the transport.
 
 ## Consequences
 
@@ -50,6 +50,7 @@ Windows-only, behind a `cfg` with a stub elsewhere; non-Windows keeps reqwest-on
 ## References
 
 - ADR-0049 (hidden-WebView2 machinery; invisible webview/reqwest transport-fallback precedent; explicit-peer-tool philosophy)
+- `docs/web-search-builtin-engines-platform-support.md` (the WebKitGTK JS-result bridge the 2026-09-19 amendment rides)
 - ADR-0048 (the image pipelines this rides; URL redaction the new path must keep)
 - ADR-0016 (`snake_case` log fields)
 - ADR-0045 §3 (`look_at` URL passthrough: the provider fetches, which is why the same URL succeeds there and 403s here)

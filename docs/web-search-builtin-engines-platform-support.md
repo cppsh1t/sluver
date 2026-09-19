@@ -1,9 +1,9 @@
 # 内置搜索引擎(Bing / 百度)平台支持说明 — WebView2(Windows) 与 WebKitGTK(Linux)
 
-> **日期**: 2026-09-12(初版,当时仅 Windows)· 2026-09-19 增补 Linux WebKitGTK 桥
+> **日期**: 2026-09-12(初版,当时仅 Windows)· 2026-09-19 增补 Linux WebKitGTK 桥 · 2026-09-19(二批)接通 fetch / 图片兜底入口
 > **状态**: 现状说明(解释设计约束,非遗留问题)
 > **关联**: [ADR-0049](./adr/0049-web-search-multi-provider-dispatch.md) · [web_search 工具相关性问题调查记录](./web-search-tool-relevance-investigation.md)
-> **现象**: 内置引擎(`builtin-bing` / `builtin-baidu`)在设置界面无平台标注;`fetch_url_via_webview` 仍是 Windows 专属
+> **现象**: 内置引擎(`builtin-bing` / `builtin-baidu`)在设置界面无平台标注;`fetch_url_via_webview` / `download_image_bytes_via_webview` 当时也是 Windows 专属(二批已接通,见 §7 第 6 条)
 
 ---
 
@@ -96,7 +96,7 @@ search_web_via_webview(app, SearchEngine::Baidu, ...).await?
 | `builtin-baidu` | WebView2 SERP ✓ | WebKitGTK SERP ✓ | 无桥 + reqwest 死路 → **报错,无可用路径** ❌ |
 | 7 个 API 引擎(Tavily/Serper/Exa/Jina/Brave) | 纯 HTTP,平台无关(可用性取决于网络连通性,见 ADR-0049 §4) | 同左 | 同左 |
 
-注:`fetch_url_via_webview`(网页抓取)与 `download_image_bytes_via_webview`(图片反爬兜底,ADR-0052)仍是 Windows-only 命令 — 它们与搜索引擎共享隐藏窗口机制,但 Linux 桥接本次只接通了搜索路径,两者属"机械套用同模式即可解锁"的后续项。
+注:`fetch_url_via_webview`(网页抓取)与 `download_image_bytes_via_webview`(图片反爬兜底,ADR-0052)同为 windows + linux — 2026-09-19 第二批接通(见 §7 第 6 条);macOS 为报错桩。两者与搜索引擎共享全部隐藏窗口机制,§5 原注"机械套用同模式即可解锁"的预判已兑现:纯 cfg 门放宽,逻辑与注入 JS 零改动。
 
 ## 6. 为什么 macOS 仍未补桥
 
@@ -113,6 +113,7 @@ search_web_via_webview(app, SearchEngine::Baidu, ...).await?
 3. 百度引擎的"仅 Windows"标注与 i18n 文案(`settings.json` 的 `webSearch.windowsOnlyHint`)已移除。
 4. 渲染轮询与解析器零改动直接复用 — 平台无关分层的预期收益兑现。
 5. Windows 侧唯一改动:`eval_js_string` 尾部的 JSON 解包提取为共享的 `unwrap_js_json_result`(逻辑原样搬移,新增单测锁定契约)。
+6. 第二批(同日):`fetch_url_via_webview` / `download_image_bytes_via_webview` / `webview_image_fetch_attempt` 与两个注入 JS 常量从 `#[cfg(windows)]` 放宽为 `#[cfg(any(windows, linux))]`,报错桩收缩为 macOS-only — 纯门控翻转 + 注释措辞,函数体与 JS 字节不变(§5 原注预判的兑现;ADR-0052 已同步 amend)。
 
 ## 8. 代码索引
 
@@ -120,6 +121,8 @@ search_web_via_webview(app, SearchEngine::Baidu, ...).await?
 |---|---|
 | 分发层 Bing 回退 / 百度直传 | `dispatch_web_search` |
 | 搜索主流程(平台无关) | `search_web_via_webview`(windows + linux;macOS 为报错桩) |
+| 网页抓取(webview fetch) | `fetch_url_via_webview`(windows + linux;macOS 为报错桩) |
+| 图片字节兜底(ADR-0052) | `download_image_bytes_via_webview` + `webview_image_fetch_attempt`(均 windows + linux) |
 | 隐藏窗口创建 / 加载等待 / 渲染轮询 | `create_hidden_nav_window` / `wait_for_page_load` / `poll_until_selector`(均 windows + linux) |
 | Windows JS 桥(`ExecuteScript`) | `eval_js_string` `#[cfg(target_os = "windows")]` |
 | Linux JS 桥(`evaluate_javascript`) | `eval_js_string` `#[cfg(target_os = "linux")]` |
