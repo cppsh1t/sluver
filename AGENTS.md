@@ -85,6 +85,7 @@ Scope is optional but encouraged for clarity (e.g. `feat(tauri):`, `fix(ui):`, `
 | ---------------------- | ------------------------------------------------------------------------------------------- |
 | `pnpm tauri dev`       | Full app dev (Vite + Rust backend). Dev server on **port 1420** (strict). HMR on port 1421. |
 | `pnpm tauri build`     | Production build (frontend + native binary). Runs `pnpm build` internally.                  |
+| `pnpm fix:linuxdeploy` | One-time per-machine fix for AppImage bundling on RELR distros (Arch/CachyOS, Fedora 40+, Gentoo 23.0). Detects, explains, and replaces tauri's broken pinned linuxdeploy in `~/.cache/tauri/`. See `scripts/fix-linuxdeploy.sh`. |
 | `pnpm build`           | Frontend-only build (`tsc && vite build`). Output to `dist/`.                                 |
 | `pnpm dev`             | Vite dev server only (no Rust backend). For frontend-only work.                             |
 | `pnpm type-check`      | `tsc --noEmit`. Fast type validation.                                                       |
@@ -465,7 +466,7 @@ STOP. The answer is almost always available via: official docs, npm/crates packa
 ## Tauri-specific notes
 
 - `pnpm build` = frontend only. `pnpm tauri build` = frontend + native binary.
-- AppImage bundling on RELR-default distros (Arch/CachyOS, Fedora 40+, Gentoo 23.0): tauri's pinned 2024-07 linuxdeploy bundles a binutils-2.35 `strip` that chokes on `SHT_RELR` (`.relr.dyn`) → fatal `failed to run linuxdeploy`. Fixed upstream 2026-08-01 (linuxdeploy ≥ commit `07333c6`, binutils 2.47). Fix per machine: overwrite `~/.cache/tauri/linuxdeploy-x86_64.AppImage` with the [continuous build](https://github.com/linuxdeploy/linuxdeploy/releases/tag/continuous) (tauri only downloads when the cache file is missing). Fallback for old linuxdeploy: prefix the build with `NO_STRIP=1`.
+- AppImage bundling on RELR-default distros (Arch/CachyOS, Fedora 40+, Gentoo 23.0) fails with `failed to run linuxdeploy` (verbose shows strip: `unknown type [0x13] section .relr.dyn`): tauri's pinned 2024-07 linuxdeploy bundles a binutils-2.35 strip that can't parse SHT_RELR. Fixed upstream 2026-08-01 (linuxdeploy ≥ commit `07333c6`, binutils 2.47). Run `pnpm fix:linuxdeploy` — it detects, explains, and drops the fixed continuous build into tauri's cache (`~/.cache/tauri/`, machine-level). Fallback for old linuxdeploy: prefix the build with `NO_STRIP=1`.
 - `tauri.conf.json` sets `beforeDevCommand: "pnpm dev"` and `beforeBuildCommand: "pnpm build"`. When running `pnpm tauri dev/build`, these commands execute automatically.
 - Rust source lives in `src-tauri/` — oxlint ignores this directory. Use `cargo check` / `cargo clippy` for Rust linting.
 - CSP is disabled (`"csp": null`). Adjust in `tauri.conf.json` before production.
