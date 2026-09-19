@@ -12,6 +12,12 @@
     "close": "关闭"
   },
   "loading": "加载中…",
+  "window": {
+    "minimize": "最小化",
+    "maximize": "最大化",
+    "restore": "还原",
+    "close": "关闭"
+  },
   "errorBoundary": {
     "title": "出错了",
     "description": "Sluver 遇到了一个问题。你的最近编辑已自动保存。",

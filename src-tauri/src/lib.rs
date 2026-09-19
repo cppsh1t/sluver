@@ -14,6 +14,11 @@ mod window_manager;
 mod testutil;
 
 use tauri::{Emitter, Manager};
+// Decorum overlay is Windows/macOS-only on the Rust side. On Linux the plugin's
+// injected caption controls are broken (dead first button from KDE's
+// `icon:` button-layout prefix, duplicated sets from the missing idempotency
+// guard) — the frontend renders its own buttons there. See ADR-0054.
+#[cfg(not(target_os = "linux"))]
 use tauri_plugin_decorum::WebviewWindowExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -71,12 +76,16 @@ pub fn run() {
             }
 
             // Frameless window: decorum injects native caption controls on
-            // Windows/Linux (retaining Win11 Snap Layout). On macOS the native
-            // traffic lights are preserved via titleBarStyle "Overlay" +
-            // hiddenTitle in tauri.macos.conf.json.
+            // Windows (retaining Win11 Snap Layout); on Linux it is skipped
+            // because the injected controls are broken there — the frontend
+            // renders its own (ADR-0054). On macOS the native traffic lights
+            // are preserved via titleBarStyle "Overlay" + hiddenTitle in
+            // tauri.macos.conf.json.
+            #[cfg(not(target_os = "linux"))]
             let main_window = app
                 .get_webview_window("main")
                 .expect("main window not found");
+            #[cfg(not(target_os = "linux"))]
             main_window.create_overlay_titlebar()?;
 
             // macOS only: inset the traffic lights to vertically center them in

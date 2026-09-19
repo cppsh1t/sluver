@@ -19,6 +19,9 @@
 //!   on `Destroyed`); the launcher hides to tray.
 
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+// Decorum overlay is Windows/macOS-only; Linux renders frontend caption
+// buttons instead (ADR-0054 — decorum's Linux injection is broken).
+#[cfg(not(target_os = "linux"))]
 use tauri_plugin_decorum::WebviewWindowExt;
 
 use crate::db::{DbError, DbManager};
@@ -112,7 +115,9 @@ pub fn ensure_space_window(app: &AppHandle, space_id: &str) -> Result<(), DbErro
     .map_err(tauri_err)?;
 
     // Apply decorum overlay for frameless caption controls (same treatment
-    // as the launcher window — see `lib.rs` setup).
+    // as the launcher window — see `lib.rs` setup). Skipped on Linux, where
+    // the frontend renders its own caption buttons (ADR-0054).
+    #[cfg(not(target_os = "linux"))]
     window.create_overlay_titlebar().map_err(tauri_err)?;
 
     #[cfg(target_os = "macos")]

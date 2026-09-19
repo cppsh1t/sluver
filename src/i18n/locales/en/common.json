@@ -12,6 +12,12 @@
     "close": "Close"
   },
   "loading": "Loading…",
+  "window": {
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "restore": "Restore",
+    "close": "Close"
+  },
   "errorBoundary": {
     "title": "Something went wrong",
     "description": "Sluver hit a problem. Your recent edits are auto-saved.",
