@@ -65,7 +65,7 @@ export function DrillInHeader({
   readonly target: SubagentDrillInTarget;
   readonly onBack: () => void;
 }) {
-  const { t } = useTranslation(["chat", "ai"]);
+  const { t } = useTranslation("chat");
   const { view } = useConversationView(worldId, target.runId);
 
   const pendingCount = view.stream
@@ -100,9 +100,9 @@ export function DrillInHeader({
     chip = null;
   }
 
-  const roleName = t(`ai:agentConfigs.name.${target.role}`, {
-    defaultValue: target.role,
-  });
+  // Raw registry role name (e.g. "explorer") — deliberately NOT localized:
+  // the English ids are the memorable, dispatch-facing names.
+  const roleName = target.role;
   const chipKey = chip === null ? null : chip.key;
   const chipLabel =
     chipKey === null

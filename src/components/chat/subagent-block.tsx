@@ -153,7 +153,7 @@ interface SubagentBlockProps {
 }
 
 export function SubagentBlock({ tool, worldId }: SubagentBlockProps) {
-  const { t } = useTranslation(["chat", "ai"]);
+  const { t } = useTranslation("chat");
   const store = useConversationStore();
   const abort = useAbort(worldId);
   const approveAll = useApproveAllForRun(worldId);
@@ -216,9 +216,8 @@ export function SubagentBlock({ tool, worldId }: SubagentBlockProps) {
               ? { key: "aborted" }
               : { key: "running" };
 
-  const roleName = input
-    ? t(`ai:agentConfigs.name.${input.role}`, { defaultValue: input.role })
-    : null;
+  // Raw registry role name — deliberately NOT localized (see drill-in-header).
+  const roleName = input ? input.role : null;
   const taskDigest = input ? (input.task.split("\n")[0] ?? "").trim() : "";
 
   const statusLabel =
