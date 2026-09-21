@@ -22,7 +22,10 @@ fn official_registry_compiles_completely() {
         // The embedded package must round-trip through the same
         // validation as uploads (guaranteed by compiled() construction —
         // these assertions document the invariant and guard refactors).
-        assert!(!skill.description.is_empty(), "description must parse non-empty");
+        assert!(
+            !skill.description.is_empty(),
+            "description must parse non-empty"
+        );
         assert!(
             skill.entries.iter().any(|(p, _)| p == "SKILL.md"),
             "parsed entries must include SKILL.md"
@@ -44,8 +47,7 @@ fn official_zip_uses_wrapper_dir_layout() {
     // parse_skill_zip accepts ({name}/SKILL.md at depth 2), and the
     // wrapper must be the def name.
     for skill in compiled() {
-        let mut archive =
-            zip::ZipArchive::new(std::io::Cursor::new(&skill.zip)).expect("open zip");
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&skill.zip)).expect("open zip");
         let mut names: Vec<String> = Vec::new();
         for i in 0..archive.len() {
             let entry = archive.by_index(i).expect("entry");

@@ -135,10 +135,7 @@ fn space_fresh_install_schema() {
         !has_column(&conn, "agent_configs", "system_prompt"),
         "v13 drops agent_configs.system_prompt"
     );
-    assert!(
-        has_column(&conn, "skills", "kind"),
-        "v14 adds skills.kind"
-    );
+    assert!(has_column(&conn, "skills", "kind"), "v14 adds skills.kind");
 }
 
 /// world.db fresh install: fifteen migrations → user_version 15, the
@@ -597,10 +594,7 @@ fn space_upgrade_path_step_by_step() {
                 // official skill ROWS are seeded at connection open
                 // (official_skills::seed_official_skills), never by the
                 // migration itself.
-                assert!(
-                    has_column(&conn, "skills", "kind"),
-                    "v14 adds skills.kind"
-                );
+                assert!(has_column(&conn, "skills", "kind"), "v14 adds skills.kind");
                 assert_eq!(
                     table_names(&conn).len(),
                     6,

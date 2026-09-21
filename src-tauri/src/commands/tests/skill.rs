@@ -114,7 +114,10 @@ fn upload_skill_root_layout_persists_row() {
         "official seeds + the uploaded skill"
     );
     assert_eq!(list[0].kind, SkillKind::Official, "official pinned first");
-    let mine = list.iter().find(|s| s.id == summary.id).expect("uploaded row");
+    let mine = list
+        .iter()
+        .find(|s| s.id == summary.id)
+        .expect("uploaded row");
     assert_eq!(mine.name, "my-skill");
     assert_eq!(mine.kind, SkillKind::User);
 
@@ -706,14 +709,20 @@ fn official_skills_seeded_default_enabled_per_role() {
         .expect("ecg row");
     assert_eq!(ecg.name, "element-creation-guide");
     assert_eq!(ecg.kind, SkillKind::Official);
-    assert!(!ecg.description.is_empty(), "frontmatter description parsed");
+    assert!(
+        !ecg.description.is_empty(),
+        "frontmatter description parsed"
+    );
     let sdg = list
         .iter()
         .find(|s| s.id == OFFICIAL_SDG_ID)
         .expect("sdg row");
     assert_eq!(sdg.name, "subagent-dispatch-guide");
     assert_eq!(sdg.kind, SkillKind::Official);
-    assert!(!sdg.description.is_empty(), "frontmatter description parsed");
+    assert!(
+        !sdg.description.is_empty(),
+        "frontmatter description parsed"
+    );
 
     // Default-enabled on their designated roles' M011-seeded rows:
     // element-creation-guide → curator, subagent-dispatch-guide →
@@ -812,11 +821,14 @@ fn official_skill_activation_self_heals_install() {
         entry.body.contains("Element Authoring Guide"),
         "body is the embedded guide's body"
     );
-    assert!(entry.files.is_empty(), "the shipped skill bundles only SKILL.md");
+    assert!(
+        entry.files.is_empty(),
+        "the shipped skill bundles only SKILL.md"
+    );
 
     // A second read serves the now-installed copy unchanged.
-    let again = do_read_skill_entry(&fx.mgr, &fx.space_id, "element-creation-guide")
-        .expect("second read");
+    let again =
+        do_read_skill_entry(&fx.mgr, &fx.space_id, "element-creation-guide").expect("second read");
     assert_eq!(again.body, entry.body);
 
     // Deleting the installed dir manually is healed the same way (the
@@ -868,11 +880,9 @@ fn official_skill_disable_reenable_and_reopen_keeps_user_disabled() {
         0,
         "user-disabled official stays disabled across reopen"
     );
-    assert!(
-        do_list_enabled_skills(&fx.mgr, &fx.space_id, "curator")
-            .expect("curator after reopen")
-            .is_empty()
-    );
+    assert!(do_list_enabled_skills(&fx.mgr, &fx.space_id, "curator")
+        .expect("curator after reopen")
+        .is_empty());
 
     // Re-enable: the normal install-from-blob path works and restores
     // the default.
@@ -930,7 +940,11 @@ fn official_name_collision_skips_seed_then_recovers() {
         .find(|s| s.id == OFFICIAL_ECG_ID)
         .expect("ecg seeded");
     assert_eq!(ecg.kind, SkillKind::Official);
-    assert_eq!(junction_count(&fx, OFFICIAL_ECG_ID), 1, "curator default restored");
+    assert_eq!(
+        junction_count(&fx, OFFICIAL_ECG_ID),
+        1,
+        "curator default restored"
+    );
 }
 
 #[test]

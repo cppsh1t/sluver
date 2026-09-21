@@ -820,11 +820,7 @@ pub fn read_skill_entry(
 /// lock held (ADR-0007 discipline). Two parallel first-activations can
 /// race the stash-dance swap; the loser errors transiently and the
 /// retry succeeds — tolerated, see ADR-0055.
-fn read_installed_skill_md(
-    mgr: &DbManager,
-    space_id: &str,
-    name: &str,
-) -> Result<String, DbError> {
+fn read_installed_skill_md(mgr: &DbManager, space_id: &str, name: &str) -> Result<String, DbError> {
     let dir = skill_dir(mgr, space_id, name);
     match std::fs::read_to_string(dir.join("SKILL.md")) {
         Ok(content) => Ok(content),
