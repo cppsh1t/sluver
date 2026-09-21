@@ -95,6 +95,7 @@ Scope is optional but encouraged for clarity (e.g. `feat(tauri):`, `fix(ui):`, `
 | `pnpm test`            | Frontend tests (vitest run, jsdom env). Colocated `*.test.ts` next to sources.              |
 | `pnpm test:watch`      | vitest in watch mode.                                                                       |
 | `cargo test --lib`     | Rust tests (run from `src-tauri/`). Inline `#[cfg(test)]` modules + shared `testutil` fixture. |
+| `cargo fmt`            | Format Rust code (run from `src-tauri/`; rustfmt, edition 2021 default config). **Required at task end** whenever Rust files were touched. |
 
 ## Architecture
 
@@ -436,6 +437,7 @@ Do NOT rely on LSP diagnostics for verification — unreliable. Use commands ins
 
 - Frontend: `pnpm type-check`, `pnpm test`, `pnpm lint`
 - Backend: `cargo check` (run from `src-tauri/`); `cargo clippy --lib --tests` for linting; `cargo test --lib` for tests.
+- Formatting: `cargo fmt` (run from `src-tauri/`) at task end is MANDATORY whenever Rust files were touched — never leave unformatted Rust behind.
 
 ## Hard Prohibitions
 
