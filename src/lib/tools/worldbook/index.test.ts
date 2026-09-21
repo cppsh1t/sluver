@@ -239,17 +239,24 @@ describe("universal surface (ADR-0050 D8)", () => {
   });
 });
 
-// ─── Orchestrator purity (ADR-0050 D1) ────────────────────────────────────
+// ─── Orchestrator base surface (ADR-0050 D1, amended 2026-09-21) ──────────
 
-describe("buildOrchestratorTools (D1 purity)", () => {
+describe("buildOrchestratorTools (D1 base-read amendment)", () => {
   const keys = namesOf("orchestrator");
 
-  it("carries ONLY the system + look_at + dispatch surface (6 keys with shell+skills off)", () => {
+  it("carries system + look_at + dispatch + the base read surface (25 keys with shell+skills off)", () => {
     // systemTools() = timemapper format_time + get_current_time + plan +
-    // context_read; plus the always-registered look_at; plus the Unit C
-    // dispatch tool (ADR-0050 D3 — orchestrator-only). Nothing else.
+    // context_read; the always-registered look_at; the Unit C dispatch
+    // tool (ADR-0050 D3 — orchestrator-only); plus the D1-amendment base
+    // reads: the worldbook read trio (17 queryOnly tools across the five
+    // entity domains), grep, and web_search.
     expect([...keys].sort()).toEqual(
-      ["context_read", "dispatch_subagent", "format_time", "get_current_time", "look_at", "plan"].sort(),
+      [
+        "context_read", "dispatch_subagent", "format_time", "get_current_time", "look_at", "plan",
+        ...WORLDBOOK_READS,
+        "grep",
+        "web_search",
+      ].sort(),
     );
   });
 
@@ -260,20 +267,22 @@ describe("buildOrchestratorTools (D1 purity)", () => {
     }
   });
 
-  it("has no entity, novel, notes, retrieval, or web tools", () => {
+  it("admits no mutating key at all (the base surface is pure reads)", () => {
+    expect(keys.filter((k) => MUTATING_PREFIX.test(k))).toEqual([]);
+    for (const name of WORLDBOOK_MUTATIONS) {
+      expect(keys).not.toContain(name);
+    }
+  });
+
+  it("has no novel-side reads, no notes, no web fetch, no timeline", () => {
     for (const name of [
-      "list_characters",
-      "get_character",
-      "create_character",
-      "list_novels",
-      "get_scene",
+      ...NOVEL_DOMAIN_READS,
+      ...NOVEL_DOMAIN_MUTATIONS,
       "list_notes",
-      "grep",
+      "grep_notes",
       "timeline_lookup",
-      "web_search",
       "web_fetch",
       "web_fetch_via_browser",
-      "set_world_image_from_url",
     ]) {
       expect(keys).not.toContain(name);
     }

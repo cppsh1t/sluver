@@ -8,8 +8,10 @@
  *
  * | Role         | Surface                                                                       |
  * | ------------ | ----------------------------------------------------------------------------- |
- * | orchestrator | system tools + look_at + conditional skills/shell ONLY (D1 purity — no       |
- * |              | entity/web/notes tools; even trivial lookups are dispatched)                  |
+ * | orchestrator | system tools + look_at + conditional skills/shell + base reads (the       |
+ * |              | worldbook read trio + grep + web_search — ADR-0050 D1 amendment, trivial  |
+ * |              | lookups stay local) + dispatch. NO novel-side reads, NO notes, NO web     |
+ * |              | fetch, NO writes of any kind                                                |
  * | explorer     | universal + retrieval (grep, timeline_lookup) + web×3 + worldbook reads +    |
  * |              | queryOnly novel-side. NO notes (scribe owns notes now)                        |
  * | curator      | universal + FULL worldbook CRUD (characters/phases/locations/items/lores/     |
@@ -161,12 +163,16 @@ export const WRITER_CONSENT_OVERRIDES = {
 // ─── Role builders ─────────────────────────────────────────────────────────
 
 /**
- * Orchestrator toolset (ADR-0050 D1 purity): system tools (time, format,
- * plan, context_read) + the always-registered look_at + conditional
- * skills/shell — NOTHING else. No entity, novel, notes, or web tools:
- * a coordinator that *can* query will query; forced delegation keeps the
- * Orchestrator's context permanently lean. Even trivial lookups ("how
- * many characters?") are dispatched to explorer.
+ * Orchestrator toolset (ADR-0050 D1, amended 2026-09-21): system tools
+ * (time, format, plan, context_read) + the always-registered look_at +
+ * conditional skills/shell + the dispatch tool, PLUS a base read surface
+ * for trivial lookups — the worldbook read trio (list/search/get/count
+ * across the five entity domains), grep, and web_search, all
+ * consentLevel "auto". The amendment trades the original forced-
+ * delegation purity for dispatch latency on quick factual questions
+ * (name-collision checks, single-entity reads, keyhole web facts);
+ * surveys, novel-side reads, notes, web page reading, and every write
+ * remain delegated to subagents.
  */
 export function buildOrchestratorTools(ctx: ToolContext): ToolSet {
   return buildToolSet(
@@ -183,6 +189,14 @@ export function buildOrchestratorTools(ctx: ToolContext): ToolSet {
       // Agent Skills (ADR-0043) — registered only when the role has ≥1
       // enabled skill (empty catalog = nothing).
       ...(ctx.skills.length > 0 ? skillTools(ctx) : {}),
+      //
+      // ── Base read surface (ADR-0050 D1 amendment) ─────────────────────
+      // Trivial lookups answer directly instead of costing a dispatch
+      // round-trip. Pure reads only — the queryOnly projection guarantees
+      // no mutation tool can ride along.
+      ...worldbookReadTools(),
+      ...grepTools(),
+      ...webSearchTools(),
       //
       // ── Dispatch surface (ADR-0050 D3 — Unit C) ────────────────────────
       // The single delegation tool: static 8-role enum, free-form task,
