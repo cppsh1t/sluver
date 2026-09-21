@@ -121,7 +121,7 @@ A named AI configuration slot within a Space — the persistent definition of an
 _Avoid_: Assistant, Persona, Bot, Role
 
 **Orchestrator**:
-The only user-facing conversational role — the sole Agent the user chats with. Plans the work, Dispatches Subagents, hands context between them, and reports results to the user. Carries only universal tools and no entity/web tools by design: even trivial lookups are dispatched, keeping the coordinating role's context permanently lean.
+The only user-facing conversational role — the sole Agent the user chats with. Plans the work, Dispatches Subagents, hands context between them, and reports results to the user. Carries universal tools plus a base read surface (worldbook list/search/get/count reads, grep, web_search) so trivial lookups stay local; surveys, novel-side reads, notes, web page reading, and every write remain delegated to Subagents (ADR-0050 D1 amendment).
 _Avoid_: Main Agent, Master, Coordinator, Manager, Router
 
 **Subagent**:

@@ -1,6 +1,6 @@
 # ADR-0050: Subagent orchestration — one Orchestrator, eight dispatchable specialists, one-shot hidden runs
 
-**Status**: accepted. Replaces the two-role (explorer/writer) user-facing chat surface; amends ADR-0045's conditional `look_at` registration; ADR-0023's role-binding principle survives unchanged (the Orchestrator is simply the only pickable role).
+**Status**: accepted. Replaces the two-role (explorer/writer) user-facing chat surface; amends ADR-0045's conditional `look_at` registration; ADR-0023's role-binding principle survives unchanged (the Orchestrator is simply the only pickable role). *(Amended 2026-09-21: D1's forced-delegation purity relaxed — the Orchestrator gains a base read surface; see D1.)*
 
 ## Context
 
@@ -17,6 +17,8 @@ The user-facing conversational surface is the **Orchestrator** alone. Eight **Su
 The role name string previously crossed five layers with no single source of truth (DB seed → conversation row → `modelResolver` ternary → `ROLE_BEHAVIOR` map → list-page `ROLES` array). All of it collapses into **one role registry**: name, subagent flag, system prompt, `buildTools`, `maxSteps`, per-role consent overrides, and dispatch visibility. Every layer (model resolution, conversation creation, seeding, roster prompt) reads from it.
 
 **Orchestrator tool purity**: the Orchestrator carries only universal tools (time, format, plan, context_read, dispatch, and conditionally skills/shell/look_at) — no entity, notes, or web tools. Even trivial lookups ("how many characters?") are dispatched to explorer. This is deliberate: a coordinator that *can* query will query (model behavior inertia); forced delegation keeps its context permanently lean.
+
+> **Amendment** (2026-09-21): the purity rule is relaxed by a **base read surface** — the Orchestrator now carries the worldbook read trio (list_/search_/get_/count_ across characters, locations, items, lore, events), `grep`, and `web_search`, all consentLevel `auto`. Rationale: every trivial lookup was costing a full dispatch round-trip (child conversation boot + LLM run + report), which in practice made small questions slow and expensive. The delegation stance survives for everything heavier: novel/chapter/scene reads, notes, web page reading (`web_fetch`*), `timeline_lookup`, surveys/synthesis, and every write still go through subagents. The original concern (a coordinator that queries bloats its own context) is accepted as the tradeoff and mitigated in the Orchestrator's prompt: own reads are scoped to "trivial lookups settleable in one or two calls".
 
 ### 2. Subagent Run = one-shot hidden conversation
 
@@ -82,7 +84,7 @@ Drill-in switches the chat page to a ConversationView keyed by the run's convers
 
 **Positive:** per-role context diets (the original motivation); the unattended outline → parallel-write → critique pipeline becomes executable; every subagent's work is fully auditable and replayable; minimal new runtime machinery — dispatch reuses the consent-gate blocking precedent, runs reuse the conversation/session/stream stores, abort reuses signal chaining, usage reuses per-conversation accounting.
 
-**Negative:** trivial questions cost a dispatch round-trip (deliberate purity, D1); eleven models to bind per Space (mitigated by bulk-apply); the parent turn's token footer excludes child usage (child usage rides the dispatch result and the run's own messages; cross-run aggregation is future reporting); renderer-resident runs die on window close leaving dangling dispatch calls (stripped next derivation).
+**Negative:** trivial questions cost a dispatch round-trip (deliberate purity, D1 — **amended**: they now answer from the Orchestrator's base read surface, at the price of ~19 extra read-tool definitions in its prompt); eleven models to bind per Space (mitigated by bulk-apply); the parent turn's token footer excludes child usage (child usage rides the dispatch result and the run's own messages; cross-run aggregation is future reporting); renderer-resident runs die on window close leaving dangling dispatch calls (stripped next derivation).
 
 ## References
 
