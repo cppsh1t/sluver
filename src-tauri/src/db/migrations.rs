@@ -337,6 +337,20 @@ const SPACE_MIGRATION_013: &str = r#"
     ALTER TABLE agent_configs ADD COLUMN context_note TEXT NOT NULL DEFAULT '';
 "#;
 
+/// Migration 14 for `space.db`: the skill source discriminator (ADR-0055,
+/// amending ADR-0043). `kind = 'official'` rows are app-owned: they are
+/// seeded (and default-enabled per role) by `official_skills::seed_official_skills`
+/// at connection open, cannot be deleted, and their names are reserved
+/// against user uploads. `kind = 'user'` (the DEFAULT for existing rows and
+/// for the upload path, whose INSERT omits the column) keeps the
+/// ADR-0043 storage-center behavior unchanged. Added as a separate
+/// migration so existing `space.db` files get the column via
+/// rusqlite-migration's incremental tracking — modifying
+/// `SPACE_MIGRATION_009` would NOT re-run for already-migrated databases.
+const SPACE_MIGRATION_014: &str = r#"
+    ALTER TABLE skills ADD COLUMN kind TEXT NOT NULL DEFAULT 'user';
+"#;
+
 // ─── world DB schema ────────────────────────────────────────────────────────
 // Tier 3 of the three-database design (ADR-0007). One file per World at
 // `spaces/{spaceId}/worlds/{worldId}.db`. Schema is byte-for-byte identical
@@ -505,6 +519,7 @@ const SPACE_SLICE: &[M] = &[
     M::up(SPACE_MIGRATION_011),
     M::up(SPACE_MIGRATION_012),
     M::up(SPACE_MIGRATION_013),
+    M::up(SPACE_MIGRATION_014),
 ];
 pub const SPACE_MIGRATIONS: Migrations = Migrations::from_slice(SPACE_SLICE);
 

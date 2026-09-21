@@ -84,7 +84,7 @@ fn meta_fresh_install_schema() {
     );
 }
 
-/// space.db fresh install: thirteen migrations → user_version 13, exactly
+/// space.db fresh install: fourteen migrations → user_version 14, exactly
 /// the {worlds, space_config, provider_credentials, agent_configs,
 /// skills, agent_config_skills} table set, and a single named index
 /// idx_worlds_name (the UNIQUE constraints on agent_configs.name /
@@ -92,7 +92,8 @@ fn meta_fresh_install_schema() {
 /// agent_config_skills composite PK are column/table-level and produce
 /// only NULL-sql autoindexes). v11 seeds agent_config rows only; v12
 /// adds the max_steps column only; v13 swaps system_prompt for
-/// context_note.
+/// context_note; v14 adds the skills.kind discriminator (official rows
+/// are seeded later, at connection open — migrations never touch them).
 #[test]
 fn space_fresh_install_schema() {
     let mut conn = Connection::open_in_memory().expect("open in-memory space db");
@@ -102,7 +103,7 @@ fn space_fresh_install_schema() {
 
     assert_eq!(
         user_version(&conn),
-        13,
+        14,
         "space user_version after to_latest"
     );
     assert_eq!(
@@ -115,12 +116,12 @@ fn space_fresh_install_schema() {
             "space_config",
             "worlds",
         ],
-        "space table set at v13"
+        "space table set at v14"
     );
     assert_eq!(
         named_indexes(&conn),
         ["idx_worlds_name"],
-        "space named index set at v13"
+        "space named index set at v14"
     );
     assert!(
         has_column(&conn, "agent_configs", "max_steps"),
@@ -133,6 +134,10 @@ fn space_fresh_install_schema() {
     assert!(
         !has_column(&conn, "agent_configs", "system_prompt"),
         "v13 drops agent_configs.system_prompt"
+    );
+    assert!(
+        has_column(&conn, "skills", "kind"),
+        "v14 adds skills.kind"
     );
 }
 
@@ -417,7 +422,7 @@ fn world_upgrade_path_step_by_step() {
 #[test]
 fn space_upgrade_path_step_by_step() {
     let mut conn = Connection::open_in_memory().expect("open in-memory space db");
-    for v in 0..=13 {
+    for v in 0..=14 {
         SPACE_MIGRATIONS
             .to_version(&mut conn, v)
             .unwrap_or_else(|e| panic!("space to_version({v}): {e}"));
@@ -587,7 +592,22 @@ fn space_upgrade_path_step_by_step() {
                     "v13 swaps columns only — table set unchanged"
                 );
             }
-            _ => unreachable!("loop is bounded to 0..=13"),
+            14 => {
+                // Skill source discriminator (ADR-0055): column only — the
+                // official skill ROWS are seeded at connection open
+                // (official_skills::seed_official_skills), never by the
+                // migration itself.
+                assert!(
+                    has_column(&conn, "skills", "kind"),
+                    "v14 adds skills.kind"
+                );
+                assert_eq!(
+                    table_names(&conn).len(),
+                    6,
+                    "v14 adds a column only — table set unchanged"
+                );
+            }
+            _ => unreachable!("loop is bounded to 0..=14"),
         }
     }
 }
@@ -977,7 +997,7 @@ fn world_v15_deletes_conversations_and_cascades() {
 fn to_latest_twice_is_idempotent_for_all_kinds() {
     let cases: [(&str, &Migrations, i64); 3] = [
         ("meta", &META_MIGRATIONS, 1),
-        ("space", &SPACE_MIGRATIONS, 13),
+        ("space", &SPACE_MIGRATIONS, 14),
         ("world", &WORLD_MIGRATIONS, 15),
     ];
     for (name, migrations, latest) in cases {
