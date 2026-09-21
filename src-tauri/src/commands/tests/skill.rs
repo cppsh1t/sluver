@@ -1,6 +1,7 @@
 use super::*;
 use crate::testutil::{make_space_with_world, uuid_shape, WorldFixture};
 use base64::Engine as _;
+use rusqlite::Connection;
 use std::io::Write as _;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
@@ -105,9 +106,17 @@ fn upload_skill_root_layout_persists_row() {
     assert!(!summary.id.is_empty());
 
     let list = do_list_skills(&fx.mgr, &fx.space_id).expect("list");
-    assert_eq!(list.len(), 1);
-    assert_eq!(list[0].id, summary.id);
-    assert_eq!(list[0].name, "my-skill");
+    // Every Space also carries the app-seeded official skills
+    // (ADR-0055), pinned first by `do_list_skills`'s ordering.
+    assert_eq!(
+        list.len(),
+        OFFICIAL_COUNT + 1,
+        "official seeds + the uploaded skill"
+    );
+    assert_eq!(list[0].kind, SkillKind::Official, "official pinned first");
+    let mine = list.iter().find(|s| s.id == summary.id).expect("uploaded row");
+    assert_eq!(mine.name, "my-skill");
+    assert_eq!(mine.kind, SkillKind::User);
 
     // NO disk materialization on upload — install happens only via
     // set_skill_enabled (ADR-0043 §1/§2).
@@ -458,9 +467,15 @@ fn delete_skill_removes_row_junction_and_dir() {
     let summary = upload_and_enable(&fx, &ac);
 
     do_delete_skill(&fx.mgr, &fx.space_id, &summary.id).expect("delete");
-    assert!(do_list_skills(&fx.mgr, &fx.space_id)
-        .expect("list")
-        .is_empty());
+    // The official seeds survive every user-skill deletion (ADR-0055:
+    // undeletable) — the pool keeps exactly those rows.
+    let list = do_list_skills(&fx.mgr, &fx.space_id).expect("list");
+    assert_eq!(
+        list.len(),
+        OFFICIAL_COUNT,
+        "only the undeletable official seeds remain"
+    );
+    assert!(list.iter().all(|s| s.kind == SkillKind::Official));
     assert_eq!(junction_count(&fx, &summary.id), 0);
     assert!(!skills_root(&fx).join("my-skill").exists());
 
@@ -660,5 +675,306 @@ fn enable_installs_realistic_root_layout_zip() {
     assert_eq!(
         installed,
         vec!["SKILL.md".to_string(), "refs/style.md".to_string()]
+    );
+}
+
+// ── official skills (ADR-0055) ─────────────────────────────────────────
+//
+// Seeding runs at the FIRST manager-side connection open, which in the
+// fixture happens inside the first `with_space` call of each test (the
+// fixture creates space.db directly via SPACE_MIGRATIONS, bypassing
+// open_space_conn_inner).
+
+/// Fixed literal ids of the shipped official skills (official_skills.rs).
+const OFFICIAL_ECG_ID: &str = "01a00a6e-36c8-7e01-9e01-000000000001";
+const OFFICIAL_SDG_ID: &str = "01a00a6e-36c8-7e01-9e01-000000000002";
+/// How many official skills ship — keep in lockstep with the registry.
+const OFFICIAL_COUNT: usize = 2;
+
+#[test]
+fn official_skills_seeded_default_enabled_per_role() {
+    let fx = make_space_with_world();
+    let list = do_list_skills(&fx.mgr, &fx.space_id).expect("list");
+    assert_eq!(
+        list.len(),
+        OFFICIAL_COUNT,
+        "a fresh Space carries exactly the official skills"
+    );
+    let ecg = list
+        .iter()
+        .find(|s| s.id == OFFICIAL_ECG_ID)
+        .expect("ecg row");
+    assert_eq!(ecg.name, "element-creation-guide");
+    assert_eq!(ecg.kind, SkillKind::Official);
+    assert!(!ecg.description.is_empty(), "frontmatter description parsed");
+    let sdg = list
+        .iter()
+        .find(|s| s.id == OFFICIAL_SDG_ID)
+        .expect("sdg row");
+    assert_eq!(sdg.name, "subagent-dispatch-guide");
+    assert_eq!(sdg.kind, SkillKind::Official);
+    assert!(!sdg.description.is_empty(), "frontmatter description parsed");
+
+    // Default-enabled on their designated roles' M011-seeded rows:
+    // element-creation-guide → curator, subagent-dispatch-guide →
+    // orchestrator. Every other migration-seeded role (subagent and
+    // one-shot alike) starts clean. ("writer" is not in the fixture —
+    // it is seeded only by do_create_space — so "critic" stands in for
+    // the plain subagents.)
+    let curator = do_list_enabled_skills(&fx.mgr, &fx.space_id, "curator").expect("curator");
+    assert_eq!(curator.len(), 1);
+    assert_eq!(curator[0].id, OFFICIAL_ECG_ID);
+    assert_eq!(curator[0].name, "element-creation-guide");
+    let orchestrator =
+        do_list_enabled_skills(&fx.mgr, &fx.space_id, "orchestrator").expect("orchestrator");
+    assert_eq!(orchestrator.len(), 1);
+    assert_eq!(orchestrator[0].id, OFFICIAL_SDG_ID);
+    assert_eq!(orchestrator[0].name, "subagent-dispatch-guide");
+    for clean in ["scribe", "critic", "namer"] {
+        assert!(
+            do_list_enabled_skills(&fx.mgr, &fx.space_id, clean)
+                .expect("list role")
+                .is_empty(),
+            "{clean} must not enable an official skill by default"
+        );
+    }
+
+    // Seeding records enablement WITHOUT materializing on disk — lazy
+    // materialization; activation is the install moment (ADR-0055).
+    assert!(!skills_root(&fx).join("element-creation-guide").exists());
+    assert!(!skills_root(&fx).join("subagent-dispatch-guide").exists());
+}
+
+#[test]
+fn official_skill_not_deletable() {
+    let fx = make_space_with_world();
+    let err = do_delete_skill(&fx.mgr, &fx.space_id, OFFICIAL_ECG_ID)
+        .expect_err("official delete must reject");
+    match err {
+        DbError::SkillOfficialProtected(name) => {
+            assert_eq!(name, "element-creation-guide")
+        }
+        other => panic!("expected SkillOfficialProtected, got {other:?}"),
+    }
+    // Row AND its default junction row are intact after the rejection.
+    let list = do_list_skills(&fx.mgr, &fx.space_id).expect("list");
+    assert!(list.iter().any(|s| s.id == OFFICIAL_ECG_ID));
+    assert_eq!(junction_count(&fx, OFFICIAL_ECG_ID), 1);
+    // The same protection covers every shipped official.
+    match do_delete_skill(&fx.mgr, &fx.space_id, OFFICIAL_SDG_ID) {
+        Err(DbError::SkillOfficialProtected(name)) => {
+            assert_eq!(name, "subagent-dispatch-guide")
+        }
+        other => panic!("expected SkillOfficialProtected, got {other:?}"),
+    }
+}
+
+#[test]
+fn upload_rejects_official_reserved_name() {
+    let fx = make_space_with_world();
+    let err = do_upload_skill(
+        &fx.mgr,
+        &fx.space_id,
+        &zip_base64(&[(
+            "SKILL.md",
+            &skill_md("element-creation-guide", "impostor package"),
+        )]),
+    )
+    .expect_err("reserved name must reject");
+    match err {
+        DbError::SkillNameReserved(name) => assert_eq!(name, "element-creation-guide"),
+        other => panic!("expected SkillNameReserved, got {other:?}"),
+    }
+    // The official rows were neither shadowed nor modified.
+    let list = do_list_skills(&fx.mgr, &fx.space_id).expect("list");
+    assert_eq!(list.len(), OFFICIAL_COUNT);
+    let ecg = list
+        .iter()
+        .find(|s| s.id == OFFICIAL_ECG_ID)
+        .expect("ecg intact");
+    assert_eq!(ecg.kind, SkillKind::Official);
+}
+
+#[test]
+fn official_skill_activation_self_heals_install() {
+    let fx = make_space_with_world();
+    // Force the seeding pass and confirm nothing is on disk yet.
+    let _ = do_list_skills(&fx.mgr, &fx.space_id).expect("list");
+    let dir = skills_root(&fx).join("element-creation-guide");
+    assert!(!dir.exists());
+
+    // First activation (read_skill_entry) materializes from the stored
+    // blob — the designated install moment for official skills.
+    let entry = do_read_skill_entry(&fx.mgr, &fx.space_id, "element-creation-guide")
+        .expect("self-healed entry");
+    assert!(dir.join("SKILL.md").is_file(), "installed by the heal");
+    assert!(
+        entry.body.contains("Element Authoring Guide"),
+        "body is the embedded guide's body"
+    );
+    assert!(entry.files.is_empty(), "the shipped skill bundles only SKILL.md");
+
+    // A second read serves the now-installed copy unchanged.
+    let again = do_read_skill_entry(&fx.mgr, &fx.space_id, "element-creation-guide")
+        .expect("second read");
+    assert_eq!(again.body, entry.body);
+
+    // Deleting the installed dir manually is healed the same way (the
+    // blob is always the recovery source for official skills).
+    std::fs::remove_dir_all(&dir).expect("mangle install");
+    let healed = do_read_skill_entry(&fx.mgr, &fx.space_id, "element-creation-guide")
+        .expect("re-healed entry");
+    assert_eq!(healed.body, entry.body);
+    assert!(dir.join("SKILL.md").is_file());
+}
+
+#[test]
+fn official_skill_disable_reenable_and_reopen_keeps_user_disabled() {
+    let fx = make_space_with_world();
+    let curator_id: String = fx
+        .mgr
+        .with_space(&fx.space_id, |conn| {
+            Ok(conn.query_row(
+                "SELECT id FROM agent_configs WHERE name = 'curator'",
+                [],
+                |r| r.get(0),
+            )?)
+        })
+        .expect("curator agent config id");
+
+    // Materialize first so the disable branch exercises the dir removal.
+    do_read_skill_entry(&fx.mgr, &fx.space_id, "element-creation-guide").expect("heal");
+    let dir = skills_root(&fx).join("element-creation-guide");
+    assert!(dir.exists());
+
+    // Disable: junction gone, dir removed (official skills ride the
+    // normal disable path — default-on is not locked-on).
+    do_set_skill_enabled(&fx.mgr, &fx.space_id, &curator_id, OFFICIAL_ECG_ID, false)
+        .expect("disable");
+    assert_eq!(junction_count(&fx, OFFICIAL_ECG_ID), 0);
+    assert!(!dir.exists());
+
+    // Close + reopen: re-seeding must NOT resurrect the junction the
+    // user deleted (junction-once rule — reopening is not consent).
+    fx.mgr.close_space(&fx.space_id);
+    let list = do_list_skills(&fx.mgr, &fx.space_id).expect("reopen list");
+    let ecg = list
+        .iter()
+        .find(|s| s.id == OFFICIAL_ECG_ID)
+        .expect("official row survives reopen");
+    assert_eq!(ecg.kind, SkillKind::Official);
+    assert_eq!(
+        junction_count(&fx, OFFICIAL_ECG_ID),
+        0,
+        "user-disabled official stays disabled across reopen"
+    );
+    assert!(
+        do_list_enabled_skills(&fx.mgr, &fx.space_id, "curator")
+            .expect("curator after reopen")
+            .is_empty()
+    );
+
+    // Re-enable: the normal install-from-blob path works and restores
+    // the default.
+    do_set_skill_enabled(&fx.mgr, &fx.space_id, &curator_id, OFFICIAL_ECG_ID, true)
+        .expect("re-enable");
+    assert_eq!(junction_count(&fx, OFFICIAL_ECG_ID), 1);
+    assert!(dir.join("SKILL.md").is_file());
+}
+
+#[test]
+fn official_name_collision_skips_seed_then_recovers() {
+    let fx = make_space_with_world();
+    // Simulate a Space that uploaded a user skill named like the official
+    // BEFORE this feature: insert directly into the fixture's space.db so
+    // the manager connection (and thus seeding) has not opened yet.
+    {
+        let db_path = fx.mgr.space_data_dir(&fx.space_id).join("space.db");
+        let conn = Connection::open(&db_path).expect("open fixture space.db");
+        conn.execute(
+            "INSERT INTO skills (id, name, description, package, created_at, updated_at)
+             VALUES (?1, 'element-creation-guide', 'user impostor', X'040506',
+                     '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')",
+            params![uuid_shape(50)],
+        )
+        .expect("insert user impostor");
+    }
+
+    // First manager open: seeding sees the name taken → skips (user data
+    // wins; the Space stays fully functional).
+    let list = do_list_skills(&fx.mgr, &fx.space_id).expect("list");
+    let impostor = list
+        .iter()
+        .find(|s| s.name == "element-creation-guide")
+        .expect("impostor listed");
+    assert_eq!(impostor.kind, SkillKind::User);
+    assert_eq!(junction_count(&fx, &impostor.id), 0);
+    assert!(
+        do_list_enabled_skills(&fx.mgr, &fx.space_id, "curator")
+            .expect("curator during collision")
+            .is_empty(),
+        "no default enablement while the collision persists"
+    );
+
+    // The user removes their duplicate (user-kind delete works normally)…
+    do_delete_skill(&fx.mgr, &fx.space_id, &impostor.id).expect("delete impostor");
+
+    // …and the NEXT open seeds the official properly — the collision is
+    // self-healing, not permanent. (The non-colliding official seeded
+    // normally all along.)
+    fx.mgr.close_space(&fx.space_id);
+    let list = do_list_skills(&fx.mgr, &fx.space_id).expect("list after recovery");
+    assert_eq!(list.len(), OFFICIAL_COUNT);
+    let ecg = list
+        .iter()
+        .find(|s| s.id == OFFICIAL_ECG_ID)
+        .expect("ecg seeded");
+    assert_eq!(ecg.kind, SkillKind::Official);
+    assert_eq!(junction_count(&fx, OFFICIAL_ECG_ID), 1, "curator default restored");
+}
+
+#[test]
+fn official_content_refresh_updates_blob_but_disk_waits_for_reenable() {
+    let fx = make_space_with_world();
+    // Materialize the install so a disk copy exists.
+    do_read_skill_entry(&fx.mgr, &fx.space_id, "element-creation-guide").expect("heal");
+    let dir = skills_root(&fx).join("element-creation-guide");
+    let installed = std::fs::read_to_string(dir.join("SKILL.md")).expect("read installed");
+
+    // Corrupt the STORED blob — same code path as an app-version content
+    // change (stored entries differ from the embedded package).
+    fx.mgr
+        .with_space(&fx.space_id, |conn| {
+            conn.execute(
+                "UPDATE skills SET package = ?1 WHERE id = ?2 AND kind = 'official'",
+                params![vec![9u8, 9, 9], OFFICIAL_ECG_ID],
+            )?;
+            Ok(())
+        })
+        .expect("corrupt stored blob");
+
+    // Reopen: the content-refresh branch heals the stored blob from the
+    // embedded zip (a failed parse counts as divergence)…
+    fx.mgr.close_space(&fx.space_id);
+    let refreshed: Vec<u8> = fx
+        .mgr
+        .with_space(&fx.space_id, |conn| {
+            Ok(conn.query_row(
+                "SELECT package FROM skills WHERE id = ?1",
+                params![OFFICIAL_ECG_ID],
+                |r| r.get(0),
+            )?)
+        })
+        .expect("read refreshed blob");
+    assert_ne!(refreshed, vec![9u8, 9, 9], "blob was refreshed");
+    let parsed = parse_skill_zip(&refreshed).expect("refreshed blob is valid");
+    assert_eq!(parsed.name, "element-creation-guide");
+
+    // …but the INSTALLED copy is untouched: disk propagation stays
+    // re-enable-only (ADR-0043 §2, amended by ADR-0055).
+    assert_eq!(
+        std::fs::read_to_string(dir.join("SKILL.md")).expect("re-read installed"),
+        installed,
+        "disk copy unchanged by the refresh"
     );
 }

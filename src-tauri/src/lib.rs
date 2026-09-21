@@ -3,6 +3,7 @@ mod db;
 mod export;
 mod logging;
 mod models;
+mod official_skills;
 mod tray;
 mod util;
 mod window_manager;

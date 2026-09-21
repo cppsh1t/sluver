@@ -174,6 +174,12 @@ impl DbManager {
         tracing::info!(db_kind = "space", space_id = %space_id, "applying migrations");
         SPACE_MIGRATIONS.to_latest(&mut conn)?;
         tracing::debug!(db_kind = "space", space_id = %space_id, "migrations applied");
+        // Official skills (ADR-0055): seed into every freshly-opened
+        // space.db. Runs under the spaces lock by the same contract as
+        // the migrations above — DB-ONLY, no file IO. Best-effort inside
+        // (per-def failures are logged and skipped), so a seeding hiccup
+        // can never fail the connection open.
+        crate::official_skills::seed_official_skills(&mut conn, space_id);
         Ok(conn)
     }
 
