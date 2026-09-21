@@ -185,7 +185,7 @@ function SidebarFooter() {
       </div>
       <div className="px-5 py-3">
         <p className="text-[11px] tracking-wide text-muted-foreground/70">
-          {t("nav.version", { version: "0.1.0" })}
+          {t("nav.version", { version: "0.1.1" })}
         </p>
       </div>
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
