@@ -404,7 +404,7 @@ export function AgentConfigModelPicker({
       <div className="flex items-center justify-between gap-4 py-2.5">
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="truncate text-sm font-medium">
-            {t(`ai:agentConfigs.name.${agentConfig.name}`, { defaultValue: agentConfig.name })}
+            {agentConfig.name}
           </span>
           {dutyLine && (
             <span className="truncate text-xs text-muted-foreground/70">
@@ -438,7 +438,7 @@ export function AgentConfigModelPicker({
       <DialogContent className="flex max-h-[85vh] flex-col overflow-hidden sm:max-w-lg">
         <DialogHeader className="shrink-0">
           <DialogTitle>
-            {t(`ai:agentConfigs.name.${agentConfig.name}`, { defaultValue: agentConfig.name })}
+            {agentConfig.name}
           </DialogTitle>
           <DialogDescription>
             {/* Duty line for every role (ADR-0050 D7); the generic

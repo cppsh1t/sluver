@@ -63,7 +63,7 @@ const MAX_PACKAGE_BYTES = 10 * 1024 * 1024;
  * column) so the Space-tier pages read as one family.
  */
 function SpaceSkillsPage() {
-  const { t } = useTranslation(["skills", "common", "ai"]);
+  const { t } = useTranslation(["skills", "common"]);
   const { spaceId } = useParams({ from: "/space/$spaceId" });
   const spaceIdBranded = spaceId as SpaceId;
 
@@ -127,13 +127,15 @@ function SpaceSkillsPage() {
   }
 
   /**
-   * Muted hint line: localized role names of the agents with this skill
+   * Muted hint line: raw registry role names of the agents with this skill
    * enabled, in registry order (orchestrator, then the subagent roster).
+   * Role names are deliberately NOT localized — the English ids are the
+   * memorable, dispatch-facing names.
    */
   function enabledRoles(skill: SkillSummary): string[] {
     return LOOP_ROLE_NAMES.filter((role) =>
       roleEnabledIds.get(role)?.has(skill.id),
-    ).map((role) => t(`ai:agentConfigs.name.${role}`, { defaultValue: role }));
+    );
   }
 
   return (

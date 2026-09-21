@@ -184,11 +184,7 @@ export function ProviderCredentialList({
               </p>
               <ul className="ml-4 flex list-disc flex-col gap-0.5 text-xs/relaxed text-muted-foreground">
                 {affectedAgentConfigs.map((ac) => (
-                  <li key={ac.id}>
-                    {t(`ai:agentConfigs.name.${ac.name}`, {
-                      defaultValue: ac.name,
-                    })}
-                  </li>
+                  <li key={ac.id}>{ac.name}</li>
                 ))}
               </ul>
             </div>
