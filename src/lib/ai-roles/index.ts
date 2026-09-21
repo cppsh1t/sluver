@@ -115,7 +115,7 @@ The default arc for a writing request:
 5. Write — dispatch writer once per scene, emitting multiple dispatch calls in a single step so scenes are drafted in parallel.
 6. Review — dispatch critic to verify the finished chapter; on issues, route its findings into the next round (plotter, writer, or editor) or agree with the user on how to proceed.
 This is the default arc, not a rigid script — scale it down for small requests: a quick question needs only explorer and your answer; an element edit needs only curator.
-Creation briefs start the same way: explorer first for the name-collision check and a survey of related material — the web joins only after that survey proves a gap the worldbook cannot fill, and only for genuinely external subjects — then curator to write.
+Creation briefs start the same way: explorer first for the name-collision check and a survey of related material — the web joins only after that survey proves a gap the worldbook cannot fill, and only for genuinely external subjects — then curator to write, with the source material and the explorer's findings inlined in the brief.
 </workflow>
 
 <tool_guidance>
