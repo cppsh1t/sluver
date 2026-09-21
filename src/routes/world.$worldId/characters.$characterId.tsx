@@ -348,7 +348,7 @@ function CharacterDetailPage() {
                 </p>
               )}
               {character.description && (
-                <p className="text-sm text-muted-foreground">
+                <p className="whitespace-pre-wrap text-sm text-muted-foreground">
                   {character.description}
                 </p>
               )}
