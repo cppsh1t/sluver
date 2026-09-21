@@ -220,9 +220,20 @@ function SpaceSkillsPage() {
                           <span className="truncate font-mono text-sm font-medium">
                             {skill.name}
                           </span>
-                          <span className="shrink-0 text-[0.6875rem] text-muted-foreground/70">
-                            {formatRelativeTime(skill.createdAt)}
-                          </span>
+                          {/* Official rows carry no wall-clock time (they
+                              ship with the app — seeded timestamps are the
+                              far-future seed literal, which would render as
+                              a nonsense relative date); the badge takes
+                              the timestamp's place. */}
+                          {skill.kind === "official" ? (
+                            <span className="shrink-0 rounded-sm border border-border px-1 py-px text-[0.625rem] leading-none text-muted-foreground">
+                              {t("skills:officialBadge")}
+                            </span>
+                          ) : (
+                            <span className="shrink-0 text-[0.6875rem] text-muted-foreground/70">
+                              {formatRelativeTime(skill.createdAt)}
+                            </span>
+                          )}
                         </div>
                         <p className="line-clamp-2 text-xs text-muted-foreground">
                           {skill.description}
@@ -235,16 +246,22 @@ function SpaceSkillsPage() {
                           </p>
                         )}
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        className="text-muted-foreground hover:text-destructive"
-                        aria-label={t("common:actions.delete")}
-                        disabled={deleteMut.isPending}
-                        onClick={() => setPendingDelete(skill)}
-                      >
-                        <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
-                      </Button>
+                      {/* Official rows carry no delete affordance — they are
+                          app-owned and enforced server-side
+                          (SKILL_OFFICIAL_PROTECTED); the UI simply never
+                          offers the action. */}
+                      {skill.kind === "user" && (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="text-muted-foreground hover:text-destructive"
+                          aria-label={t("common:actions.delete")}
+                          disabled={deleteMut.isPending}
+                          onClick={() => setPendingDelete(skill)}
+                        >
+                          <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
+                        </Button>
+                      )}
                     </div>
                   );
                 })}

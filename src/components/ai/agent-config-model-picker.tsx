@@ -683,10 +683,21 @@ export function AgentConfigModelPicker({
                     className="flex items-start justify-between gap-4 px-3 py-2.5"
                   >
                     <div className="flex min-w-0 flex-col gap-0.5">
-                      {/* `name` is a lowercase-hyphen slug — code font. */}
-                      <span className="truncate font-mono text-xs font-medium">
-                        {skill.name}
-                      </span>
+                      <div className="flex min-w-0 items-baseline gap-1.5">
+                        {/* `name` is a lowercase-hyphen slug — code font. */}
+                        <span className="truncate font-mono text-xs font-medium">
+                          {skill.name}
+                        </span>
+                        {/* Official skills (ADR-0055) are default-enabled
+                            on designated roles; the badge marks which
+                            switches came pre-set by the app. Toggling is
+                            still free — default-on is not locked-on. */}
+                        {skill.kind === "official" && (
+                          <span className="shrink-0 rounded-sm border border-border px-1 py-px text-[0.625rem] leading-none text-muted-foreground">
+                            {t("skills:officialBadge")}
+                          </span>
+                        )}
+                      </div>
                       <span className="line-clamp-2 text-[0.6875rem] text-muted-foreground/70">
                         {skill.description}
                       </span>

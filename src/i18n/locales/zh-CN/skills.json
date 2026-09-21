@@ -1,4 +1,5 @@
 {
+  "officialBadge": "官方",
   "page": {
     "title": "Skill",
     "subtitle": "为智能体导入可复用的 Skill，然后在各智能体的配置弹窗中按需启用。",
