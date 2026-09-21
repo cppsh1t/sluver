@@ -215,6 +215,21 @@ pub enum DbError {
     #[error("Skill not installed: {0}")]
     SkillNotInstalled(String),
 
+    /// `delete_skill` targeted an official skill (ADR-0055): official rows
+    /// are app-owned and undeletable — the user manages their per-role
+    /// enablement via `set_skill_enabled`, never their existence. Surfaces
+    /// as `SKILL_OFFICIAL_PROTECTED` with `{ name }`.
+    #[error("Official skill is protected from deletion: {0}")]
+    SkillOfficialProtected(String),
+
+    /// `upload_skill` parsed to a `name` that belongs to an official skill
+    /// (ADR-0055): official names are reserved so a user package can never
+    /// shadow the app-seeded row (the plain UNIQUE(name) constraint would
+    /// already reject it, but with an opaque raw-SQLite message). Surfaces
+    /// as `SKILL_NAME_RESERVED` with `{ name }`.
+    #[error("Skill name is reserved by an official skill: {0}")]
+    SkillNameReserved(String),
+
     /// Chat message attachment rejected — the decoded payload exceeds the
     /// kind-specific ceiling (image 5 MiB / text 1 MiB — ADR-0044 §D6).
     /// Surfaces as `ATTACHMENT_TOO_LARGE` with `{ kind, max }` so the
@@ -365,6 +380,16 @@ impl DbError {
             ),
             DbError::SkillNotInstalled(name) => (
                 "SKILL_NOT_INSTALLED",
+                HashMap::from([("name".to_string(), name.clone())]),
+            ),
+            // Official-skills guards (ADR-0055) — both interpolate the
+            // user-meaningful skill name.
+            DbError::SkillOfficialProtected(name) => (
+                "SKILL_OFFICIAL_PROTECTED",
+                HashMap::from([("name".to_string(), name.clone())]),
+            ),
+            DbError::SkillNameReserved(name) => (
+                "SKILL_NAME_RESERVED",
                 HashMap::from([("name".to_string(), name.clone())]),
             ),
             // Chat attachments (ADR-0044). `max` is MiB-formatted so the

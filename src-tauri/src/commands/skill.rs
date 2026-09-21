@@ -28,12 +28,12 @@
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use tauri::State;
 use zip::ZipArchive;
 
 use crate::db::{DbError, DbManager};
-use crate::models::skill::{EnabledSkill, Skill, SkillEntry, SkillSummary};
+use crate::models::skill::{EnabledSkill, Skill, SkillEntry, SkillKind, SkillSummary};
 use crate::util::{new_id, now_iso};
 
 // ─── upload safety limits (ADR-0043 §1) ─────────────────────────────────────
@@ -58,10 +58,14 @@ const MAX_DESCRIPTION_CHARS: usize = 1024;
 /// post-normalization `..` re-check that does not depend on the host
 /// OS's separator handling), so no `..` or absolute components can
 /// appear.
-struct ParsedSkillPackage {
-    name: String,
-    description: String,
-    entries: Vec<(String, Vec<u8>)>,
+///
+/// `pub(crate)` + compiled-in consumers: `official_skills` builds and
+/// re-validates the embedded official packages through the SAME
+/// pipeline (identical limits for app-shipped and user-uploaded content).
+pub(crate) struct ParsedSkillPackage {
+    pub(crate) name: String,
+    pub(crate) description: String,
+    pub(crate) entries: Vec<(String, Vec<u8>)>,
 }
 
 /// Frontmatter block of SKILL.md. Only `name` + `description` are consumed;
@@ -114,8 +118,9 @@ fn invalid(reason: impl Into<String>) -> DbError {
 /// and frontmatter shape. Shared by upload (consumes name + description)
 /// and install (consumes everything) so both paths enforce IDENTICAL
 /// limits — the install path re-validates the stored blob rather than
-/// trusting it.
-fn parse_skill_zip(bytes: &[u8]) -> Result<ParsedSkillPackage, DbError> {
+/// trusting it. Also the validation pipeline for the compile-time-built
+/// official packages (ADR-0055).
+pub(crate) fn parse_skill_zip(bytes: &[u8]) -> Result<ParsedSkillPackage, DbError> {
     let mut archive = ZipArchive::new(std::io::Cursor::new(bytes))
         .map_err(|e| invalid(format!("not a valid zip archive: {e}")))?;
     if archive.len() > MAX_ENTRIES {
@@ -420,11 +425,21 @@ fn is_safe_relative_path(path: &str) -> bool {
             .all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
 }
 
+/// Column list shared by every SkillSummary SELECT (kept in one place so
+/// the projection and the row mapper cannot drift apart).
+const SUMMARY_COLUMNS: &str = "id, name, description, kind, created_at, updated_at";
+
+fn kind_from_row(row: &rusqlite::Row, col: &str) -> rusqlite::Result<SkillKind> {
+    let raw: String = row.get(col)?;
+    Ok(SkillKind::from_db_str(&raw))
+}
+
 fn row_to_summary(row: &rusqlite::Row) -> rusqlite::Result<SkillSummary> {
     Ok(SkillSummary {
         id: row.get("id")?,
         name: row.get("name")?,
         description: row.get("description")?,
+        kind: kind_from_row(row, "kind")?,
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
     })
@@ -437,6 +452,7 @@ fn row_to_skill(row: &rusqlite::Row) -> rusqlite::Result<Skill> {
         id: row.get("id")?,
         name: row.get("name")?,
         description: row.get("description")?,
+        kind: kind_from_row(row, "kind")?,
         package: row.get("package")?,
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
@@ -461,10 +477,15 @@ pub(crate) fn do_list_skills(
     space_id: &str,
 ) -> Result<Vec<SkillSummary>, DbError> {
     mgr.with_space(space_id, |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT id, name, description, created_at, updated_at
-             FROM skills ORDER BY created_at, id",
-        )?;
+        // Official skills pin to the top (ADR-0055): they are the app's
+        // recommendations and every Space carries them, so the pool
+        // reads "official first, then the user's imports in arrival
+        // order". SQLite boolean expressions order as 0/1.
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {SUMMARY_COLUMNS}
+             FROM skills
+             ORDER BY (kind = 'official') DESC, created_at, id"
+        ))?;
         let rows = stmt
             .query_map([], row_to_summary)?
             .collect::<Result<Vec<_>, _>>()?;
@@ -508,18 +529,33 @@ pub(crate) fn do_upload_skill(
     let id = new_id();
     let now = now_iso();
     tracing::Span::current().record("entity_id", id.as_str());
-    // Insert + read back. A duplicate `name` surfaces as the RAW SQLite
-    // UNIQUE constraint error — house convention (no DuplicateName
-    // business variant; see AGENTS.md testing notes).
+    // Insert + read back. Duplicate `name` handling is two-tier
+    // (ADR-0055): a name held by an OFFICIAL skill gets the targeted
+    // `SkillNameReserved` business error (official names are reserved so
+    // a user package can never shadow the app-seeded row); any other
+    // duplicate surfaces as the RAW SQLite UNIQUE constraint error —
+    // house convention (no DuplicateName business variant; see
+    // AGENTS.md testing notes). The reserved-name check runs inside the
+    // same closure as the INSERT (single connection, no check-then-
+    // insert window).
     mgr.with_space(space_id, move |conn| {
+        let reserved: Option<i64> = conn
+            .query_row(
+                "SELECT 1 FROM skills WHERE name = ?1 AND kind = 'official'",
+                params![parsed.name],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if reserved.is_some() {
+            return Err(DbError::SkillNameReserved(parsed.name.clone()));
+        }
         conn.execute(
             "INSERT INTO skills (id, name, description, package, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
             params![id, parsed.name, parsed.description, bytes, now],
         )?;
         conn.query_row(
-            "SELECT id, name, description, created_at, updated_at
-             FROM skills WHERE id = ?1",
+            &format!("SELECT {SUMMARY_COLUMNS} FROM skills WHERE id = ?1"),
             params![id],
             row_to_summary,
         )
@@ -552,14 +588,16 @@ pub(crate) fn do_delete_skill(
     // Single transaction: fetch the name (needed for the dir path) →
     // delete junction rows explicitly (the FK cascade from the skills row
     // would do it, but being explicit documents intent) → delete the
-    // skills row. rows_affected == 0 → SkillNotFound.
+    // skills row. rows_affected == 0 → SkillNotFound. Official rows are
+    // undeletable (ADR-0055): they are app-owned and every Space carries
+    // them; the user's lever is per-role enablement, not existence.
     let name = mgr.with_space(space_id, |conn| {
         let tx = conn.transaction()?;
-        let name: String = tx
+        let (name, kind): (String, String) = tx
             .query_row(
-                "SELECT name FROM skills WHERE id = ?1",
+                "SELECT name, kind FROM skills WHERE id = ?1",
                 params![skill_id],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .map_err(|e| match e {
                 rusqlite::Error::QueryReturnedNoRows => {
@@ -567,6 +605,9 @@ pub(crate) fn do_delete_skill(
                 }
                 other => DbError::Sqlite(other),
             })?;
+        if SkillKind::from_db_str(&kind) == SkillKind::Official {
+            return Err(DbError::SkillOfficialProtected(name));
+        }
         tx.execute(
             "DELETE FROM agent_config_skills WHERE skill_id = ?1",
             params![skill_id],
@@ -638,7 +679,7 @@ pub(crate) fn do_set_skill_enabled(
             })?;
             let skill = conn
                 .query_row(
-                    "SELECT id, name, description, package, created_at, updated_at
+                    "SELECT id, name, description, kind, package, created_at, updated_at
                      FROM skills WHERE id = ?1",
                     params![skill_id],
                     row_to_skill,
@@ -768,8 +809,55 @@ pub fn read_skill_entry(
     do_read_skill_entry(&state, &space_id, &name)
 }
 
+/// Read `skills/{name}/SKILL.md` from disk, self-healing an OFFICIAL
+/// skill's missing install on the way through (ADR-0055): official
+/// enablement is seeded without a disk copy (lazy materialization), so
+/// the first `activate_skill` — this read — is the designated install
+/// moment; the same path also heals a user-deleted install directory.
+/// User skills keep the plain SKILL_NOT_INSTALLED behavior (no
+/// blob-backed resurrection for user content). The blob lookup runs in
+/// its own short `with_space` closure and the extraction happens with no
+/// lock held (ADR-0007 discipline). Two parallel first-activations can
+/// race the stash-dance swap; the loser errors transiently and the
+/// retry succeeds — tolerated, see ADR-0055.
+fn read_installed_skill_md(
+    mgr: &DbManager,
+    space_id: &str,
+    name: &str,
+) -> Result<String, DbError> {
+    let dir = skill_dir(mgr, space_id, name);
+    match std::fs::read_to_string(dir.join("SKILL.md")) {
+        Ok(content) => Ok(content),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            let official_package: Option<Vec<u8>> = mgr.with_space(space_id, |conn| {
+                Ok(conn
+                    .query_row(
+                        "SELECT package FROM skills WHERE name = ?1 AND kind = 'official'",
+                        params![name],
+                        |r| r.get(0),
+                    )
+                    .optional()?)
+            })?;
+            match official_package {
+                Some(package) => {
+                    install_skill(mgr, space_id, name, &package)?;
+                    tracing::debug!(
+                        entity_id = %name,
+                        "official skill materialized on first activation"
+                    );
+                    std::fs::read_to_string(dir.join("SKILL.md"))
+                        .map_err(|_| DbError::SkillNotInstalled(name.to_string()))
+                }
+                None => Err(DbError::SkillNotInstalled(name.to_string())),
+            }
+        }
+        Err(e) => Err(DbError::Io(e)),
+    }
+}
+
 /// Read `skills/{name}/SKILL.md` from DISK — the installed copy is the
-/// runtime truth (ADR-0043 §2). Missing dir/file → `SkillNotInstalled`.
+/// runtime truth (ADR-0043 §2). Missing dir/file → `SkillNotInstalled`
+/// (official skills self-heal first — see [`read_installed_skill_md`]).
 pub(crate) fn do_read_skill_entry(
     mgr: &DbManager,
     space_id: &str,
@@ -782,13 +870,7 @@ pub(crate) fn do_read_skill_entry(
         return Err(DbError::SkillNotInstalled(name.to_string()));
     }
     let dir = skill_dir(mgr, space_id, name);
-    let content = match std::fs::read_to_string(dir.join("SKILL.md")) {
-        Ok(c) => c,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Err(DbError::SkillNotInstalled(name.to_string()));
-        }
-        Err(e) => return Err(DbError::Io(e)),
-    };
+    let content = read_installed_skill_md(mgr, space_id, name)?;
     // Bundled files: everything under the dir EXCEPT SKILL.md itself,
     // relative forward-slash paths, sorted. Listed, never eagerly loaded
     // (progressive disclosure — ADR-0043 §3).
