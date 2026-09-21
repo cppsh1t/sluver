@@ -36,7 +36,7 @@
     "config": "配置",
     "skills": "Skill",
     "library": "资料库",
-    "version": "v{{version}} · 预览版",
+    "version": "v{{version}}",
     "backToWorlds": "所有世界",
     "worldbook": "世界集",
     "writing": "写作",

@@ -36,7 +36,7 @@
     "config": "Config",
     "skills": "Skills",
     "library": "Library",
-    "version": "v{{version}} · Preview",
+    "version": "v{{version}}",
     "backToWorlds": "All Worlds",
     "worldbook": "Worldbook",
     "writing": "Writing",
