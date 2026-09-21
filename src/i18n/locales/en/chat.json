@@ -1,10 +1,5 @@
 {
   "title": "Chat",
-  "role": {
-    "explorer": "Explorer",
-    "writer": "Writer",
-    "orchestrator": "Orchestrator"
-  },
   "list": {
     "empty": "No conversations yet",
     "new": "New conversation",

@@ -1,10 +1,5 @@
 {
   "title": "对话",
-  "role": {
-    "explorer": "探索者",
-    "writer": "写手",
-    "orchestrator": "协调者"
-  },
   "list": {
     "empty": "还没有对话",
     "new": "新对话",

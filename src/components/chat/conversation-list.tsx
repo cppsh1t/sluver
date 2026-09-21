@@ -17,7 +17,6 @@ import { toast } from "sonner";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Add01Icon,
-  AiChat02Icon,
   Delete02Icon,
   PencilEdit01Icon,
 } from "@hugeicons/core-free-icons";
@@ -53,22 +52,6 @@ interface ConversationListProps {
   readonly worldId: WorldId;
   readonly selectedId: ConversationId | null;
   readonly onSelect: (conversation: Conversation) => void;
-}
-
-/**
- * Compact role badge for a list row. Post-ADR-0050 every listed row is
- * orchestrator-bound (subagent runs are filtered out of `list_conversations`),
- * but the badge stays name-driven with a raw-name fallback so any future
- * or legacy binding still renders sensibly.
- */
-function RoleBadge({ role }: { readonly role: string }) {
-  const { t } = useTranslation("chat");
-  return (
-    <span className="inline-flex items-center gap-1 rounded-sm bg-secondary px-1 py-px text-[0.625rem] font-medium text-secondary-foreground">
-      <HugeiconsIcon icon={AiChat02Icon} strokeWidth={2} className="size-2.5" />
-      {t(`chat:role.${role}`, role)}
-    </span>
-  );
 }
 
 export function ConversationList({
@@ -310,7 +293,6 @@ export function ConversationList({
                       )}
                     </div>
                     <div className="flex items-center gap-2">
-                      <RoleBadge role={conv.agentConfigName} />
                       <span className="text-[0.625rem] text-muted-foreground">
                         {formatRelativeTime(conv.updatedAt)}
                       </span>
