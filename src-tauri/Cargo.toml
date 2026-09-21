@@ -1,6 +1,6 @@
 [package]
 name = "sluver"
-version = "0.1.0"
+version = "0.1.1"
 description = "A Tauri v2 desktop app for worldbuilding & novel writing"
 authors = ["cppsh1t"]
 edition = "2021"
