@@ -168,10 +168,13 @@ export {
   type AttachmentMeta,
 } from './attachment';
 
-// ─── Agent Skills (storage-center install model — ADR-0043) ───────────────
+// ─── Agent Skills (storage-center install model — ADR-0043, official
+// skills per ADR-0055) ────────────────────────────────────────────────────
 export {
   skillIdSchema,
   type SkillId,
+  skillKindSchema,
+  type SkillKind,
   skillSummarySchema,
   type SkillSummary,
   enabledSkillSchema,

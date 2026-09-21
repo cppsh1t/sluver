@@ -21,6 +21,21 @@ import { z } from "zod";
 export const skillIdSchema = z.string().brand<"SkillId">();
 export type SkillId = z.infer<typeof skillIdSchema>;
 
+// ─── Skill Kind (source discriminator — ADR-0055) ─────────────────────────
+
+/**
+ * Where a skill row comes from.
+ *
+ * - `user` — uploaded via the storage center; deletable, plain
+ *   ADR-0043 behavior.
+ * - `official` — app-shipped: seeded into every Space, default-enabled
+ *   on designated roles, undeletable, and its name is reserved against
+ *   uploads. Default-on is NOT locked-on — per-role toggles work as
+ *   usual.
+ */
+export const skillKindSchema = z.enum(["user", "official"]);
+export type SkillKind = z.infer<typeof skillKindSchema>;
+
 // ─── Skill Summary ─────────────────────────────────────────────────────────
 
 /**
@@ -34,6 +49,7 @@ export const skillSummarySchema = z.object({
   id: skillIdSchema,
   name: z.string(),
   description: z.string(),
+  kind: skillKindSchema,
   createdAt: z.string(),
   updatedAt: z.string(),
 });
