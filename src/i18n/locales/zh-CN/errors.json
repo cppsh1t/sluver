@@ -37,6 +37,8 @@
   "SKILL_NOT_FOUND": "未找到 Skill ({{id}})",
   "SKILL_PACKAGE_INVALID": "Skill 包无效或已损坏：{{reason}}",
   "SKILL_NOT_INSTALLED": "Skill「{{name}}」尚未安装",
+  "SKILL_OFFICIAL_PROTECTED": "官方 Skill「{{name}}」不可删除",
+  "SKILL_NAME_RESERVED": "名称「{{name}}」为官方 Skill 保留，请修改 SKILL.md 中的 name 后重新导入",
   "ATTACHMENT_TOO_LARGE": "文件过大（最大 {{max}}）",
   "ATTACHMENT_INVALID_MIME": "不支持的文件类型：{{mime}}",
   "ATTACHMENT_INVALID_TEXT": "文本附件必须是有效的 UTF-8 编码",

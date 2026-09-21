@@ -37,6 +37,8 @@
   "SKILL_NOT_FOUND": "Skill not found ({{id}})",
   "SKILL_PACKAGE_INVALID": "The skill package is invalid or corrupt: {{reason}}",
   "SKILL_NOT_INSTALLED": "Skill \"{{name}}\" is not installed",
+  "SKILL_OFFICIAL_PROTECTED": "The official skill \"{{name}}\" cannot be deleted",
+  "SKILL_NAME_RESERVED": "The name \"{{name}}\" is reserved by an official skill — change the name in SKILL.md and import again",
   "ATTACHMENT_TOO_LARGE": "File is too large (max {{max}})",
   "ATTACHMENT_INVALID_MIME": "Unsupported file type: {{mime}}",
   "ATTACHMENT_INVALID_TEXT": "Text attachment must be valid UTF-8",
