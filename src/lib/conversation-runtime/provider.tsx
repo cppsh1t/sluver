@@ -90,16 +90,12 @@ interface ConversationRuntimeContextValue {
   readonly autoTitle: AutoTitleCallback;
 }
 
-const ConversationRuntimeContext = createContext<ConversationRuntimeContextValue | null>(
-  null,
-);
+const ConversationRuntimeContext = createContext<ConversationRuntimeContextValue | null>(null);
 
 function useRuntimeContext(): ConversationRuntimeContextValue {
   const ctx = useContext(ConversationRuntimeContext);
   if (!ctx) {
-    throw new Error(
-      "useConversation* hooks must be used within a <ConversationRuntimeProvider>.",
-    );
+    throw new Error("useConversation* hooks must be used within a <ConversationRuntimeProvider>.");
   }
   return ctx;
 }
@@ -133,11 +129,12 @@ export function ConversationRuntimeProvider({
   // Live model resolution for every registry role (ADR-0023 + ADR-0050 D1).
   // The bound model is read from the Space's AgentConfig at
   // Agent-construction time (lazy, on first send/ensure per conversation).
-  // The constructed Agent is then cached in the store for this Provider's
-  // lifetime, so a model change in Settings takes effect for NEW
-  // conversations immediately and for existing ones the next time the
-  // Space window is reopened (the Provider unmounts, dropping all cached
-  // Agents — there is no per-conversation model rebind while open).
+  // The constructed Agent carries a `configSignature` fingerprint of
+  // everything baked into it; every later `resolveAgent` call re-resolves
+  // and compares, so a Settings change (model, provider credential,
+  // behavior flags, skills, …) takes effect on the NEXT TURN of existing
+  // conversations — an idle cached Agent is rebuilt, an in-flight run
+  // finishes on the old config (ADR-0023's "subsequent turns" contract).
   //
   // Registry-driven: ONE query family (agent configs + credentials +
   // catalog) feeds a resolver that resolves ANY role by name — subagent
@@ -174,8 +171,7 @@ export function ConversationRuntimeProvider({
   const credentialsData = credentialsQ.data;
   const catalogData = catalogQ.data;
   const skillsByRole = allSkillsQ.data;
-  const configsLoading =
-    agentConfigsQ.isLoading || credentialsQ.isLoading || catalogQ.isLoading;
+  const configsLoading = agentConfigsQ.isLoading || credentialsQ.isLoading || catalogQ.isLoading;
   const skillsLoading = allSkillsQ.isLoading;
   const visionResolved = visionConfig.config ?? null;
 
@@ -198,12 +194,9 @@ export function ConversationRuntimeProvider({
       // Registry-driven name → config lookup (ADR-0050 D1): any unknown
       // or unbound name joins to `config: null` → "unconfigured".
       const agentConfig = agentConfigsData?.find((a) => a.name === role);
-      const joined = resolveAgentModelConfig(
-        agentConfig,
-        credentialsData,
-        catalogData,
-      );
+      const joined = resolveAgentModelConfig(agentConfig, credentialsData, catalogData);
       if (!joined.config) return { status: "unconfigured" };
+      const skills = skillsByRole?.[role] ?? [];
       try {
         return {
           status: "ready",
@@ -213,13 +206,31 @@ export function ConversationRuntimeProvider({
           contextCompaction: joined.contextCompaction,
           contextNote: joined.contextNote,
           maxSteps: joined.maxSteps,
-          skills: skillsByRole?.[role] ?? [],
+          skills,
           // ADR-0045 — Space-scoped vision agent config for `look_at`.
           // `null` (unbound) → the always-registered tool returns its
           // structured `unconfigured` result (ADR-0050 D6). The vision
           // query shares its react-query keys with the config sources
           // above, so by the time the role is "ready" this has settled.
           visionConfig: visionResolved,
+          // Fingerprint of EVERY semantic input above, for the store's
+          // cached-Agent revalidation (ADR-0023). Fixed-order JSON tuple:
+          // two resolvers describing the same end state produce the same
+          // string (object key order is fixed by resolveAgentModelConfig's
+          // literals). The `LanguageModel` instance itself is excluded —
+          // identity differs per call; the config it derives from is the
+          // semantic truth. ⚠️ Embeds the plaintext apiKey — in-memory
+          // comparison only, never log/serialize it (ADR-0013/0016).
+          configSignature: JSON.stringify([
+            joined.config,
+            joined.autoExecuteDangerousTools,
+            joined.shellToolEnabled,
+            joined.contextCompaction,
+            joined.contextNote,
+            joined.maxSteps,
+            skills,
+            visionResolved,
+          ]),
         };
       } catch (e) {
         // Provider package not installed / factory mismatch — surface as
@@ -254,10 +265,7 @@ export function ConversationRuntimeProvider({
   const resolveImageInputSupported = useCallback<ImageInputSupportedResolver>(
     (role) => {
       const agentConfig = agentConfigsData?.find((a) => a.name === role);
-      return imageInputSupportedForModel(
-        catalogData,
-        agentConfig?.modelId ?? null,
-      );
+      return imageInputSupportedForModel(catalogData, agentConfig?.modelId ?? null);
     },
     [agentConfigsData, catalogData],
   );
@@ -295,11 +303,9 @@ export function ConversationRuntimeProvider({
         // turn until the window reopens). `getConversation` fetches ANY
         // kind (world, chapter, subagent) — a NOT_FOUND rejection maps to
         // `null` = deleted.
-        const existing = await getConversation(
-          spaceId,
-          input.worldId,
-          input.conversationId,
-        ).catch(() => null);
+        const existing = await getConversation(spaceId, input.worldId, input.conversationId).catch(
+          () => null,
+        );
         // Conversation deleted in the meantime → nothing to title.
         if (!existing) return null;
         // Already titled → return the OBSERVED title (not null): the
@@ -309,10 +315,7 @@ export function ConversationRuntimeProvider({
 
         let title: string;
         try {
-          title = await generateConversationTitle(
-            namerConfig.config,
-            input.userText,
-          );
+          title = await generateConversationTitle(namerConfig.config, input.userText);
         } catch (e) {
           logger.warn("chat.auto_title.failed", {
             conversation_id: input.conversationId,
@@ -326,21 +329,14 @@ export function ConversationRuntimeProvider({
         // the user renamed (or a title otherwise landed) while the naming
         // call was in flight, never overwrite it — return the observed
         // title so the caller's cache catches up.
-        const current = await getConversation(
-          spaceId,
-          input.worldId,
-          input.conversationId,
-        ).catch(() => null);
+        const current = await getConversation(spaceId, input.worldId, input.conversationId).catch(
+          () => null,
+        );
         if (!current || current.title !== null) {
           return current?.title ?? null;
         }
 
-        await updateConversationTitle(
-          spaceId,
-          input.worldId,
-          input.conversationId,
-          title,
-        );
+        await updateConversationTitle(spaceId, input.worldId, input.conversationId, title);
         // Refresh the conversation list so the new title appears.
         qc.invalidateQueries({
           queryKey: conversationKeys.all(spaceId, input.worldId),
@@ -367,14 +363,7 @@ export function ConversationRuntimeProvider({
       resolveImageInputSupported,
       autoTitle,
     }),
-    [
-      store,
-      spaceId,
-      modelResolver,
-      onPersistError,
-      resolveImageInputSupported,
-      autoTitle,
-    ],
+    [store, spaceId, modelResolver, onPersistError, resolveImageInputSupported, autoTitle],
   );
 
   return (
@@ -446,14 +435,7 @@ export function useSend(
           resolveImageInputSupported,
         );
     },
-    [
-      store,
-      worldId,
-      modelResolver,
-      onPersistError,
-      resolveImageInputSupported,
-      autoTitle,
-    ],
+    [store, worldId, modelResolver, onPersistError, resolveImageInputSupported, autoTitle],
   );
 }
 
@@ -471,9 +453,7 @@ export function useDeleteMessage(
   const { store } = useRuntimeContext();
   return useCallback(
     async (conversationId: ConversationId, messageId: string) => {
-      await store
-        .getState()
-        .deleteMessage(worldId, conversationId, messageId);
+      await store.getState().deleteMessage(worldId, conversationId, messageId);
     },
     [store, worldId],
   );
@@ -509,9 +489,7 @@ export function useEditMessage(
       partIndex: number | null,
       newText: string,
     ) => {
-      return store
-        .getState()
-        .editMessage(worldId, conversationId, messageId, partIndex, newText);
+      return store.getState().editMessage(worldId, conversationId, messageId, partIndex, newText);
     },
     [store, worldId],
   );
@@ -520,9 +498,7 @@ export function useEditMessage(
 /**
  * Returns an abort driver bound to the store's `abort` action.
  */
-export function useAbort(
-  worldId: string,
-): (conversationId: ConversationId) => void {
+export function useAbort(worldId: string): (conversationId: ConversationId) => void {
   const { store } = useRuntimeContext();
   return useCallback(
     (conversationId: ConversationId) => {
@@ -605,14 +581,13 @@ export function useDraftAttachments(
  * Ensure the runtime (stateful Agent) exists for the current conversation.
  *
  * The chat view calls this on mount / when the conversation changes. It is
- * idempotent: once the Agent is constructed (or loading is in flight) the
- * effect no-ops. Returns `agentLoading` so the UI can show a spinner while the
- * persisted thread is being loaded.
+ * idempotent: with no Agent it constructs one; with a cached Agent it
+ * revalidates the config fingerprint (unchanged → no-op; changed + idle →
+ * rebuild — ADR-0023), so an OPEN conversation picks up Settings changes
+ * without waiting for the next send. Returns `agentLoading` so the UI can
+ * show a spinner while the persisted thread is being loaded.
  */
-export function useEnsureRuntime(
-  worldId: string,
-  conversation: Conversation,
-): boolean {
+export function useEnsureRuntime(worldId: string, conversation: Conversation): boolean {
   const { store, modelResolver, onPersistError } = useRuntimeContext();
   const conversationId = conversation.id;
   const agentLoading = useStore(
@@ -629,11 +604,12 @@ export function useEnsureRuntime(
 
   useEffect(() => {
     if (agentExists !== agentReady) setAgentReady(agentExists);
-    if (!agentExists && !agentLoading) {
-      void store
-        .getState()
-        .ensureRuntime(worldId, conversation, modelResolver, onPersistError);
-    }
+    // Always call — ensureRuntime is idempotent and internally guards
+    // in-flight construction. The effect re-fires whenever the Provider
+    // rebuilds `modelResolver` (any Space AI-config / credentials / skills
+    // query data change), which is exactly when a cached Agent may have
+    // gone stale (ADR-0023 revalidation).
+    void store.getState().ensureRuntime(worldId, conversation, modelResolver, onPersistError);
   }, [
     store,
     worldId,
@@ -652,9 +628,7 @@ export function useEnsureRuntime(
  * Returns a remover bound to the store's `removeConversation` action. Aborts
  * any in-flight run before dropping the slot (handled inside the action).
  */
-export function useRemoveConversation(
-  worldId: string,
-): (conversationId: ConversationId) => void {
+export function useRemoveConversation(worldId: string): (conversationId: ConversationId) => void {
   const { store } = useRuntimeContext();
   return useCallback(
     (conversationId: ConversationId) => {
@@ -686,9 +660,7 @@ export function useResolveApproval(
  * run's slot in one gesture. The subagent block's cross-runtime consent
  * surface (the child's gate is not the parent conversation's).
  */
-export function useApproveAllForRun(
-  worldId: string,
-): (runId: ConversationId) => void {
+export function useApproveAllForRun(worldId: string): (runId: ConversationId) => void {
   const { store } = useRuntimeContext();
   return useCallback(
     (runId: ConversationId) => {

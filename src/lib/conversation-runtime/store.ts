@@ -9,8 +9,10 @@
  *    deltas to the conversation IPC commands.
  * 3. **Live model resolution** (ADR-0023) — a `ModelResolver` closure, fed by
  *    the Provider from Space-scoped `AgentConfig`, supplies the bound model at
- *    Agent construction time. The model is NOT persisted on the conversation,
- *    so reopening a conversation always picks up the current config.
+ *    Agent construction time. The model is NOT persisted on the conversation;
+ *    every `resolveAgent` call re-checks the config fingerprint, so a Settings
+ *    change applies to subsequent turns of EXISTING conversations (an idle
+ *    cached Agent is rebuilt; an in-flight run finishes on the old config).
  * 4. **Reactivity** — a two-level `Map<worldId, Map<conversationId, …>>` keeps
  *    every conversation's runtime alive simultaneously, so in-flight runs
  *    survive conversation switches, world switches, in-app navigation, and
@@ -60,11 +62,7 @@ import {
 import { getChapter } from "@/api/novel";
 import { getSceneImage } from "@/api/scene-image";
 import { createAgentEventLogger } from "@/lib/ai/agent-logging";
-import {
-  buildSubagentRosterBlock,
-  getRoleDefinition,
-  injectContextNote,
-} from "@/lib/ai-roles";
+import { buildSubagentRosterBlock, getRoleDefinition, injectContextNote } from "@/lib/ai-roles";
 import { TauriSessionStore } from "@/lib/ai-store";
 import { base64Encode, sniffImageMime } from "@/lib/image-bytes";
 import { logger } from "@/lib/logger";
@@ -144,7 +142,8 @@ export type ResolvedModel =
        * Agent Skills enabled for this role (ADR-0043 §3). Empty array =
        * none — no skill tools registered, no `<available_skills>` catalog.
        * Resolved live per role from the Space's per-AgentConfig enablement;
-       * takes effect for new conversations (ADR-0024 agent cache).
+       * a change rebuilds the cached Agent via signature revalidation
+       * (ADR-0023 — next-turn effect, see {@link ConversationRuntimeData.configSignature}).
        */
       readonly skills: EnabledSkill[];
       /**
@@ -152,11 +151,26 @@ export type ResolvedModel =
        * resolved live by the Provider (Space-scoped, shared by every role —
        * unlike the fields above it is NOT per-role). `null` = unbound →
        * the always-registered `look_at` tool returns its structured
-       * `unconfigured` result (ADR-0050 D6). Takes effect for new
-       * conversations (ADR-0024 agent cache — same lifecycle as
+       * `unconfigured` result (ADR-0050 D6). A change rebuilds the cached
+       * Agent via signature revalidation (same next-turn lifecycle as
        * `shellToolEnabled`).
        */
       readonly visionConfig: ResolvedModelConfig | null;
+      /**
+       * Fingerprint of EVERY semantic input baked into a
+       * constructed Agent (model endpoint + apiKey, behavior flags,
+       * compaction, context note, maxSteps, skills, vision config). Built
+       * by the Provider alongside the other fields; the store compares it
+       * against the signature stamped at construction to detect a Settings
+       * change and rebuild the cached Agent — config changes take effect
+       * on subsequent turns, not the next window reopen (ADR-0023).
+       *
+       * ⚠️ Embeds the plaintext apiKey (via `ResolvedModelConfig`, per
+       * ADR-0013's plaintext-storage threat model). In-memory comparison
+       * ONLY — never log, serialize, or persist this value (ADR-0016
+       * redaction policy).
+       */
+      readonly configSignature: string;
     }
   | { readonly status: "loading" }
   | { readonly status: "unconfigured" };
@@ -453,6 +467,14 @@ export interface ConversationRuntimeData {
   readonly conversation: Conversation;
   /** `null` until the runtime is ensured (lazy — constructed on first send/ensure). */
   agent: Agent | null;
+  /**
+   * The `configSignature` of the `ResolvedModel` this slot's Agent was
+   * constructed from (`null` until construction). Every `resolveAgent`
+   * call re-resolves and compares: a mismatch on an IDLE slot rebuilds
+   * the Agent so Settings changes apply to subsequent turns (ADR-0023 —
+   * live resolution); a busy slot keeps the old Agent until the run ends.
+   */
+  configSignature: string | null;
   /** `true` while `Agent.open()` is in flight. */
   agentLoading: boolean;
   /** The current in-flight run handle (for abort). */
@@ -515,11 +537,7 @@ export interface ConversationRuntimeState {
    * flight. `pendingTurn` page-level echo is intentionally left alone (the
    * page owns the optimistic echo).
    */
-  deleteMessage: (
-    worldId: string,
-    conversationId: string,
-    messageId: string,
-  ) => Promise<void>;
+  deleteMessage: (worldId: string, conversationId: string, messageId: string) => Promise<void>;
 
   /**
    * In-place message body edit (ADR-0047): replaces the target message's
@@ -561,19 +579,16 @@ export interface ConversationRuntimeState {
    * (not truncated-with-error) — a deliberate choice; the UI layer
    * pre-validates and this is the defensive backstop.
    */
-  addDraftAttachments: (
-    worldId: string,
-    conversationId: string,
-    items: DraftAttachment[],
-  ) => void;
-  removeDraftAttachment: (
-    worldId: string,
-    conversationId: string,
-    id: string,
-  ) => void;
+  addDraftAttachments: (worldId: string, conversationId: string, items: DraftAttachment[]) => void;
+  removeDraftAttachment: (worldId: string, conversationId: string, id: string) => void;
   removeConversation: (worldId: string, conversationId: string) => void;
   clearError: (worldId: string, conversationId: string) => void;
-  resolveApproval: (worldId: string, conversationId: string, toolCallId: string, approved: boolean) => void;
+  resolveApproval: (
+    worldId: string,
+    conversationId: string,
+    toolCallId: string,
+    approved: boolean,
+  ) => void;
   /**
    * Approve every pending approval of a subagent run's slot in ONE gesture
    * (ADR-0050 D5 — the subagent block's approve-all affordance, the only
@@ -616,9 +631,7 @@ export const EMPTY_VIEW: ConversationView = {
  * non-null values — but this helper is defensive: it does not enforce that
  * invariant, it merely reports whatever the columns hold.
  */
-function buildMessageUsages(
-  messages: readonly Message[],
-): Record<string, MessageUsage> {
+function buildMessageUsages(messages: readonly Message[]): Record<string, MessageUsage> {
   const map: Record<string, MessageUsage> = {};
   for (const m of messages) {
     const input = m.usageInputTokens ?? null;
@@ -638,9 +651,7 @@ function buildMessageUsages(
  * `null` if there is none. Used by run finalization to attach per-turn
  * usage to the correct message id (ADR-0030 §2).
  */
-function lastAssistantMessageId(
-  messages: readonly SessionMessage[],
-): string | null {
+function lastAssistantMessageId(messages: readonly SessionMessage[]): string | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i].role === "assistant") return messages[i].id;
   }
@@ -668,9 +679,7 @@ function messageText(message: ModelMessage): string {
  * Non-text parts and empty messages are skipped; `null` when there is
  * nothing extractable.
  */
-function extractTitleText(
-  messages: readonly ModelMessage[],
-): string | null {
+function extractTitleText(messages: readonly ModelMessage[]): string | null {
   for (const message of messages) {
     if (message.role === "user") {
       const text = messageText(message);
@@ -802,6 +811,7 @@ function ensureSlot(
   const data: ConversationRuntimeData = {
     conversation,
     agent: null,
+    configSignature: null,
     agentLoading: false,
     runHandle: null,
     autoTitlePending: false,
@@ -889,9 +899,7 @@ function patchToolSegment(
   toolCallId: string,
   patch: Partial<Pick<ToolCallView, "toolName" | "status" | "output" | "error" | "durationMs">>,
 ): readonly StreamSegment[] {
-  const idx = segments.findIndex(
-    (s) => s.kind === "tool" && s.toolCallId === toolCallId,
-  );
+  const idx = segments.findIndex((s) => s.kind === "tool" && s.toolCallId === toolCallId);
   if (idx === -1) return segments;
   const seg = segments[idx];
   if (seg.kind !== "tool") return segments; // unreachable given findIndex above
@@ -1020,11 +1028,7 @@ async function buildChapterContextBlock(
 
   let chapter: Chapter;
   try {
-    chapter = await getChapter(
-      spaceId,
-      worldId as WorldId,
-      chapterIdSchema.parse(meta.chapterId),
-    );
+    chapter = await getChapter(spaceId, worldId as WorldId, chapterIdSchema.parse(meta.chapterId));
   } catch (e) {
     logger.warn("chat.chapter_context.failed", {
       chapter_id: meta.chapterId,
@@ -1163,8 +1167,7 @@ async function constructAgent(
               typeof part.data === "string" &&
               part.data.startsWith("data:") &&
               part.filename !== undefined &&
-              (part.filename === filename ||
-                part.filename.toLowerCase() === filename.toLowerCase())
+              (part.filename === filename || part.filename.toLowerCase() === filename.toLowerCase())
             ) {
               return { dataUrl: part.data, mediaType: part.mediaType };
             }
@@ -1209,10 +1212,7 @@ async function constructAgent(
   // XML section, never a replacement — the structured prompt's
   // operational sections stay code-owned). Empty note = registry prompt
   // verbatim. See injectContextNote in ai-roles/index.ts.
-  const baseSystemPrompt = injectContextNote(
-    roleDefinition.systemPrompt,
-    contextNote,
-  );
+  const baseSystemPrompt = injectContextNote(roleDefinition.systemPrompt, contextNote);
   // Apply the DB-stored step-budget override. `null` = use the code
   // default from the role registry (ai-roles/index.ts). Unlike the
   // context note, this is nullable-numeric so the fallback uses `??` (an
@@ -1231,16 +1231,10 @@ async function constructAgent(
   // Chapter anchor context — appended last: present only for chapter-
   // anchored conversations and only when the `getChapter` read succeeded
   // (see buildChapterContextBlock for the caching trade-off).
-  const chapterContextBlock = await buildChapterContextBlock(
-    conversation,
-    spaceId,
-    worldId,
-  );
+  const chapterContextBlock = await buildChapterContextBlock(conversation, spaceId, worldId);
   const effectiveSystemPrompt = [
     baseSystemPrompt,
-    ...(roleDefinition.kind === "conversational"
-      ? [buildSubagentRosterBlock()]
-      : []),
+    ...(roleDefinition.kind === "conversational" ? [buildSubagentRosterBlock()] : []),
     LOOK_AT_PROMPT_BLOCK,
     ...(skills.length > 0 ? [buildAvailableSkillsBlock(skills)] : []),
     ...(chapterContextBlock !== null ? [chapterContextBlock] : []),
@@ -1304,6 +1298,19 @@ export function createConversationRuntimeStore(
     // Per-store map of pending approval resolvers, keyed by toolCallId.
     // The gate sets a Promise resolver here; resolveApproval consumes it.
     const approvalResolvers = new Map<string, (approved: boolean) => void>();
+
+    // ── Construction memoization (resolveAgent) ───────────────────
+    // Per-store map of in-flight Agent-construction promises, keyed by
+    // `${worldId}::${conversationId}`. `send` calls resolveAgent
+    // DIRECTLY (not through ensureRuntime), so a send landing inside a
+    // reconstruction window (idle rebuild just dropped the cached Agent)
+    // would double-construct — and each racing caller would receive its
+    // OWN Agent instance, defeating the per-agent "already running"
+    // ConfigError guard (two concurrent runs appending to one persisted
+    // session). Memoizing the promise collapses concurrent callers into
+    // ONE Agent.open — everyone awaits and lands the same instance.
+    // Cleared on settlement (identity-guarded against a newer entry).
+    const constructing = new Map<string, Promise<Agent | null>>();
 
     // ── Tool-duration timing (ephemeral, runtime-only) ────────────────
     // Keyed by the globally-unique toolCallId. The APPROVAL WAIT IS EXCLUDED
@@ -1508,8 +1515,7 @@ export function createConversationRuntimeStore(
       }
 
       const roleName =
-        getData(get(), worldId, conversationId)?.conversation.agentConfigName ??
-        "unknown";
+        getData(get(), worldId, conversationId)?.conversation.agentConfigName ?? "unknown";
 
       // Record the handle + initialize the live stream view.
       patchData(worldId, conversationId, (d) => ({
@@ -1584,11 +1590,7 @@ export function createConversationRuntimeStore(
         batch.reasoning.chunks = [];
         batch.inputDraftChunks = [];
 
-        if (
-          tChunks.length === 0 &&
-          rChunks.length === 0 &&
-          iChunks.length === 0
-        ) {
+        if (tChunks.length === 0 && rChunks.length === 0 && iChunks.length === 0) {
           return;
         }
 
@@ -1629,9 +1631,7 @@ export function createConversationRuntimeStore(
        */
       const scheduleFlush = (): void => {
         const total =
-          batch.text.chunks.length +
-          batch.reasoning.chunks.length +
-          batch.inputDraftChunks.length;
+          batch.text.chunks.length + batch.reasoning.chunks.length + batch.inputDraftChunks.length;
         if (total >= FLUSH_THRESHOLD) {
           if (batch.rafId !== null) {
             cancelAnimationFrame(batch.rafId);
@@ -1787,11 +1787,12 @@ export function createConversationRuntimeStore(
                   ...d.view,
                   stream: {
                     ...d.view.stream,
-                    segments: patchToolSegment(
-                      d.view.stream.segments,
-                      event.toolCallId,
-                      { toolName: event.toolName, status: "done", output: event.output, durationMs: toolDurationMs(event.toolCallId) },
-                    ),
+                    segments: patchToolSegment(d.view.stream.segments, event.toolCallId, {
+                      toolName: event.toolName,
+                      status: "done",
+                      output: event.output,
+                      durationMs: toolDurationMs(event.toolCallId),
+                    }),
                   },
                 },
               };
@@ -1808,16 +1809,12 @@ export function createConversationRuntimeStore(
                   ...d.view,
                   stream: {
                     ...d.view.stream,
-                    segments: patchToolSegment(
-                      d.view.stream.segments,
-                      event.toolCallId,
-                      {
-                        toolName: event.toolName,
-                        status: "error",
-                        error: { code: event.error.code, message: event.error.message },
-                        durationMs: toolDurationMs(event.toolCallId),
-                      },
-                    ),
+                    segments: patchToolSegment(d.view.stream.segments, event.toolCallId, {
+                      toolName: event.toolName,
+                      status: "error",
+                      error: { code: event.error.code, message: event.error.message },
+                      durationMs: toolDurationMs(event.toolCallId),
+                    }),
                   },
                 },
               };
@@ -1950,8 +1947,7 @@ export function createConversationRuntimeStore(
                 messageUsages: nextMessageUsages,
                 toolDurations: nextToolDurations,
                 lastTurnUsage: result.totalUsage,
-                lastStepInputTokens:
-                  result.steps[result.steps.length - 1]?.usage?.inputTokens,
+                lastStepInputTokens: result.steps[result.steps.length - 1]?.usage?.inputTokens,
                 isRunning: false,
                 stream: null,
                 stopReason: result.finishReason === "aborted" ? "aborted" : null,
@@ -1987,20 +1983,19 @@ export function createConversationRuntimeStore(
                 ...d,
                 autoTitlePending: true,
               }));
-              void options.autoTitle({
-                worldId: worldId as WorldId,
-                conversationId: conversation.id,
-                userText,
-              })
+              void options
+                .autoTitle({
+                  worldId: worldId as WorldId,
+                  conversationId: conversation.id,
+                  userText,
+                })
                 .then((title) => {
                   patchData(worldId, conversationId, (d) => ({
                     ...d,
                     autoTitlePending: false,
                     // Cache the title so the NEXT finalization's
                     // `title === null` check doesn't re-trigger.
-                    ...(title
-                      ? { conversation: { ...d.conversation, title } }
-                      : {}),
+                    ...(title ? { conversation: { ...d.conversation, title } } : {}),
                   }));
                 })
                 .catch((e: unknown) => {
@@ -2098,11 +2093,7 @@ export function createConversationRuntimeStore(
         abortSignal: AbortSignal,
       ): Promise<SubagentDispatchResult> => {
         // 1. Child model resolution (tri-state, ADR-0050 D6).
-        const resolved = await resolveChildModel(
-          input.role,
-          modelResolver,
-          abortSignal,
-        );
+        const resolved = await resolveChildModel(input.role, modelResolver, abortSignal);
         if (abortSignal.aborted) {
           // Parent died while we were resolving — no run was created.
           return {
@@ -2120,7 +2111,7 @@ export function createConversationRuntimeStore(
             status: "unconfigured",
             finalMessage:
               `No model is bound for the "${input.role}" agent, so the subagent did not run. ` +
-              'Tell the user to bind a model for this role in Settings (AI configuration) and ask how to proceed.',
+              "Tell the user to bind a model for this role in Settings (AI configuration) and ask how to proceed.",
             usage: ZERO_DISPATCH_USAGE,
           };
         }
@@ -2143,17 +2134,13 @@ export function createConversationRuntimeStore(
         //    execute calls that could not provide one.
         let conversation: Conversation;
         try {
-          conversation = await createConversationIpc(
-            spaceId,
-            worldId as WorldId,
-            {
-              agentConfigName: input.role,
-              kind: "subagent",
-              parentConversationId,
-              parentToolCallId: input.parentToolCallId ?? crypto.randomUUID(),
-              role: input.role,
-            },
-          );
+          conversation = await createConversationIpc(spaceId, worldId as WorldId, {
+            agentConfigName: input.role,
+            kind: "subagent",
+            parentConversationId,
+            parentToolCallId: input.parentToolCallId ?? crypto.randomUUID(),
+            role: input.role,
+          });
         } catch (e) {
           return {
             runId: null,
@@ -2205,13 +2192,9 @@ export function createConversationRuntimeStore(
         // 4. Drive through the shared machinery (one event path, D3). The
         //    child's ToolContext carries the dispatch STUB — subagents
         //    never dispatch (D1) — so no recursion is possible.
-        const handle = driveRun(
-          worldId,
-          conversation.id,
-          childAgent,
-          input.task,
-          { autoTitle: NOOP_AUTO_TITLE },
-        );
+        const handle = driveRun(worldId, conversation.id, childAgent, input.task, {
+          autoTitle: NOOP_AUTO_TITLE,
+        });
         if (!handle) {
           // agent.run threw synchronously (ConfigError) — driveRun patched
           // view.error on the child slot. Evict the cached childAgent (F3)
@@ -2247,8 +2230,7 @@ export function createConversationRuntimeStore(
         };
         const unsubSource = handle.subscribe((event) => {
           if (event.type === "abort") {
-            abortSource.source =
-              event.reason === SUBAGENT_STOP_REASON ? "stopped" : "aborted";
+            abortSource.source = event.reason === SUBAGENT_STOP_REASON ? "stopped" : "aborted";
             logger.info("subagent.run_stopped", {
               run_id: conversation.id,
               source: abortSource.source,
@@ -2374,6 +2356,18 @@ export function createConversationRuntimeStore(
      * construct it lazily (persisting the new instance into the slot). Returns
      * `null` + sets the appropriate `view.error` when construction is impossible
      * (model unconfigured, role unknown, store failure).
+     *
+     * A cached Agent is REVALIDATED on every call against the current config
+     * fingerprint (ADR-0023 — live resolution): unchanged → reuse; changed +
+     * idle → rebuild (the thread AND the Plan reload from the SessionStore, so
+     * an idle rebuild is lossless); changed + busy → keep the old Agent so the
+     * in-flight run finishes coherently (the rebuild lands on the next turn —
+     * exactly ADR-0023's "subsequent turns" contract).
+     *
+     * Construction itself is MEMOIZED per slot (see `constructing`) — `send`
+     * bypasses ensureRuntime's guards, so concurrent callers during a (re)
+     * construction window await the SAME promise instead of racing two
+     * Agent.open calls into one session.
      */
     const resolveAgent = async (
       data: ConversationRuntimeData,
@@ -2382,9 +2376,58 @@ export function createConversationRuntimeStore(
       worldId: string,
       conversationId: string,
     ): Promise<Agent | null> => {
-      if (data.agent) return data.agent;
-
       const resolved = modelResolver(data.conversation.agentConfigName);
+
+      if (data.agent) {
+        // Config queries still loading — the cached Agent stays; the
+        // Provider rebuilds `modelResolver` once they land, re-firing the
+        // revalidation.
+        if (resolved.status === "loading") return data.agent;
+        const busy = data.view.isRunning || data.runHandle !== null;
+        if (resolved.status === "unconfigured") {
+          if (busy) return data.agent;
+          // The role's config was REMOVED after this Agent was built (model
+          // unbound / credential deleted). Surface it; the cached Agent stays
+          // in the slot so re-adding the SAME config keeps it usable.
+          // Guarded: revalidation fires on every effect pass — an
+          // unconditional patch would emit a fresh error object (and a
+          // store notification) each time while the config stays removed.
+          if (data.view.error?.code !== "MODEL_NOT_CONFIGURED") {
+            patchData(worldId, conversationId, (d) => ({
+              ...d,
+              view: {
+                ...d.view,
+                error: {
+                  code: "MODEL_NOT_CONFIGURED",
+                  message: "No model is configured for this role.",
+                },
+              },
+            }));
+          }
+          return null;
+        }
+        if (resolved.configSignature === data.configSignature) {
+          // Reuse. A stale MODEL_NOT_CONFIGURED banner (config was removed
+          // and re-added unchanged while idle) dies here — the cached Agent
+          // is valid again.
+          if (data.view.error?.code === "MODEL_NOT_CONFIGURED") {
+            patchData(worldId, conversationId, (d) => ({
+              ...d,
+              view: { ...d.view, error: null },
+            }));
+          }
+          return data.agent;
+        }
+        if (busy) return data.agent;
+        // Stale + idle → drop the cached Agent; construction below reloads
+        // thread + Plan from the SessionStore and stamps the new signature.
+        logger.info("conversation.agent_config_refresh", {
+          conversation_id: conversationId,
+          world_id: worldId,
+        });
+        patchData(worldId, conversationId, (d) => ({ ...d, agent: null }));
+      }
+
       // "loading": the Space-scoped AI config queries (agent configs, provider
       // credentials, models.dev catalog) haven't resolved yet, so whether the
       // role is configured is UNKNOWN. Bail WITHOUT mutating state — the
@@ -2393,48 +2436,34 @@ export function createConversationRuntimeStore(
       // `useEnsureRuntime`'s effect and retries `resolveAgent`.
       if (resolved.status === "loading") return null;
       if (resolved.status === "unconfigured") {
-        patchData(worldId, conversationId, (d) => ({
-          ...d,
-          view: {
-            ...d.view,
-            error: {
-              code: "MODEL_NOT_CONFIGURED",
-              message: "No model is configured for this role.",
+        // Same churn guard as the cached branch above.
+        if (data.view.error?.code !== "MODEL_NOT_CONFIGURED") {
+          patchData(worldId, conversationId, (d) => ({
+            ...d,
+            view: {
+              ...d.view,
+              error: {
+                code: "MODEL_NOT_CONFIGURED",
+                message: "No model is configured for this role.",
+              },
             },
-          },
-        }));
+          }));
+        }
         return null;
       }
 
-      const { model, autoExecuteDangerousTools, shellToolEnabled, contextCompaction, contextNote, maxSteps, skills, visionConfig } = resolved;
-      const gate = createGate(worldId, conversationId);
-      // ADR-0050 D3 — the dispatch capability riding the ToolContext. The
-      // (only) conversational role — the Orchestrator — gets the LIVE
-      // runner bound to THIS conversation as the parent link; subagent runs
-      // (and any non-conversational kind) get the throwing stub: they never
-      // register dispatch_subagent (D1's exactly-one delegation level).
-      // Like the bound model, the runner closes over the modelResolver
-      // captured at Agent-construction time — a Settings change takes
-      // effect for the next Space window (same ADR-0024 cache lifecycle).
-      const subagentRunner =
-        getRoleDefinition(data.conversation.agentConfigName)?.kind ===
-        "conversational"
-          ? createSubagentRunner(
-              worldId,
-              conversationId,
-              modelResolver,
-              onPersistError,
-            )
-          : SUBAGENT_RUNNER_STUB;
-      patchData(worldId, conversationId, (d) => ({ ...d, agentLoading: true }));
-      try {
-        const agent = await constructAgent(
-          data.conversation,
+      // ── Construction (memoized) ────────────────────────────────
+      // An in-flight construction for this slot? Await it — see the
+      // `constructing` declaration for why a second Agent.open here would
+      // be actively harmful (racing runs defeat the per-agent ConfigError
+      // guard).
+      const slotKey = `${worldId}::${conversationId}`;
+      const inFlight = constructing.get(slotKey);
+      if (inFlight) return inFlight;
+
+      const construction = (async () => {
+        const {
           model,
-          spaceId,
-          worldId,
-          onPersistError,
-          gate,
           autoExecuteDangerousTools,
           shellToolEnabled,
           contextCompaction,
@@ -2442,55 +2471,97 @@ export function createConversationRuntimeStore(
           maxSteps,
           skills,
           visionConfig,
-          subagentRunner,
-        );
-        // ADR-0030 read path — pull the persisted Message rows (with usage
-        // columns) STRAIGHT from the IPC, bypassing TauriSessionStore
-        // (which strips usage to keep SessionMessage pure-library — ADR-
-        // 0019). The two load paths are not redundant: SessionMessage[]
-        // feeds the Agent's in-memory thread (pure-lib contract), the
-        // usage columns feed `view.messageUsages` (app-layer UI surface).
-        const persistedMessages = await loadMessagesIpc(
-          spaceId,
-          worldId as WorldId,
-          data.conversation.id,
-        ).catch((e: unknown) => {
-          // Defensive: usage is best-effort UI metadata; a failure here
-          // MUST NOT block the runtime (the Agent already loaded its
-          // thread successfully). Log + fall back to an empty map.
-          logger.warn("conversation.usage.load_failed", {
-            conversation_id: data.conversation.id,
-            world_id: worldId,
-            error: e instanceof Error ? e.message : String(e),
+          configSignature,
+        } = resolved;
+        const gate = createGate(worldId, conversationId);
+        // ADR-0050 D3 — the dispatch capability riding the ToolContext. The
+        // (only) conversational role — the Orchestrator — gets the LIVE
+        // runner bound to THIS conversation as the parent link; subagent runs
+        // (and any non-conversational kind) get the throwing stub: they never
+        // register dispatch_subagent (D1's exactly-one delegation level).
+        // The runner closes over the modelResolver captured at Agent-
+        // construction time; config changes rebuild the parent (signature
+        // revalidation above), re-capturing a fresh resolver with it.
+        const subagentRunner =
+          getRoleDefinition(data.conversation.agentConfigName)?.kind === "conversational"
+            ? createSubagentRunner(worldId, conversationId, modelResolver, onPersistError)
+            : SUBAGENT_RUNNER_STUB;
+        patchData(worldId, conversationId, (d) => ({ ...d, agentLoading: true }));
+        try {
+          const agent = await constructAgent(
+            data.conversation,
+            model,
+            spaceId,
+            worldId,
+            onPersistError,
+            gate,
+            autoExecuteDangerousTools,
+            shellToolEnabled,
+            contextCompaction,
+            contextNote,
+            maxSteps,
+            skills,
+            visionConfig,
+            subagentRunner,
+          );
+          // ADR-0030 read path — pull the persisted Message rows (with usage
+          // columns) STRAIGHT from the IPC, bypassing TauriSessionStore
+          // (which strips usage to keep SessionMessage pure-library — ADR-
+          // 0019). The two load paths are not redundant: SessionMessage[]
+          // feeds the Agent's in-memory thread (pure-lib contract), the
+          // usage columns feed `view.messageUsages` (app-layer UI surface).
+          const persistedMessages = await loadMessagesIpc(
+            spaceId,
+            worldId as WorldId,
+            data.conversation.id,
+          ).catch((e: unknown) => {
+            // Defensive: usage is best-effort UI metadata; a failure here
+            // MUST NOT block the runtime (the Agent already loaded its
+            // thread successfully). Log + fall back to an empty map.
+            logger.warn("conversation.usage.load_failed", {
+              conversation_id: data.conversation.id,
+              world_id: worldId,
+              error: e instanceof Error ? e.message : String(e),
+            });
+            return [] as Message[];
           });
-          return [] as Message[];
-        });
-        patchData(worldId, conversationId, (d) => ({
-          ...d,
-          agent,
-          agentLoading: false,
-          view: {
-            ...d.view,
-            messages: [...agent.getMessages()],
-            messageUsages: buildMessageUsages(persistedMessages),
-            error: null,
-          },
-        }));
-        return agent;
-      } catch (e) {
-        patchData(worldId, conversationId, (d) => ({
-          ...d,
-          agentLoading: false,
-          view: {
-            ...d.view,
-            error: {
-              code: "RUNTIME_INIT_FAILED",
-              message: e instanceof Error ? e.message : String(e),
+          patchData(worldId, conversationId, (d) => ({
+            ...d,
+            agent,
+            agentLoading: false,
+            configSignature,
+            view: {
+              ...d.view,
+              messages: [...agent.getMessages()],
+              messageUsages: buildMessageUsages(persistedMessages),
+              error: null,
             },
-          },
-        }));
-        return null;
-      }
+          }));
+          return agent;
+        } catch (e) {
+          patchData(worldId, conversationId, (d) => ({
+            ...d,
+            agentLoading: false,
+            view: {
+              ...d.view,
+              error: {
+                code: "RUNTIME_INIT_FAILED",
+                message: e instanceof Error ? e.message : String(e),
+              },
+            },
+          }));
+          return null;
+        }
+      })();
+      constructing.set(slotKey, construction);
+      // Release the memo on settlement (identity-guarded: a newer
+      // construction may legitimately have replaced this entry).
+      void construction.finally(() => {
+        if (constructing.get(slotKey) === construction) {
+          constructing.delete(slotKey);
+        }
+      });
+      return construction;
     };
 
     // ── User-initiated message mutations (ADR-0047) ───────────────
@@ -2532,10 +2603,7 @@ export function createConversationRuntimeStore(
     // were awaiting IPC. True ⇒ the caller must NOT touch the Agent
     // thread mid-run (ADR-0047 §7 — runs append, user mutations, strictly
     // serial).
-    const runStartedMeanwhile = (
-      worldId: string,
-      conversationId: string,
-    ): boolean => {
+    const runStartedMeanwhile = (worldId: string, conversationId: string): boolean => {
       const data = getData(get(), worldId, conversationId);
       return !!data && (data.view.isRunning || data.runHandle !== null);
     };
@@ -2588,12 +2656,8 @@ export function createConversationRuntimeStore(
             ...d.view,
             messages: [...agent.getMessages()],
             messageUsages,
-            lastTurnUsage: touchesLastTurn
-              ? undefined
-              : d.view.lastTurnUsage,
-            lastStepInputTokens: touchesLastTurn
-              ? undefined
-              : d.view.lastStepInputTokens,
+            lastTurnUsage: touchesLastTurn ? undefined : d.view.lastTurnUsage,
+            lastStepInputTokens: touchesLastTurn ? undefined : d.view.lastStepInputTokens,
           },
         };
       });
@@ -2609,15 +2673,25 @@ export function createConversationRuntimeStore(
         set((state) => ({ worlds: ensureSlot(state, worldId, conversation) }));
 
         const current = getData(get(), worldId, conversationId);
-        // Already loaded or currently loading — nothing to do.
-        if (current?.agent || current?.agentLoading) return;
         if (!current) return; // defensive — ensureSlot just made it.
-
+        // Idempotent: with no Agent this constructs one; with a cached
+        // Agent this revalidates the config fingerprint (unchanged → no-op;
+        // changed + idle → rebuild — ADR-0023). A construction already in
+        // flight is memoized inside resolveAgent — concurrent callers just
+        // await the same Agent.
         await resolveAgent(current, modelResolver, onPersistError, worldId, conversationId);
       },
 
       // ── send ──
-      send: async (worldId, conversationId, content, modelResolver, onPersistError, autoTitle, imageInputSupportedResolver) => {
+      send: async (
+        worldId,
+        conversationId,
+        content,
+        modelResolver,
+        onPersistError,
+        autoTitle,
+        imageInputSupportedResolver,
+      ) => {
         const data = getData(get(), worldId, conversationId);
         if (!data) {
           // ensureRuntime was never called for this conversation.
@@ -2641,9 +2715,7 @@ export function createConversationRuntimeStore(
         // PER-SEND (live resolution, ADR-0023): switching models between
         // turns just works. `undefined` (unknown) passes image parts
         // through unchanged; only a catalog-confirmed `false` downgrades.
-        const imageInputSupported = imageInputSupportedResolver(
-          data.conversation.agentConfigName,
-        );
+        const imageInputSupported = imageInputSupportedResolver(data.conversation.agentConfigName);
 
         // One event path for BOTH user sends and subagent runs (ADR-0050
         // D3): the shared run driver (`driveRun`, defined above the action
@@ -2843,9 +2915,7 @@ export function createConversationRuntimeStore(
         // "stopped", while parent-cascade aborts (which abort the child
         // reason-less) map to "aborted" (ADR-0050 D4). Harmless elsewhere —
         // the reason only rides the abort event.
-        getData(get(), worldId, conversationId)?.runHandle?.abort(
-          SUBAGENT_STOP_REASON,
-        );
+        getData(get(), worldId, conversationId)?.runHandle?.abort(SUBAGENT_STOP_REASON);
       },
 
       // ── setDraft ──
@@ -2884,9 +2954,7 @@ export function createConversationRuntimeStore(
           ...d,
           view: {
             ...d.view,
-            draftAttachments: d.view.draftAttachments.filter(
-              (a) => a.id !== id,
-            ),
+            draftAttachments: d.view.draftAttachments.filter((a) => a.id !== id),
           },
         }));
       },

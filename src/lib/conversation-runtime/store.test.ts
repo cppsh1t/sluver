@@ -22,6 +22,11 @@
  * gain nothing, and a rejecting `getChapter` degrades to a block-less but
  * fully runnable Agent.
  *
+ * Plus the cached-Agent config revalidation (ADR-0023): a cached Agent is
+ * reused while its config fingerprint is unchanged, rebuilt when it changes
+ * and the slot is idle, kept while a run is in flight, and a removed config
+ * surfaces MODEL_NOT_CONFIGURED without dropping the cached Agent.
+ *
  * The heavy collaborators are mocked at their module boundaries
  * (`@/lib/ai`, `@/lib/ai-store`, `@/lib/ai-roles`, `@/api/conversation`,
  * `@/api/novel`, `@/lib/notify`, `@/lib/logger`); the store under test is
@@ -41,6 +46,7 @@ import {
   type PersistErrorHandler,
 } from "./store";
 import {
+  Agent,
   AgentLoop,
   type AgentLoopRunResult,
   type LanguageModel,
@@ -191,6 +197,32 @@ const readyResolver: ModelResolver = () => ({
   maxSteps: null,
   skills: [],
   visionConfig: null,
+  configSignature: "sig-default",
+});
+
+/**
+ * A ready resolver with a specific config fingerprint — the ADR-0023
+ * revalidation tests vary ONLY the signature to prove the cached-Agent
+ * reuse/rebuild decision is driven by it.
+ */
+const signatureResolver =
+  (signature: string): ModelResolver =>
+  () => ({
+    status: "ready",
+    model: stubModel,
+    autoExecuteDangerousTools: false,
+    shellToolEnabled: false,
+    contextCompaction: { enabled: false, turnAge: 3 },
+    contextNote: "",
+    maxSteps: null,
+    skills: [],
+    visionConfig: null,
+    configSignature: signature,
+  });
+
+/** An unconfigured resolver — every role reports "no model bound". */
+const unconfiguredResolver: ModelResolver = () => ({
+  status: "unconfigured",
 });
 
 /** A loading resolver — seeds the slot WITHOUT constructing an Agent. */
@@ -327,22 +359,14 @@ describe("draft attachments", () => {
       .ensureRuntime(WORLD_ID, makeConversation("conv-1"), loadingResolver, noopPersistError);
 
     // Fill to the cap exactly.
-    const first = Array.from({ length: MAX_DRAFT_ATTACHMENTS }, (_, i) =>
-      draft(`f${i}`),
-    );
+    const first = Array.from({ length: MAX_DRAFT_ATTACHMENTS }, (_, i) => draft(`f${i}`));
     store.getState().addDraftAttachments(WORLD_ID, "conv-1", first);
-    expect(viewOf(store, "conv-1").draftAttachments).toHaveLength(
-      MAX_DRAFT_ATTACHMENTS,
-    );
+    expect(viewOf(store, "conv-1").draftAttachments).toHaveLength(MAX_DRAFT_ATTACHMENTS);
 
     // The 9th is ignored.
     store.getState().addDraftAttachments(WORLD_ID, "conv-1", [draft("ninth")]);
-    expect(viewOf(store, "conv-1").draftAttachments).toHaveLength(
-      MAX_DRAFT_ATTACHMENTS,
-    );
-    expect(
-      viewOf(store, "conv-1").draftAttachments.some((d) => d.id === "ninth"),
-    ).toBe(false);
+    expect(viewOf(store, "conv-1").draftAttachments).toHaveLength(MAX_DRAFT_ATTACHMENTS);
+    expect(viewOf(store, "conv-1").draftAttachments.some((d) => d.id === "ninth")).toBe(false);
   });
 
   it("accepts only the fitting prefix of an oversized batch", async () => {
@@ -352,20 +376,16 @@ describe("draft attachments", () => {
       .ensureRuntime(WORLD_ID, makeConversation("conv-1"), loadingResolver, noopPersistError);
 
     // 5 staged + a batch of 5 → only 3 of the second batch fit.
-    store
-      .getState()
-      .addDraftAttachments(
-        WORLD_ID,
-        "conv-1",
-        Array.from({ length: 5 }, (_, i) => draft(`a${i}`)),
-      );
-    store
-      .getState()
-      .addDraftAttachments(
-        WORLD_ID,
-        "conv-1",
-        Array.from({ length: 5 }, (_, i) => draft(`b${i}`)),
-      );
+    store.getState().addDraftAttachments(
+      WORLD_ID,
+      "conv-1",
+      Array.from({ length: 5 }, (_, i) => draft(`a${i}`)),
+    );
+    store.getState().addDraftAttachments(
+      WORLD_ID,
+      "conv-1",
+      Array.from({ length: 5 }, (_, i) => draft(`b${i}`)),
+    );
     const ids = viewOf(store, "conv-1").draftAttachments.map((d) => d.id);
     expect(ids).toHaveLength(MAX_DRAFT_ATTACHMENTS);
     expect(ids).toEqual(["a0", "a1", "a2", "a3", "a4", "b0", "b1", "b2"]);
@@ -412,15 +432,7 @@ describe("send", () => {
 
     await store
       .getState()
-      .send(
-        WORLD_ID,
-        "conv-1",
-        content,
-        readyResolver,
-        noopPersistError,
-        noopAutoTitle,
-        visionYes,
-      );
+      .send(WORLD_ID, "conv-1", content, readyResolver, noopPersistError, noopAutoTitle, visionYes);
     await flush();
 
     expect(agentMocks.run).toHaveBeenCalledTimes(1);
@@ -461,12 +473,224 @@ describe("send", () => {
 
     await store
       .getState()
-      .send(WORLD_ID, "conv-1", "hi", readyResolver, noopPersistError, noopAutoTitle, visionUnknown);
+      .send(
+        WORLD_ID,
+        "conv-1",
+        "hi",
+        readyResolver,
+        noopPersistError,
+        noopAutoTitle,
+        visionUnknown,
+      );
     await flush();
 
     expect(agentMocks.run).toHaveBeenCalledWith("hi", {
       imageInputSupported: undefined,
     });
+  });
+});
+
+// ─── Cached-Agent config revalidation (ADR-0023) ───────────────────────────
+
+describe("cached-Agent config revalidation (ADR-0023)", () => {
+  it("reuses the cached Agent while the config fingerprint is unchanged", async () => {
+    const store = createConversationRuntimeStore(SPACE_ID);
+    await store
+      .getState()
+      .ensureRuntime(
+        WORLD_ID,
+        makeConversation("conv-1"),
+        signatureResolver("sig-a"),
+        noopPersistError,
+      );
+    await flush();
+    expect(vi.mocked(Agent.open)).toHaveBeenCalledTimes(1);
+
+    // Same fingerprint → pure cache hit, no reconstruction.
+    await store
+      .getState()
+      .ensureRuntime(
+        WORLD_ID,
+        makeConversation("conv-1"),
+        signatureResolver("sig-a"),
+        noopPersistError,
+      );
+    await flush();
+    expect(vi.mocked(Agent.open)).toHaveBeenCalledTimes(1);
+  });
+
+  it("rebuilds an idle cached Agent when the fingerprint changes", async () => {
+    const store = createConversationRuntimeStore(SPACE_ID);
+    await store
+      .getState()
+      .ensureRuntime(
+        WORLD_ID,
+        makeConversation("conv-1"),
+        signatureResolver("sig-a"),
+        noopPersistError,
+      );
+    await flush();
+    expect(vi.mocked(Agent.open)).toHaveBeenCalledTimes(1);
+
+    // Config changed (e.g. provider swapped in Settings) + idle → rebuild.
+    await store
+      .getState()
+      .ensureRuntime(
+        WORLD_ID,
+        makeConversation("conv-1"),
+        signatureResolver("sig-b"),
+        noopPersistError,
+      );
+    await flush();
+    expect(vi.mocked(Agent.open)).toHaveBeenCalledTimes(2);
+    expect(viewOf(store, "conv-1").error).toBeNull();
+  });
+
+  it("keeps the old Agent while a run is in flight; the rebuild lands once idle", async () => {
+    const store = createConversationRuntimeStore(SPACE_ID);
+    await store
+      .getState()
+      .ensureRuntime(
+        WORLD_ID,
+        makeConversation("conv-1"),
+        signatureResolver("sig-a"),
+        noopPersistError,
+      );
+    await flush();
+
+    // Simulate an in-flight run, then a config change: no swap mid-run.
+    patchView(store, "conv-1", { isRunning: true });
+    await store
+      .getState()
+      .ensureRuntime(
+        WORLD_ID,
+        makeConversation("conv-1"),
+        signatureResolver("sig-b"),
+        noopPersistError,
+      );
+    await flush();
+    expect(vi.mocked(Agent.open)).toHaveBeenCalledTimes(1);
+
+    // Run finished → idle again: the SAME changed config now rebuilds.
+    patchView(store, "conv-1", { isRunning: false });
+    await store
+      .getState()
+      .ensureRuntime(
+        WORLD_ID,
+        makeConversation("conv-1"),
+        signatureResolver("sig-b"),
+        noopPersistError,
+      );
+    await flush();
+    expect(vi.mocked(Agent.open)).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces MODEL_NOT_CONFIGURED when the config is removed, and clears it when the same config returns", async () => {
+    const store = createConversationRuntimeStore(SPACE_ID);
+    await store
+      .getState()
+      .ensureRuntime(
+        WORLD_ID,
+        makeConversation("conv-1"),
+        signatureResolver("sig-a"),
+        noopPersistError,
+      );
+    await flush();
+    expect(vi.mocked(Agent.open)).toHaveBeenCalledTimes(1);
+
+    // Config removed (credential deleted / model unbound) while idle.
+    await store
+      .getState()
+      .ensureRuntime(WORLD_ID, makeConversation("conv-1"), unconfiguredResolver, noopPersistError);
+    await flush();
+    expect(viewOf(store, "conv-1").error?.code).toBe("MODEL_NOT_CONFIGURED");
+    // The cached Agent is retained — no extra construction.
+    expect(vi.mocked(Agent.open)).toHaveBeenCalledTimes(1);
+
+    // Same config re-added → the stale banner dies, the cached Agent is
+    // reused (fingerprint matches), still no extra construction.
+    await store
+      .getState()
+      .ensureRuntime(
+        WORLD_ID,
+        makeConversation("conv-1"),
+        signatureResolver("sig-a"),
+        noopPersistError,
+      );
+    await flush();
+    expect(viewOf(store, "conv-1").error).toBeNull();
+    expect(vi.mocked(Agent.open)).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the old Agent AND stays silent when the config is removed while a run is in flight", async () => {
+    const store = createConversationRuntimeStore(SPACE_ID);
+    await store
+      .getState()
+      .ensureRuntime(
+        WORLD_ID,
+        makeConversation("conv-1"),
+        signatureResolver("sig-a"),
+        noopPersistError,
+      );
+    await flush();
+
+    // Busy + unconfigured: cached Agent kept, NO error surfaced (the
+    // in-flight run owns the view until it ends).
+    patchView(store, "conv-1", { isRunning: true });
+    await store
+      .getState()
+      .ensureRuntime(WORLD_ID, makeConversation("conv-1"), unconfiguredResolver, noopPersistError);
+    await flush();
+    expect(vi.mocked(Agent.open)).toHaveBeenCalledTimes(1);
+    expect(viewOf(store, "conv-1").error).toBeNull();
+  });
+
+  it("memoizes in-flight construction — a send racing a rebuild constructs exactly one Agent", async () => {
+    const store = createConversationRuntimeStore(SPACE_ID);
+    await store
+      .getState()
+      .ensureRuntime(
+        WORLD_ID,
+        makeConversation("conv-1"),
+        signatureResolver("sig-a"),
+        noopPersistError,
+      );
+    await flush();
+    expect(vi.mocked(Agent.open)).toHaveBeenCalledTimes(1);
+
+    // Fire a config-changed ensure AND a send BEFORE either can settle —
+    // both land inside the reconstruction window. The memo must collapse
+    // them into ONE Agent.open (two instances would each accept their own
+    // run, interleaving persistence into the same session).
+    agentMocks.run.mockReturnValue(makeRunHandle());
+    const ensure = store
+      .getState()
+      .ensureRuntime(
+        WORLD_ID,
+        makeConversation("conv-1"),
+        signatureResolver("sig-b"),
+        noopPersistError,
+      );
+    const sent = store
+      .getState()
+      .send(
+        WORLD_ID,
+        "conv-1",
+        "race",
+        signatureResolver("sig-b"),
+        noopPersistError,
+        noopAutoTitle,
+        visionUnknown,
+      );
+    await Promise.all([ensure, sent]);
+    await flush();
+    await flush();
+
+    // Initial construction + exactly ONE rebuild; the run drove the
+    // rebuilt Agent once.
+    expect(vi.mocked(Agent.open)).toHaveBeenCalledTimes(2);
+    expect(agentMocks.run).toHaveBeenCalledTimes(1);
+    expect(viewOf(store, "conv-1").error).toBeNull();
   });
 });
 
@@ -488,14 +712,12 @@ async function seedMutationStore(
     // Mutate the caller's array in place — the local binding stays live.
     thread.splice(0, thread.length, ...thread.filter((m) => !dead.has(m.id)));
   });
-  agentMocks.replaceMessage.mockImplementation(
-    (id: string, next: SessionMessage) => {
-      const idx = thread.findIndex((m) => m.id === id);
-      if (idx === -1) return false;
-      thread.splice(idx, 1, next);
-      return true;
-    },
-  );
+  agentMocks.replaceMessage.mockImplementation((id: string, next: SessionMessage) => {
+    const idx = thread.findIndex((m) => m.id === id);
+    if (idx === -1) return false;
+    thread.splice(idx, 1, next);
+    return true;
+  });
   const store = createConversationRuntimeStore(SPACE_ID);
   await store
     .getState()
@@ -598,9 +820,9 @@ describe("deleteMessage", () => {
     const before = viewOf(store, "conv-m");
     vi.mocked(deleteMessagesIpc).mockRejectedValueOnce(new Error("ipc down"));
 
-    await expect(
-      store.getState().deleteMessage(WORLD_ID, "conv-m", "u2"),
-    ).rejects.toThrow("ipc down");
+    await expect(store.getState().deleteMessage(WORLD_ID, "conv-m", "u2")).rejects.toThrow(
+      "ipc down",
+    );
 
     expect(agentMocks.removeMessages).not.toHaveBeenCalled();
     const after = viewOf(store, "conv-m");
@@ -644,9 +866,7 @@ describe("editMessage", () => {
       rawRows({ id: "u1", body: { role: "user", content: "first question" } }),
     );
 
-    const ok = await store
-      .getState()
-      .editMessage(WORLD_ID, "conv-m", "u1", null, "new text");
+    const ok = await store.getState().editMessage(WORLD_ID, "conv-m", "u1", null, "new text");
 
     expect(ok).toBe(true);
     expect(vi.mocked(updateMessageIpc)).toHaveBeenCalledTimes(1);
@@ -686,9 +906,7 @@ describe("editMessage", () => {
       }),
     );
 
-    const ok = await store
-      .getState()
-      .editMessage(WORLD_ID, "conv-m", "a2", 0, "edited prose");
+    const ok = await store.getState().editMessage(WORLD_ID, "conv-m", "a2", 0, "edited prose");
 
     expect(ok).toBe(true);
     expect(vi.mocked(updateMessageIpc)).toHaveBeenCalledWith(SPACE_ID, WORLD_ID, {
@@ -764,9 +982,7 @@ describe("editMessage", () => {
       rawRows({ id: "u1", body: { role: "user", content: "first question" } }),
     );
 
-    const ok = await store
-      .getState()
-      .editMessage(WORLD_ID, "conv-m", "u2", null, "edited");
+    const ok = await store.getState().editMessage(WORLD_ID, "conv-m", "u2", null, "edited");
 
     expect(ok).toBe(false);
     expect(vi.mocked(updateMessageIpc)).not.toHaveBeenCalled();
@@ -783,9 +999,7 @@ describe("editMessage", () => {
       return rawRows({ id: "u2", body: { role: "user", content: "second question" } });
     });
 
-    const ok = await store
-      .getState()
-      .editMessage(WORLD_ID, "conv-m", "u2", null, "edited");
+    const ok = await store.getState().editMessage(WORLD_ID, "conv-m", "u2", null, "edited");
 
     expect(ok).toBe(false);
     expect(vi.mocked(updateMessageIpc)).not.toHaveBeenCalled();
@@ -803,9 +1017,7 @@ describe("editMessage", () => {
       patchView(store, "conv-m", { isRunning: true });
     });
 
-    const ok = await store
-      .getState()
-      .editMessage(WORLD_ID, "conv-m", "u2", null, "edited");
+    const ok = await store.getState().editMessage(WORLD_ID, "conv-m", "u2", null, "edited");
 
     // The durable edit committed — true — but the Agent thread was NOT
     // touched mid-run; the view keeps the pre-edit shape until the next
@@ -821,31 +1033,18 @@ describe("editMessage", () => {
 
 describe("auto-title gating", () => {
   /** Seed a store + completed run over a conversation with extractable user text. */
-  async function runOnce(
-    conv: Conversation,
-    autoTitle: AutoTitleCallback,
-  ): Promise<void> {
+  async function runOnce(conv: Conversation, autoTitle: AutoTitleCallback): Promise<void> {
     agentMocks.getMessages.mockImplementation(() => [
       sess("u1", { role: "user", content: "first question" }),
       sess("a1", { role: "assistant", content: "first answer" }),
     ]);
     const store = createConversationRuntimeStore(SPACE_ID);
-    await store
-      .getState()
-      .ensureRuntime(WORLD_ID, conv, readyResolver, noopPersistError);
+    await store.getState().ensureRuntime(WORLD_ID, conv, readyResolver, noopPersistError);
     await flush(); // let Agent.open + view patch settle
     agentMocks.run.mockReturnValue(makeRunHandle());
     await store
       .getState()
-      .send(
-        WORLD_ID,
-        conv.id,
-        "hi",
-        readyResolver,
-        noopPersistError,
-        autoTitle,
-        visionUnknown,
-      );
+      .send(WORLD_ID, conv.id, "hi", readyResolver, noopPersistError, autoTitle, visionUnknown);
     await flush();
     await flush(); // run finalization is a .then chain
   }
@@ -956,24 +1155,18 @@ describe("subagent dispatch runtime", () => {
     // Hidden conversation created with the FLAT linkage fields (Rust builds
     // meta server-side) + the child Agent driven with the bare task brief.
     expect(vi.mocked(createConversationIpc)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(createConversationIpc)).toHaveBeenCalledWith(
-      SPACE_ID,
-      WORLD_ID,
-      {
-        agentConfigName: "writer",
-        kind: "subagent",
-        parentConversationId: "conv-parent",
-        parentToolCallId: "tc-9",
-        role: "writer",
-      },
-    );
+    expect(vi.mocked(createConversationIpc)).toHaveBeenCalledWith(SPACE_ID, WORLD_ID, {
+      agentConfigName: "writer",
+      kind: "subagent",
+      parentConversationId: "conv-parent",
+      parentToolCallId: "tc-9",
+      role: "writer",
+    });
     expect(agentMocks.run).toHaveBeenCalledTimes(1);
     expect(agentMocks.run).toHaveBeenCalledWith("write the scene", {});
     // The child got its own runtime slot and is live in it (shared event
     // path — its stream state is the drill-in surface).
-    expect(
-      store.getState().worlds.get(WORLD_ID)?.get("run-conv-1")?.view.isRunning,
-    ).toBe(true);
+    expect(store.getState().worlds.get(WORLD_ID)?.get("run-conv-1")?.view.isRunning).toBe(true);
 
     handle.resolveResult(
       runResult(
@@ -995,9 +1188,7 @@ describe("subagent dispatch runtime", () => {
       usage: { input: 11, output: 7 },
     });
     // Finalization settled the child slot.
-    expect(
-      store.getState().worlds.get(WORLD_ID)?.get("run-conv-1")?.view.isRunning,
-    ).toBe(false);
+    expect(store.getState().worlds.get(WORLD_ID)?.get("run-conv-1")?.view.isRunning).toBe(false);
 
     // The CHILD's ToolContext carries the dispatch STUB (D1 — subagents
     // never dispatch); calling it rejects loudly.
@@ -1123,9 +1314,7 @@ describe("subagent dispatch runtime", () => {
       finalMessage: "Partial findings: 3 characters…",
       usage: { input: 5, output: 2 },
     });
-    expect(
-      store.getState().worlds.get(WORLD_ID)?.get("run-conv-1")?.view.isRunning,
-    ).toBe(false);
+    expect(store.getState().worlds.get(WORLD_ID)?.get("run-conv-1")?.view.isRunning).toBe(false);
   });
 
   it("stop(runId) aborts with the stop reason and resolves status stopped (D4)", async () => {
@@ -1144,11 +1333,10 @@ describe("subagent dispatch runtime", () => {
     expect(handle.abort).toHaveBeenCalledWith("stopped");
 
     handle.resolveResult(
-      runResult(
-        "aborted",
-        [{ role: "assistant", content: "Half a scene…" }],
-        { inputTokens: 3, outputTokens: 9 },
-      ),
+      runResult("aborted", [{ role: "assistant", content: "Half a scene…" }], {
+        inputTokens: 3,
+        outputTokens: 9,
+      }),
     );
     await flush();
     await flush();
@@ -1163,9 +1351,7 @@ describe("subagent dispatch runtime", () => {
   it("never rejects: folds an unexpected internal throw into an error result (ADR-0018 composite)", async () => {
     const { runner } = await seedOrchestrator();
     // Conversation creation fails — the runner must resolve, not reject.
-    vi.mocked(createConversationIpc).mockRejectedValueOnce(
-      new Error("ipc down"),
-    );
+    vi.mocked(createConversationIpc).mockRejectedValueOnce(new Error("ipc down"));
 
     await expect(
       runner.run(
@@ -1252,9 +1438,7 @@ describe("subagent dispatch runtime", () => {
     // generic stopReason, which alone would read "aborted".
     expect(viewOf(store, "run-conv-1").terminalStatus).toBe("stopped");
     expect(viewOf(store, "run-conv-1").stopReason).toBe("aborted");
-    expect(
-      store.getState().worlds.get(WORLD_ID)?.get("run-conv-1")?.agent,
-    ).toBeNull();
+    expect(store.getState().worlds.get(WORLD_ID)?.get("run-conv-1")?.agent).toBeNull();
   });
 
   it("removeConversation sweeps the parent slot AND its hidden subagent run slots (F4)", async () => {
@@ -1325,9 +1509,10 @@ describe("subagent dispatch runtime", () => {
       abortSignal: new AbortController().signal,
     });
     await flush();
-    expect(
-      Object.keys(viewOf(store, "run-conv-1").stream?.pendingApprovals ?? {}),
-    ).toEqual(["tc-child-a", "tc-child-b"]);
+    expect(Object.keys(viewOf(store, "run-conv-1").stream?.pendingApprovals ?? {})).toEqual([
+      "tc-child-a",
+      "tc-child-b",
+    ]);
 
     store.getState().approveAllForRun(WORLD_ID, "run-conv-1");
     await flush();
@@ -1335,9 +1520,7 @@ describe("subagent dispatch runtime", () => {
     // Every gate request unblocked as approved + the queue drained.
     await expect(reqA).resolves.toBe(true);
     await expect(reqB).resolves.toBe(true);
-    expect(
-      Object.keys(viewOf(store, "run-conv-1").stream?.pendingApprovals ?? {}),
-    ).toEqual([]);
+    expect(Object.keys(viewOf(store, "run-conv-1").stream?.pendingApprovals ?? {})).toEqual([]);
 
     // Settle the child so the dispatch promise resolves (test hygiene).
     handle.resolveResult(
@@ -1442,7 +1625,15 @@ describe("chapter context injection", () => {
     agentMocks.run.mockReturnValue(makeRunHandle());
     await store
       .getState()
-      .send(WORLD_ID, "conv-ch", "hi", readyResolver, noopPersistError, noopAutoTitle, visionUnknown);
+      .send(
+        WORLD_ID,
+        "conv-ch",
+        "hi",
+        readyResolver,
+        noopPersistError,
+        noopAutoTitle,
+        visionUnknown,
+      );
     await flush();
     expect(agentMocks.run).toHaveBeenCalledTimes(1);
 
