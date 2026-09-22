@@ -26,11 +26,7 @@
  * ADR-0018 (all terminations resolve), ADR-0028 (three-layer message model).
  */
 
-import {
-  AgentLoop,
-  type AgentRunHandle,
-  type LanguageModelUsage,
-} from "@/lib/ai/loop";
+import { AgentLoop, type AgentRunHandle, type LanguageModelUsage } from "@/lib/ai/loop";
 import {
   compactToolCalls,
   composeSystemPrompt,
@@ -39,19 +35,10 @@ import {
   stripDeleteSnapshots,
   type CompactionPolicy,
 } from "@/lib/ai/pipeline";
-import type {
-  ToolCallPart,
-  ToolResultPart,
-  UserContent,
-} from "ai";
+import type { ToolCallPart, ToolResultPart, UserContent } from "ai";
 
 import type { Plan } from "./plan";
-import {
-  toModelMessage,
-  toSessionMessage,
-  type SessionMessage,
-  type SessionStore,
-} from "./store";
+import { toModelMessage, toSessionMessage, type SessionMessage, type SessionStore } from "./store";
 
 // ─── Defaults ────────────────────────────────────────────────────────────
 
@@ -106,9 +93,10 @@ export interface AgentOptions {
    * `context_read` tool to expand on demand.
    *
    * Defaults to `{ enabled: false, turnAge: 3 }` (ADR-0031 §1) — compaction is
-   * opt-in per role. The policy is captured at Agent construction time; a
-   * config change takes effect the next time the Space window reopens and the
-   * Provider rebuilds the Agent (same lifecycle as model rebinding, ADR-0023).
+   * opt-in per role. The policy is captured at Agent construction time; the
+   * app layer rebuilds the Agent when the underlying config changes
+   * (config-signature revalidation in the conversation-runtime store), so a
+   * change takes effect from the next turn (ADR-0023).
    */
   readonly compactionPolicy?: CompactionPolicy;
 }
@@ -212,9 +200,7 @@ export class Agent {
    */
   setPlan(plan: Plan): Promise<void> {
     this.plan = plan;
-    void this.store
-      .savePlan(this.sessionId, plan)
-      .catch((e) => this.onPersistError?.(e));
+    void this.store.savePlan(this.sessionId, plan).catch((e) => this.onPersistError?.(e));
     return Promise.resolve();
   }
 
@@ -235,10 +221,12 @@ export class Agent {
    *
    * @param toolCallId The id printed in a `[tool_call {id}] …` stub.
    */
-  findToolPair(toolCallId: string): {
-    readonly call: ToolCallPart;
-    readonly result: ToolResultPart;
-  } | undefined {
+  findToolPair(toolCallId: string):
+    | {
+        readonly call: ToolCallPart;
+        readonly result: ToolResultPart;
+      }
+    | undefined {
     // Two-pass: collect the matching ToolCallPart (from any assistant message)
     // and the matching ToolResultPart (from any tool message), then pair them.
     // A given toolCallId has at most one of each across the whole thread
@@ -346,10 +334,7 @@ export class Agent {
     // 1. Build the user message WITHOUT mutating state — so a ConfigError
     //    throw from loop.run() (concurrent-run guard) leaves this.messages
     //    and the store untouched.
-    const userMessage = toSessionMessage(
-      { role: "user", content },
-      this.sessionId,
-    );
+    const userMessage = toSessionMessage({ role: "user", content }, this.sessionId);
 
     // 2. Build the full thread for the loop (spread — don't mutate).
     //    compactToolCalls (ADR-0031 Phase 1) reshapes the Derived Model Input
@@ -412,9 +397,7 @@ export class Agent {
       .then((result) => {
         const delta = result.messages.slice(inputLength);
         if (delta.length === 0) return;
-        const sessionDelta = delta.map((m) =>
-          toSessionMessage(m, this.sessionId),
-        );
+        const sessionDelta = delta.map((m) => toSessionMessage(m, this.sessionId));
         this.messages.push(...sessionDelta);
         this.#persist(sessionDelta, result.totalUsage);
       })
@@ -424,21 +407,16 @@ export class Agent {
   }
 
   /**
-    * Fire-and-forget persist with error routing to {@link onPersistError}.
-    * Never throws — failures are surfaced via the callback if provided.
-    *
-    * `turnUsage` is forwarded straight to {@link SessionStore.appendMessages};
-    * `undefined` for the user-message persist (which precedes the run), the
-    * run's `result.totalUsage` for the response delta. See ADR-0030.
-    */
-  #persist(
-    delta: SessionMessage[],
-    turnUsage?: LanguageModelUsage,
-  ): void {
-    void this.store
-      .appendMessages(this.sessionId, delta, turnUsage)
-      .catch((e) => {
-        this.onPersistError?.(e);
-      });
+   * Fire-and-forget persist with error routing to {@link onPersistError}.
+   * Never throws — failures are surfaced via the callback if provided.
+   *
+   * `turnUsage` is forwarded straight to {@link SessionStore.appendMessages};
+   * `undefined` for the user-message persist (which precedes the run), the
+   * run's `result.totalUsage` for the response delta. See ADR-0030.
+   */
+  #persist(delta: SessionMessage[], turnUsage?: LanguageModelUsage): void {
+    void this.store.appendMessages(this.sessionId, delta, turnUsage).catch((e) => {
+      this.onPersistError?.(e);
+    });
   }
 }
