@@ -32,3 +32,8 @@ PLAN.md
 # source dirs like src/components/notes/).
 /notes
 .omo
+
+# Arch packaging (makepkg work dirs & output)
+packaging/arch/pkg/
+packaging/arch/src/
+*.pkg.tar.zst

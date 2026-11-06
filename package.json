@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "fix:linuxdeploy": "bash scripts/fix-linuxdeploy.sh",
+    "pkg:arch": "tauri build && cd packaging/arch && makepkg -si",
     "lint": "oxlint .",
     "lint:fix": "oxlint . --fix",
     "type-check": "tsc --noEmit",
