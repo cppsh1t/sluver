@@ -1,0 +1,50 @@
+# sluver — local Arch Linux packaging (bin-style, like cherry-studio-bin)
+#
+# Packages the release binary produced by `pnpm tauri build` — no recompilation
+# happens here. pacman installs binary + desktop entry + icons into standard
+# paths, so launchers (fuzzel etc.) pick it up; upgrades and removals go
+# through pacman like any other package.
+#
+# Usage (from repo root):
+#   pnpm pkg:arch
+# or manually:
+#   pnpm tauri build && cd packaging/arch && makepkg -si
+
+pkgname=sluver
+pkgrel=1
+pkgdesc='A Tauri v2 desktop app for worldbuilding & novel writing'
+arch=('x86_64')
+license=('LicenseRef-Proprietary')
+# Mirrors the deb/rpm Depends (libayatana-appindicator3-1, libwebkit2gtk-4.1-0, libgtk-3-0)
+depends=('webkit2gtk-4.1' 'gtk3' 'libayatana-appindicator')
+# Ship exactly what `tauri build` produced (Rust release binary);
+# !debug overrides a local makepkg.conf with `debug` on (avoids an empty /usr/src/debug dir)
+options=('!strip' '!debug')
+
+# Repo root relative to this PKGBUILD — robust no matter where makepkg is invoked from
+_project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+_bin="$_project_root/src-tauri/target/release/sluver"
+
+# Version follows package.json (kept in sync with tauri.conf.json), so it never drifts
+pkgver="$(sed -n 's/^[[:space:]]*"version": "\([^"]*\)".*/\1/p' "$_project_root/package.json" | head -n1)"
+[[ -n "$pkgver" ]] || { echo 'ERROR: could not parse version from package.json' >&2; return 1; }
+
+package() {
+  if [[ ! -x "$_bin" ]]; then
+    echo "ERROR: $_bin not found — run 'pnpm tauri build' first (or use 'pnpm pkg:arch')." >&2
+    return 1
+  fi
+
+  install -Dm755 "$_bin" "$pkgdir/usr/bin/sluver"
+
+  # Exec=sluver is correct here: the binary above lands on PATH (same as the deb/rpm layout)
+  install -Dm644 "$_project_root/packaging/arch/sluver.desktop" \
+    "$pkgdir/usr/share/applications/sluver.desktop"
+
+  local icons="$_project_root/src-tauri/icons"
+  install -Dm644 "$icons/32x32.png"      "$pkgdir/usr/share/icons/hicolor/32x32/apps/sluver.png"
+  install -Dm644 "$icons/64x64.png"      "$pkgdir/usr/share/icons/hicolor/64x64/apps/sluver.png"
+  install -Dm644 "$icons/128x128.png"    "$pkgdir/usr/share/icons/hicolor/128x128/apps/sluver.png"
+  install -Dm644 "$icons/128x128@2x.png" "$pkgdir/usr/share/icons/hicolor/256x256@2/apps/sluver.png"
+  install -Dm644 "$icons/icon.png"       "$pkgdir/usr/share/icons/hicolor/512x512/apps/sluver.png"
+}

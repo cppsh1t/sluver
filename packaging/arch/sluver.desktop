@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Sluver
+Comment=A Tauri v2 desktop app for worldbuilding & novel writing
+Exec=sluver
+Icon=sluver
+StartupWMClass=sluver
+Terminal=false
+Categories=Office;
