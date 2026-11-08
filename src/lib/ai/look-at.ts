@@ -38,6 +38,7 @@ import {
   createLanguageModel,
   type ResolvedModelConfig,
 } from "@/lib/ai/provider/provider-factory";
+import type { ProviderOptions, ReasoningEffort } from "@/lib/ai";
 
 // ─── Constants ────────────────────────────────────────────────────────────
 
@@ -163,6 +164,24 @@ export function cleanDescription(raw: string): string {
     .trim();
 }
 
+// ─── Settings ─────────────────────────────────────────────────────────────
+
+/**
+ * Per-role model generation settings accepted by {@link describeImage}
+ * (ADR-0056). LOCAL structural mirror of the app layer's `ModelSettings` —
+ * `lib/ai` must not import `@/types` (ADR-0019 purity); the shapes are
+ * structurally compatible. Every field is optional-and-nullable: absent or
+ * `null` = provider default.
+ */
+export interface ModelGenerationSettings {
+  temperature?: number | null;
+  topP?: number | null;
+  topK?: number | null;
+  maxOutputTokens?: number | null;
+  reasoning?: ReasoningEffort | null;
+  providerOptions?: Record<string, unknown> | null;
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────
 
 /**
@@ -176,6 +195,9 @@ export function cleanDescription(raw: string): string {
  *                    image. `undefined` (or blank) = general description.
  * @param abortSignal Optional abort signal — forwarded to `generateText` so
  *                    a user Stop cancels the vision call.
+ * @param settings    Optional per-role generation settings (ADR-0056). Only
+ *                    non-null fields are forwarded; `temperature` falls back
+ *                    to {@link VISION_TEMPERATURE} when unset.
  * @returns The cleaned description (non-empty).
  * @throws When the model call fails, is aborted, or post-processing empties
  *         the output. The tool converts non-abort throws into recoverable
@@ -186,6 +208,7 @@ export async function describeImage(
   image: ImageSource,
   question: string | undefined,
   abortSignal: AbortSignal | undefined,
+  settings?: ModelGenerationSettings,
 ): Promise<string> {
   const model = createLanguageModel(config);
 
@@ -224,7 +247,18 @@ export async function describeImage(
         content: [filePart, { type: "text", text: promptText }],
       },
     ],
-    temperature: VISION_TEMPERATURE,
+    temperature: settings?.temperature ?? VISION_TEMPERATURE,
+    ...(settings?.topP != null ? { topP: settings.topP } : {}),
+    ...(settings?.topK != null ? { topK: settings.topK } : {}),
+    ...(settings?.maxOutputTokens != null
+      ? { maxOutputTokens: settings.maxOutputTokens }
+      : {}),
+    ...(settings?.reasoning != null ? { reasoning: settings.reasoning } : {}),
+    ...(settings?.providerOptions != null
+      ? {
+          providerOptions: settings.providerOptions as ProviderOptions,
+        }
+      : {}),
     abortSignal,
   });
 

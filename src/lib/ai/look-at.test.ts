@@ -8,7 +8,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { MockLanguageModelV3 } from "ai/test";
 
-import { describeImage, type ImageSource } from "@/lib/ai/look-at";
+import { describeImage, type ImageSource, type ModelGenerationSettings } from "@/lib/ai/look-at";
 import { createLanguageModel } from "@/lib/ai/provider/provider-factory";
 import type { ResolvedModelConfig } from "@/lib/ai/provider/provider-factory";
 
@@ -20,6 +20,7 @@ const createModelMock = vi.mocked(createLanguageModel);
 
 const CONFIG: ResolvedModelConfig = {
   npmPackage: "@ai-sdk/mock",
+  providerName: "mock",
   modelId: "vision-mock",
   apiKey: "sk-test",
 };
@@ -138,6 +139,51 @@ describe("describeImage", () => {
     await describeImage(CONFIG, ATTACHMENT, undefined, controller.signal);
 
     expect(model.doGenerateCalls[0].abortSignal).toBe(controller.signal);
+  });
+
+  it("defaults to VISION_TEMPERATURE when settings are omitted or null", async () => {
+    const omitted = makeModel(textResult("A plain hill."));
+    await describeImage(CONFIG, ATTACHMENT, undefined, undefined);
+    // All-null settings (the ADR-0056 "provider defaults" shape) — same
+    // fallback as omitting the param entirely.
+    const nulled = makeModel(textResult("A plain hill."));
+    await describeImage(CONFIG, ATTACHMENT, undefined, undefined, {
+      temperature: null,
+      topP: null,
+      topK: null,
+      maxOutputTokens: null,
+      reasoning: null,
+      providerOptions: null,
+    });
+
+    expect(omitted.doGenerateCalls[0].temperature).toBe(0.2);
+    expect(nulled.doGenerateCalls[0].temperature).toBe(0.2);
+  });
+
+  it("forwards every non-null settings field and overrides the temperature fallback", async () => {
+    const model = makeModel(textResult("unused"));
+    const settings: ModelGenerationSettings = {
+      temperature: 0.6,
+      topP: 0.85,
+      topK: 24,
+      maxOutputTokens: 777,
+      reasoning: "low",
+      providerOptions: { openai: { reasoningSummary: "auto" } },
+    };
+
+    await describeImage(CONFIG, ATTACHMENT, undefined, undefined, settings);
+
+    // `reasoning` is typed on the V4 call options, not the mock's recorded
+    // V3 shape — widen once for the assertion.
+    const call = model.doGenerateCalls[0] as Record<string, unknown>;
+    expect(call).toMatchObject({
+      temperature: 0.6,
+      topP: 0.85,
+      topK: 24,
+      maxOutputTokens: 777,
+      reasoning: "low",
+      providerOptions: { openai: { reasoningSummary: "auto" } },
+    });
   });
 
   it("throws on empty model output", async () => {
