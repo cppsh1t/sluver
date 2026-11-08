@@ -24,6 +24,7 @@
  *
  * const model = createLanguageModel({
  *   npmPackage: "@ai-sdk/anthropic",   // from catalog's `npm` field
+ *   providerName: "anthropic",         // catalog provider id (modelId prefix)
  *   modelId: "claude-sonnet-5",        // from agent config's bound model
  *   apiKey: storedApiKey,              // from provider_credentials
  * });
@@ -59,6 +60,15 @@ export interface ResolvedModelConfig {
    * is auto-discovered.
    */
   npmPackage: string;
+  /**
+   * The catalog provider id (the composite modelId's prefix), e.g.
+   * `"deepseek"`. Becomes the provider instance's `name` — required by
+   * `@ai-sdk/openai-compatible`, where it defines the providerOptions
+   * namespace that raw escape-hatch options are forwarded under (ADR-0056
+   * `providerOptions` passthrough). First-party factories accept and ignore
+   * the field.
+   */
+  providerName: string;
   /** The model id within the provider, e.g. `"claude-sonnet-5"`. */
   modelId: string;
   /** Plaintext API key from `provider_credentials` (ADR-0013). */
@@ -90,9 +100,15 @@ export class ProviderFactoryError extends Error {
 
 // ─── Factory discovery ──────────────────────────────────────────────────
 
-/** A normalised factory: `{ apiKey, baseURL? }` → callable provider → `LanguageModel`. */
+/**
+ * A normalised factory: `{ apiKey, name, baseURL? }` → callable provider →
+ * `LanguageModel`. `name` is the catalog provider id — required by
+ * `createOpenAICompatible` (it scopes the providerOptions namespace and the
+ * request User-Agent label); the first-party factories accept and ignore it.
+ */
 type AnyProviderFactory = (options: {
   apiKey: string;
+  name: string;
   baseURL?: string;
 }) => (modelId: string) => LanguageModel;
 
@@ -155,6 +171,7 @@ export function createLanguageModel(config: ResolvedModelConfig): LanguageModel 
   const factory = findFactory(mod, config.npmPackage);
   const provider = factory({
     apiKey: config.apiKey,
+    name: config.providerName,
     ...(config.baseURL ? { baseURL: config.baseURL } : {}),
   });
   return provider(config.modelId);
