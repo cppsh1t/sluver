@@ -13,12 +13,15 @@ import {
   updateAgentConfigContextNote,
   updateAgentConfigMaxSteps,
   updateAgentConfigModel,
+  updateAgentConfigModelSettings,
   updateAgentConfigShellTool,
 } from "@/api";
 import { parseModelId, type ResolvedModelConfig } from "@/lib/ai";
+import { EMPTY_MODEL_SETTINGS } from "@/types";
 import type {
   AgentConfig,
   ContextCompaction,
+  ModelSettings,
   ModelsDevCatalog,
   ProviderCredential,
   ProviderCredentialId,
@@ -175,6 +178,20 @@ export const useUpdateAgentConfigMaxSteps = (spaceId: SpaceId) => {
   });
 };
 
+export const useUpdateAgentConfigModelSettings = (spaceId: SpaceId) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      modelSettings,
+    }: {
+      id: string;
+      modelSettings: ModelSettings;
+    }) => updateAgentConfigModelSettings(spaceId, id, modelSettings),
+    onSuccess: () => qc.invalidateQueries({ queryKey: aiConfigKeys.agentConfigs(spaceId) }),
+  });
+};
+
 // ─── Models.dev catalog (global) ─────────────────────────────────────────────
 
 /**
@@ -223,6 +240,12 @@ export interface ResolvedAgentModelConfig {
   contextNote: string;
   /** Per-role step-budget override. `null` = role registry default. */
   maxSteps: number | null;
+  /**
+   * Per-role model generation settings (ADR-0056). All-null fields mean
+   * "provider defaults"; threaded into the AgentLoop call options at
+   * Agent-construction time and the one-shot generation helpers.
+   */
+  modelSettings: ModelSettings;
 }
 
 /**
@@ -254,6 +277,9 @@ export function resolveAgentModelConfig(
   // registry's code-defined default at Agent-construction time (same
   // lifecycle as the contextNote above).
   const maxSteps = agentConfig?.maxSteps ?? null;
+  // Per-role model generation settings (ADR-0056). Defaults to all-null
+  // (provider defaults) until the agent config resolves.
+  const modelSettings = agentConfig?.modelSettings ?? EMPTY_MODEL_SETTINGS;
   const [providerId, modelId] = parseModelId(agentConfig?.modelId ?? null);
 
   if (!providerId || !modelId) {
@@ -264,6 +290,7 @@ export function resolveAgentModelConfig(
       contextCompaction,
       contextNote,
       maxSteps,
+      modelSettings,
     };
   }
 
@@ -287,12 +314,16 @@ export function resolveAgentModelConfig(
       contextCompaction,
       contextNote,
       maxSteps,
+      modelSettings,
     };
   }
 
   return {
     config: {
       npmPackage: catalogProvider.npm,
+      // The openai-compatible providerOptions namespace (see
+      // ResolvedModelConfig.providerName) — the composite modelId's prefix.
+      providerName: providerId,
       modelId,
       apiKey: credential.apiKey,
       ...(catalogProvider.apiBaseUrl
@@ -304,6 +335,7 @@ export function resolveAgentModelConfig(
     contextCompaction,
     contextNote,
     maxSteps,
+    modelSettings,
   };
 }
 
@@ -351,6 +383,8 @@ export function useResolvedModelConfig(
   contextNote: string;
   /** Per-role step-budget override. `null` = role registry default. */
   maxSteps: number | null;
+  /** Per-role model generation settings (ADR-0056). */
+  modelSettings: ModelSettings;
   isLoading: boolean;
   error: Error | null;
 } {

@@ -13,6 +13,7 @@ import type {
   AgentConfig,
   ContextCompaction,
   CustomProvidersReport,
+  ModelSettings,
   ModelsDevCatalog,
   ProviderCredential,
 } from "@/types";
@@ -149,6 +150,24 @@ export function updateAgentConfigMaxSteps(
     spaceId,
     id,
     maxSteps,
+  });
+}
+
+/**
+ * Update an agent config's model generation settings (ADR-0056) —
+ * whole-blob replacement. Per-field `null` = provider default; an
+ * all-null blob clears the override entirely. Returns the updated agent
+ * config.
+ */
+export function updateAgentConfigModelSettings(
+  spaceId: string,
+  id: string,
+  modelSettings: ModelSettings,
+): Promise<AgentConfig> {
+  return call<AgentConfig>("update_agent_config_model_settings", {
+    spaceId,
+    id,
+    modelSettings,
   });
 }
 

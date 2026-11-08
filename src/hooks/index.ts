@@ -97,6 +97,7 @@ export {
   useUpdateAgentConfigContextCompaction,
   useUpdateAgentConfigContextNote,
   useUpdateAgentConfigMaxSteps,
+  useUpdateAgentConfigModelSettings,
   useModelsDevCatalog,
   useRefreshModelsDevCatalog,
   useResolvedModelConfig,
