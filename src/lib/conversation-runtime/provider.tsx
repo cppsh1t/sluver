@@ -92,6 +92,34 @@ interface ConversationRuntimeContextValue {
 
 const ConversationRuntimeContext = createContext<ConversationRuntimeContextValue | null>(null);
 
+// ─── Canonical JSON (configSignature — ADR-0056) ─────────────────────────
+
+/**
+ * `JSON.stringify` with recursively sorted object keys.
+ *
+ * `modelSettings.providerOptions` is a free-form `Record<string, unknown>`;
+ * the SAME settings with keys landing in a different insertion order must
+ * produce the SAME configSignature, or the store's revalidation (ADR-0023)
+ * would needlessly rebuild idle Agents. The other tuple entries keep the
+ * fixed-literal-order assumption documented at the configSignature builder
+ * below; this helper extends that guarantee to the free-form entry.
+ */
+function canonicalJson(value: unknown): string {
+  const sortKeysDeep = (input: unknown): unknown => {
+    if (Array.isArray(input)) return input.map(sortKeysDeep);
+    if (input !== null && typeof input === "object") {
+      const source = input as Record<string, unknown>;
+      const sorted: Record<string, unknown> = {};
+      for (const key of Object.keys(source).sort()) {
+        sorted[key] = sortKeysDeep(source[key]);
+      }
+      return sorted;
+    }
+    return input;
+  };
+  return JSON.stringify(sortKeysDeep(value));
+}
+
 function useRuntimeContext(): ConversationRuntimeContextValue {
   const ctx = useContext(ConversationRuntimeContext);
   if (!ctx) {
@@ -174,6 +202,9 @@ export function ConversationRuntimeProvider({
   const configsLoading = agentConfigsQ.isLoading || credentialsQ.isLoading || catalogQ.isLoading;
   const skillsLoading = allSkillsQ.isLoading;
   const visionResolved = visionConfig.config ?? null;
+  // ADR-0056 — the vision agent's generation settings ride alongside its
+  // config (Space-scoped, shared by every role's ToolContext).
+  const visionModelSettings = visionConfig.modelSettings;
 
   const modelResolver = useMemo<ModelResolver>(() => {
     return (role: string): ResolvedModel => {
@@ -206,6 +237,9 @@ export function ConversationRuntimeProvider({
           contextCompaction: joined.contextCompaction,
           contextNote: joined.contextNote,
           maxSteps: joined.maxSteps,
+          // ADR-0056 — per-role model generation settings, applied to the
+          // AgentLoop call options at Agent-construction time.
+          modelSettings: joined.modelSettings,
           skills,
           // ADR-0045 — Space-scoped vision agent config for `look_at`.
           // `null` (unbound) → the always-registered tool returns its
@@ -213,6 +247,9 @@ export function ConversationRuntimeProvider({
           // query shares its react-query keys with the config sources
           // above, so by the time the role is "ready" this has settled.
           visionConfig: visionResolved,
+          // ADR-0056 — the vision agent's generation settings, threaded
+          // to the `look_at` tool's one-shot call via the ToolContext.
+          visionModelSettings,
           // Fingerprint of EVERY semantic input above, for the store's
           // cached-Agent revalidation (ADR-0023). Fixed-order JSON tuple:
           // two resolvers describing the same end state produce the same
@@ -221,6 +258,9 @@ export function ConversationRuntimeProvider({
           // identity differs per call; the config it derives from is the
           // semantic truth. ⚠️ Embeds the plaintext apiKey — in-memory
           // comparison only, never log/serialize it (ADR-0013/0016).
+          // The two modelSettings entries are canonicalized (recursively
+          // key-sorted) — see {@link canonicalJson} for why the free-form
+          // providerOptions key order must not churn the signature.
           configSignature: JSON.stringify([
             joined.config,
             joined.autoExecuteDangerousTools,
@@ -228,8 +268,10 @@ export function ConversationRuntimeProvider({
             joined.contextCompaction,
             joined.contextNote,
             joined.maxSteps,
+            canonicalJson(joined.modelSettings),
             skills,
             visionResolved,
+            canonicalJson(visionModelSettings),
           ]),
         };
       } catch (e) {
@@ -250,6 +292,7 @@ export function ConversationRuntimeProvider({
     catalogData,
     skillsByRole,
     visionResolved,
+    visionModelSettings,
   ]);
 
   const onPersistError = useCallback<PersistErrorHandler>((e) => {
@@ -315,7 +358,14 @@ export function ConversationRuntimeProvider({
 
         let title: string;
         try {
-          title = await generateConversationTitle(namerConfig.config, input.userText);
+          // ADR-0056 — the namer role's generation settings ride the
+          // one-shot call (temperature falls back to the namer's own
+          // TITLE_TEMPERATURE default inside).
+          title = await generateConversationTitle(
+            namerConfig.config,
+            input.userText,
+            namerConfig.modelSettings,
+          );
         } catch (e) {
           logger.warn("chat.auto_title.failed", {
             conversation_id: input.conversationId,

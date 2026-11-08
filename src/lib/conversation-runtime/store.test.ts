@@ -66,6 +66,7 @@ import {
   chapterSchema,
   conversationSchema,
   spaceIdSchema,
+  EMPTY_MODEL_SETTINGS,
   type Conversation,
   type Message,
 } from "@/types";
@@ -195,8 +196,10 @@ const readyResolver: ModelResolver = () => ({
   contextCompaction: { enabled: false, turnAge: 3 },
   contextNote: "",
   maxSteps: null,
+  modelSettings: EMPTY_MODEL_SETTINGS,
   skills: [],
   visionConfig: null,
+  visionModelSettings: EMPTY_MODEL_SETTINGS,
   configSignature: "sig-default",
 });
 
@@ -215,8 +218,10 @@ const signatureResolver =
     contextCompaction: { enabled: false, turnAge: 3 },
     contextNote: "",
     maxSteps: null,
+    modelSettings: EMPTY_MODEL_SETTINGS,
     skills: [],
     visionConfig: null,
+    visionModelSettings: EMPTY_MODEL_SETTINGS,
     configSignature: signature,
   });
 

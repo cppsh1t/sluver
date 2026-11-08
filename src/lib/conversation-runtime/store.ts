@@ -40,6 +40,7 @@ import {
   type LanguageModel,
   type LanguageModelUsage,
   type ModelMessage,
+  type ProviderOptions,
   type ResolvedModelConfig,
   type SessionMessage,
 } from "@/lib/ai";
@@ -96,6 +97,7 @@ import type {
   ConversationId,
   EnabledSkill,
   Message,
+  ModelSettings,
   SpaceId,
   WorldId,
 } from "@/types";
@@ -139,6 +141,14 @@ export type ResolvedModel =
        */
       readonly maxSteps: number | null;
       /**
+       * Per-role model generation settings (ADR-0056) from the Space's
+       * AgentConfig — always present (the join defaults to all-null).
+       * Applied at Agent-construction time: non-null fields become
+       * AgentLoop call options; `temperature` takes precedence over the
+       * role registry's code-defined default (registry stays fallback).
+       */
+      readonly modelSettings: ModelSettings;
+      /**
        * Agent Skills enabled for this role (ADR-0043 §3). Empty array =
        * none — no skill tools registered, no `<available_skills>` catalog.
        * Resolved live per role from the Space's per-AgentConfig enablement;
@@ -156,6 +166,13 @@ export type ResolvedModel =
        * `shellToolEnabled`).
        */
       readonly visionConfig: ResolvedModelConfig | null;
+      /**
+       * The `"vision"` agent's generation settings (ADR-0056) — rides the
+       * ToolContext alongside {@link visionConfig} so the `look_at` tool's
+       * one-shot call honors them (Space-scoped, not per-role — same
+       * lifecycle as `visionConfig`).
+       */
+      readonly visionModelSettings: ModelSettings;
       /**
        * Fingerprint of EVERY semantic input baked into a
        * constructed Agent (model endpoint + apiKey, behavior flags,
@@ -1069,8 +1086,10 @@ async function constructAgent(
   contextCompaction: ContextCompaction,
   contextNote: string,
   maxStepsOverride: number | null,
+  modelSettings: ModelSettings,
   skills: EnabledSkill[],
   visionConfig: ResolvedModelConfig | null,
+  visionModelSettings: ModelSettings,
   subagentRunner: SubagentRunner,
 ): Promise<Agent> {
   const roleDefinition = getRoleDefinition(conversation.agentConfigName);
@@ -1145,6 +1164,10 @@ async function constructAgent(
     // result at execute time (ADR-0050 D6 — the registration-time gate
     // was removed; explicit-fail over silent-hide).
     visionConfig,
+    // ADR-0056 — the vision agent's generation settings ride alongside
+    // `visionConfig` into the `look_at` tool's one-shot call (all-null
+    // fields = provider defaults).
+    visionModelSettings,
     // `look_at` (ADR-0045): resolves an in-conversation image attachment by
     // filename from the Persisted Thread — the reverse channel for the
     // downgrade markers (ADR-0044 D9). Same agentRef chicken-and-egg
@@ -1239,13 +1262,31 @@ async function constructAgent(
     ...(skills.length > 0 ? [buildAvailableSkillsBlock(skills)] : []),
     ...(chapterContextBlock !== null ? [chapterContextBlock] : []),
   ].join("\n\n");
+  // Apply the DB-stored model generation settings (ADR-0056). Per-field
+  // `null` = provider default, so only non-null fields are spread in.
+  // `temperature`: the DB override wins over the role registry's
+  // code-defined default (same `??` shape as effectiveMaxSteps above —
+  // the registry stays the fallback).
+  const effectiveTemperature =
+    modelSettings.temperature ?? roleDefinition.temperature;
   const loop = new AgentLoop({
     model,
     systemPrompt: effectiveSystemPrompt,
     tools,
     maxSteps: effectiveMaxSteps,
-    ...(roleDefinition.temperature !== undefined
-      ? { temperature: roleDefinition.temperature }
+    temperature: effectiveTemperature,
+    ...(modelSettings.topP !== null ? { topP: modelSettings.topP } : {}),
+    ...(modelSettings.topK !== null ? { topK: modelSettings.topK } : {}),
+    ...(modelSettings.maxOutputTokens !== null
+      ? { maxOutputTokens: modelSettings.maxOutputTokens }
+      : {}),
+    ...(modelSettings.reasoning !== null
+      ? { reasoning: modelSettings.reasoning }
+      : {}),
+    ...(modelSettings.providerOptions !== null
+      ? {
+          providerOptions: modelSettings.providerOptions as ProviderOptions,
+        }
       : {}),
   });
   const store = new TauriSessionStore({ spaceId, worldId, conversation });
@@ -2469,8 +2510,10 @@ export function createConversationRuntimeStore(
           contextCompaction,
           contextNote,
           maxSteps,
+          modelSettings,
           skills,
           visionConfig,
+          visionModelSettings,
           configSignature,
         } = resolved;
         const gate = createGate(worldId, conversationId);
@@ -2500,8 +2543,10 @@ export function createConversationRuntimeStore(
             contextCompaction,
             contextNote,
             maxSteps,
+            modelSettings,
             skills,
             visionConfig,
+            visionModelSettings,
             subagentRunner,
           );
           // ADR-0030 read path — pull the persisted Message rows (with usage
