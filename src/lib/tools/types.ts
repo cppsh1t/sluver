@@ -25,7 +25,7 @@ import type { FlexibleSchema, ToolCallPart, ToolResultPart } from "ai";
 import type { LookAtEntityKind } from "@/lib/ai/look-at";
 import type { Plan } from "@/lib/ai/session/plan";
 import { defineTool, type ToolSet, type ResolvedModelConfig } from "@/lib/ai";
-import type { EnabledSkill, SpaceId, WorldId } from "@/types";
+import type { EnabledSkill, ModelSettings, SpaceId, WorldId } from "@/types";
 
 // ─── Consent levels ───────────────────────────────────────────────────────
 
@@ -442,6 +442,15 @@ export interface ToolContext {
    * silent-hide; the registration-time gate was removed).
    */
   readonly visionConfig: ResolvedModelConfig | null;
+  /**
+   * The `"vision"` agent's generation settings (ADR-0056), threaded to the
+   * `look_at` tool's one-shot call alongside {@link visionConfig}. Optional
+   * because the settings refine the config rather than gate it:
+   * `undefined` (older contexts / stubs) = provider defaults, exactly like
+   * the one-shot helper's omitted `settings` param. The production
+   * construction site (conversation-runtime store) always sets it.
+   */
+  readonly visionModelSettings?: ModelSettings;
   /**
    * In-conversation image attachment resolution for the `look_at` tool
    * (ADR-0045): resolves the filename printed in a downgrade marker back to

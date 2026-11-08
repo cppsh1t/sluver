@@ -12,7 +12,7 @@ import { describeImage } from "@/lib/ai/look-at";
 import type { ResolvedModelConfig } from "@/lib/ai/provider/provider-factory";
 import { lookAtTools } from "@/lib/tools/look-at";
 import type { ToolContext, ToolDef } from "@/lib/tools/types";
-import { spaceIdSchema, worldIdSchema } from "@/types";
+import { spaceIdSchema, worldIdSchema, type ModelSettings } from "@/types";
 
 vi.mock("@/lib/ai/look-at", () => ({
   describeImage: vi.fn(),
@@ -22,8 +22,19 @@ vi.mock("@/lib/ai/look-at", () => ({
 
 const FAKE_VISION_CONFIG: ResolvedModelConfig = {
   npmPackage: "@ai-sdk/mock",
+  providerName: "mock",
   modelId: "vision-mock",
   apiKey: "sk-test",
+};
+
+/** The vision agent's ADR-0056 generation settings riding the context. */
+const FAKE_VISION_SETTINGS: ModelSettings = {
+  temperature: 0.4,
+  topP: 0.8,
+  topK: null,
+  maxOutputTokens: 999,
+  reasoning: "low",
+  providerOptions: null,
 };
 
 function makeToolContext(
@@ -40,6 +51,7 @@ function makeToolContext(
     skills: [],
     activatedSkills: new Set(),
     visionConfig: FAKE_VISION_CONFIG,
+    visionModelSettings: FAKE_VISION_SETTINGS,
     subagentRunner: { run: vi.fn() },
     attachmentLookup: {
       findByFilename: vi.fn(
@@ -121,6 +133,7 @@ describe("look_at", () => {
       },
       "What colors?",
       abortSignal,
+      FAKE_VISION_SETTINGS,
     );
   });
 
@@ -143,6 +156,7 @@ describe("look_at", () => {
       { kind: "url", url: "https://example.com/cat.png" },
       undefined,
       expect.any(AbortSignal),
+      FAKE_VISION_SETTINGS,
     );
   });
 
@@ -178,6 +192,34 @@ describe("look_at", () => {
       },
       "What does he wear?",
       abortSignal,
+      FAKE_VISION_SETTINGS,
+    );
+  });
+
+  it("threads ctx.visionModelSettings into describeImage (ADR-0056)", async () => {
+    describeImageMock.mockResolvedValue("A quiet harbor at dawn.");
+    const customSettings: ModelSettings = {
+      temperature: 0.9,
+      topP: null,
+      topK: 32,
+      maxOutputTokens: null,
+      reasoning: "high",
+      providerOptions: { openai: { reasoningSummary: "auto" } },
+    };
+    const ctx = makeToolContext({ visionModelSettings: customSettings });
+
+    await lookAtTool().execute(
+      { filename: "sunset.png" },
+      ctx,
+      { abortSignal: SIGNAL() },
+    );
+
+    expect(describeImageMock).toHaveBeenCalledWith(
+      FAKE_VISION_CONFIG,
+      expect.anything(),
+      undefined,
+      expect.any(AbortSignal),
+      customSettings,
     );
   });
 

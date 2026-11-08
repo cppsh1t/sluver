@@ -300,6 +300,9 @@ export function lookAtTools(): Record<string, ToolDef> {
             source,
             question,
             call.abortSignal,
+            // ADR-0056 — the vision agent's generation settings (undefined
+            // = provider defaults).
+            ctx.visionModelSettings,
           );
           if (source.kind === "attachment") {
             return { filename: source.filename, description };
