@@ -49,6 +49,14 @@ pub struct AgentConfig {
     /// `ROLE_REGISTRY` default (30 for loop roles); a value overrides it
     /// for this Space. One-shot roles (`namer`, `vision`) never read it.
     pub max_steps: Option<i64>,
+    /// Per-role model generation settings (ADR-0056). Stored as a single
+    /// JSON-blob TEXT column (`model_settings`, SPACE_MIGRATION_015) —
+    /// NULL (the default on seed and on migration of pre-existing rows)
+    /// and corrupt JSON both map to `ModelSettings::default()` at read
+    /// time (every field `None` = provider default), so the field is
+    /// NON-Option. Updated only via the whole-blob
+    /// `update_agent_config_model_settings` command.
+    pub model_settings: ModelSettings,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -71,4 +79,34 @@ pub struct AgentConfig {
 pub struct ContextCompaction {
     pub enabled: bool,
     pub turn_age: i64,
+}
+
+/// Per-role model generation settings (ADR-0056). One nullable-JSON-blob
+/// column on `agent_configs`; per-field `None` = provider default, so a
+/// fresh config serializes every key as `null` and the frontend always
+/// sees the full object shape (no partial payloads). Validation happens
+/// app-layer in `do_update_agent_config_model_settings` — SQLite holds
+/// whatever JSON round-trips, range/enum checks would not survive the
+/// IPC boundary otherwise.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelSettings {
+    #[serde(default)]
+    pub temperature: Option<f64>,
+    #[serde(default)]
+    pub top_p: Option<f64>,
+    #[serde(default)]
+    pub top_k: Option<i64>,
+    #[serde(default)]
+    pub max_output_tokens: Option<i64>,
+    /// Portable reasoning-effort level ("none" | "minimal" | "low" |
+    /// "medium" | "high" | "xhigh"); providers map it to their native
+    /// knob or drop it.
+    #[serde(default)]
+    pub reasoning: Option<String>,
+    /// MUST stay `serde_json::Value` (BTreeMap → deterministic sorted key
+    /// order). A HashMap would randomize key order across IPC calls and
+    /// destabilize the frontend configSignature (ADR-0023 rebuilds).
+    #[serde(default)]
+    pub provider_options: Option<serde_json::Value>,
 }

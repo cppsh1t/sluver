@@ -324,6 +324,7 @@ pub fn run() {
             commands::ai::update_agent_config_context_note,
             commands::ai::update_agent_config_shell_tool,
             commands::ai::update_agent_config_max_steps,
+            commands::ai::update_agent_config_model_settings,
             commands::ai::get_models_dev_catalog,
             commands::ai::refresh_models_dev_catalog,
             commands::ai::get_custom_providers,

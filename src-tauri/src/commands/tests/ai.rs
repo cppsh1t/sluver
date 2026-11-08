@@ -301,6 +301,165 @@ fn update_agent_config_max_steps_not_found() {
     }
 }
 
+// ─── update_agent_config_model_settings ────────────────────────────────
+
+#[test]
+fn update_agent_config_model_settings_set_and_clear() {
+    let (_tmp, mgr) = make_manager();
+    let sid = make_space(&mgr, "S");
+
+    let explorer = do_list_agent_configs(&mgr, &sid)
+        .expect("list")
+        .into_iter()
+        .find(|a| a.name == "explorer")
+        .expect("explorer exists");
+    assert_eq!(
+        explorer.model_settings,
+        ModelSettings::default(),
+        "fresh seed model_settings must be all-default (NULL column)"
+    );
+
+    // Set every field, provider_options as a raw JSON object blob.
+    let set = ModelSettings {
+        temperature: Some(0.7),
+        top_p: Some(0.9),
+        top_k: Some(40),
+        max_output_tokens: Some(4096),
+        reasoning: Some("high".into()),
+        provider_options: Some(serde_json::json!({"openai": {"reasoningSummary": "auto"}})),
+    };
+    let updated =
+        do_update_agent_config_model_settings(&mgr, &sid, &explorer.id, &set).expect("set");
+    assert_eq!(updated.model_settings, set);
+    assert_eq!(updated.id, explorer.id);
+    assert!(updated.updated_at >= explorer.updated_at);
+
+    // The blob must round-trip through the generic list path too (proves
+    // row_to_agent_config's JSON parse, not just the command read-back).
+    let listed = do_list_agent_configs(&mgr, &sid)
+        .expect("list")
+        .into_iter()
+        .find(|a| a.name == "explorer")
+        .expect("explorer still exists");
+    assert_eq!(listed.model_settings, set);
+
+    // Clear back to all-None (every field = provider default).
+    let cleared =
+        do_update_agent_config_model_settings(&mgr, &sid, &explorer.id, &ModelSettings::default())
+            .expect("clear");
+    assert_eq!(
+        cleared.model_settings,
+        ModelSettings::default(),
+        "model_settings must be all-default after clear"
+    );
+}
+
+#[test]
+fn update_agent_config_model_settings_rejects_invalid() {
+    let (_tmp, mgr) = make_manager();
+    let sid = make_space(&mgr, "S");
+
+    let explorer = do_list_agent_configs(&mgr, &sid)
+        .expect("list")
+        .into_iter()
+        .find(|a| a.name == "explorer")
+        .expect("explorer exists");
+
+    let base = ModelSettings {
+        temperature: Some(0.7),
+        top_p: Some(0.9),
+        top_k: Some(40),
+        max_output_tokens: Some(4096),
+        reasoning: Some("high".into()),
+        provider_options: None,
+    };
+    // One invalid field per case; each must be rejected with an
+    // InvalidInput naming the offending field.
+    let bad_cases: Vec<(ModelSettings, &str)> = vec![
+        (
+            ModelSettings {
+                temperature: Some(5.0),
+                ..base.clone()
+            },
+            "temperature",
+        ),
+        (
+            ModelSettings {
+                top_p: Some(-1.0),
+                ..base.clone()
+            },
+            "top_p",
+        ),
+        (
+            ModelSettings {
+                top_k: Some(0),
+                ..base.clone()
+            },
+            "top_k",
+        ),
+        (
+            ModelSettings {
+                max_output_tokens: Some(0),
+                ..base.clone()
+            },
+            "max_output_tokens",
+        ),
+        (
+            ModelSettings {
+                reasoning: Some("bogus".into()),
+                ..base.clone()
+            },
+            "reasoning",
+        ),
+        (
+            ModelSettings {
+                provider_options: Some(serde_json::json!([1, 2])),
+                ..base.clone()
+            },
+            "provider_options",
+        ),
+    ];
+    for (bad, field) in bad_cases {
+        let err = do_update_agent_config_model_settings(&mgr, &sid, &explorer.id, &bad)
+            .expect_err("invalid model_settings must be rejected");
+        match err {
+            DbError::InvalidInput(msg) => {
+                assert!(
+                    msg.contains(field),
+                    "error must name the offending field {field}: {msg}"
+                );
+            }
+            other => panic!("expected InvalidInput, got {other:?}"),
+        }
+    }
+
+    // The rejected writes must not have landed: still all-default.
+    let after = do_list_agent_configs(&mgr, &sid)
+        .expect("list")
+        .into_iter()
+        .find(|a| a.name == "explorer")
+        .expect("explorer still exists");
+    assert_eq!(
+        after.model_settings,
+        ModelSettings::default(),
+        "rejected values must never reach SQLite"
+    );
+}
+
+#[test]
+fn update_agent_config_model_settings_not_found() {
+    let (_tmp, mgr) = make_manager();
+    let sid = make_space(&mgr, "S");
+    let missing = testutil::uuid_shape(99);
+    let err =
+        do_update_agent_config_model_settings(&mgr, &sid, &missing, &ModelSettings::default())
+            .expect_err("update missing agent config");
+    match err {
+        DbError::AgentConfigNotFound(id) => assert_eq!(id, missing),
+        other => panic!("expected AgentConfigNotFound, got {other:?}"),
+    }
+}
+
 // ─── cascade: delete provider NULLs dependent agent_config.model_id ─────
 
 #[test]
@@ -1082,6 +1241,14 @@ fn agent_config_serialization_shape() {
         },
         context_note: "".into(),
         max_steps: Some(50),
+        model_settings: ModelSettings {
+            temperature: Some(0.7),
+            top_p: Some(0.9),
+            top_k: Some(40),
+            max_output_tokens: Some(4096),
+            reasoning: Some("high".into()),
+            provider_options: Some(serde_json::json!({"openai": {"reasoningSummary": "auto"}})),
+        },
         created_at: "2026-01-01T00:00:00.000Z".into(),
         updated_at: "2026-01-01T00:00:00.000Z".into(),
     };
@@ -1110,6 +1277,14 @@ fn agent_config_serialization_shape() {
         json.contains("\"maxSteps\":50"),
         "camelCase maxSteps: {json}"
     );
+    assert!(
+        json.contains(
+            "\"modelSettings\":{\"temperature\":0.7,\"topP\":0.9,\"topK\":40,\
+             \"maxOutputTokens\":4096,\"reasoning\":\"high\",\
+             \"providerOptions\":{\"openai\":{\"reasoningSummary\":\"auto\"}}}"
+        ),
+        "camelCase modelSettings with all six keys: {json}"
+    );
     assert!(!json.contains("model_id"), "snake_case leak: {json}");
     assert!(
         !json.contains("auto_execute_dangerous_tools"),
@@ -1126,6 +1301,14 @@ fn agent_config_serialization_shape() {
     assert!(!json.contains("system_prompt"), "snake_case leak: {json}");
     assert!(!json.contains("context_note"), "snake_case leak: {json}");
     assert!(!json.contains("max_steps"), "snake_case leak: {json}");
+    assert!(
+        !json.contains("model_settings")
+            && !json.contains("provider_options")
+            && !json.contains("top_p")
+            && !json.contains("top_k")
+            && !json.contains("max_output_tokens"),
+        "snake_case leak: {json}"
+    );
 }
 
 /// SetProviderCredentialInput deserializes from camelCase frontend input.

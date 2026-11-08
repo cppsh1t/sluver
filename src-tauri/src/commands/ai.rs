@@ -31,7 +31,7 @@ use rusqlite::params;
 use tauri::State;
 
 use crate::db::{DbError, DbManager};
-use crate::models::agent_config::{AgentConfig, ContextCompaction};
+use crate::models::agent_config::{AgentConfig, ContextCompaction, ModelSettings};
 use crate::models::catalog::{
     CatalogMeta, CatalogModel, CatalogProvider, CustomProviderEntryError, CustomProvidersReport,
     ModelsDevCatalog, RawCatalog, RawModel, RawProvider,
@@ -63,6 +63,14 @@ fn row_to_credential(row: &rusqlite::Row) -> rusqlite::Result<ProviderCredential
 }
 
 fn row_to_agent_config(row: &rusqlite::Row) -> rusqlite::Result<AgentConfig> {
+    // `model_settings` is a JSON-blob column. NULL (fresh seeds and
+    // pre-v15 rows) or corrupt JSON maps to the all-default
+    // ModelSettings — same defensive-read precedent as the conversation
+    // meta/body columns (commands/conversation.rs).
+    let model_settings_json: Option<String> = row.get("model_settings")?;
+    let model_settings =
+        serde_json::from_str::<ModelSettings>(&model_settings_json.unwrap_or_default())
+            .unwrap_or_default();
     Ok(AgentConfig {
         id: row.get("id")?,
         name: row.get("name")?,
@@ -75,6 +83,7 @@ fn row_to_agent_config(row: &rusqlite::Row) -> rusqlite::Result<AgentConfig> {
         },
         context_note: row.get("context_note")?,
         max_steps: row.get("max_steps")?,
+        model_settings,
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
     })
@@ -237,7 +246,7 @@ pub(crate) fn do_list_agent_configs(
         let mut stmt = conn.prepare(
             "SELECT id, name, model_id, auto_execute_dangerous_tools, shell_tool_enabled,
                     context_compaction_enabled, context_compaction_turn_age,
-                    context_note, max_steps, created_at, updated_at
+                    context_note, max_steps, model_settings, created_at, updated_at
              FROM agent_configs ORDER BY created_at",
         )?;
         let rows = stmt
@@ -277,7 +286,7 @@ pub(crate) fn do_update_agent_config_model(
         conn.query_row(
             "SELECT id, name, model_id, auto_execute_dangerous_tools, shell_tool_enabled,
                     context_compaction_enabled, context_compaction_turn_age,
-                    context_note, max_steps, created_at, updated_at
+                    context_note, max_steps, model_settings, created_at, updated_at
              FROM agent_configs WHERE id = ?1",
             params![id],
             row_to_agent_config,
@@ -319,7 +328,7 @@ pub(crate) fn do_update_agent_config_auto_execute(
         conn.query_row(
             "SELECT id, name, model_id, auto_execute_dangerous_tools, shell_tool_enabled,
                     context_compaction_enabled, context_compaction_turn_age,
-                    context_note, max_steps, created_at, updated_at
+                    context_note, max_steps, model_settings, created_at, updated_at
              FROM agent_configs WHERE id = ?1",
             params![id],
             row_to_agent_config,
@@ -383,7 +392,7 @@ pub(crate) fn do_update_agent_config_context_compaction(
         conn.query_row(
             "SELECT id, name, model_id, auto_execute_dangerous_tools, shell_tool_enabled,
                     context_compaction_enabled, context_compaction_turn_age,
-                    context_note, max_steps, created_at, updated_at
+                    context_note, max_steps, model_settings, created_at, updated_at
              FROM agent_configs WHERE id = ?1",
             params![id],
             row_to_agent_config,
@@ -425,7 +434,7 @@ pub(crate) fn do_update_agent_config_context_note(
         conn.query_row(
             "SELECT id, name, model_id, auto_execute_dangerous_tools, shell_tool_enabled,
                     context_compaction_enabled, context_compaction_turn_age,
-                    context_note, max_steps, created_at, updated_at
+                    context_note, max_steps, model_settings, created_at, updated_at
              FROM agent_configs WHERE id = ?1",
             params![id],
             row_to_agent_config,
@@ -467,7 +476,7 @@ pub(crate) fn do_update_agent_config_shell_tool(
         conn.query_row(
             "SELECT id, name, model_id, auto_execute_dangerous_tools, shell_tool_enabled,
                     context_compaction_enabled, context_compaction_turn_age,
-                    context_note, max_steps, created_at, updated_at
+                    context_note, max_steps, model_settings, created_at, updated_at
              FROM agent_configs WHERE id = ?1",
             params![id],
             row_to_agent_config,
@@ -522,7 +531,105 @@ pub(crate) fn do_update_agent_config_max_steps(
         conn.query_row(
             "SELECT id, name, model_id, auto_execute_dangerous_tools, shell_tool_enabled,
                     context_compaction_enabled, context_compaction_turn_age,
-                    context_note, max_steps, created_at, updated_at
+                    context_note, max_steps, model_settings, created_at, updated_at
+             FROM agent_configs WHERE id = ?1",
+            params![id],
+            row_to_agent_config,
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => DbError::AgentConfigNotFound(id.to_string()),
+            other => DbError::Sqlite(other),
+        })
+    })
+}
+
+#[tracing::instrument(skip(state, id, model_settings), fields(entity_id = %id))]
+#[tauri::command]
+pub fn update_agent_config_model_settings(
+    space_id: String,
+    id: String,
+    model_settings: ModelSettings,
+    state: State<'_, DbManager>,
+) -> Result<AgentConfig, DbError> {
+    do_update_agent_config_model_settings(&state, &space_id, &id, &model_settings)
+}
+
+pub(crate) fn do_update_agent_config_model_settings(
+    mgr: &DbManager,
+    space_id: &str,
+    id: &str,
+    model_settings: &ModelSettings,
+) -> Result<AgentConfig, DbError> {
+    // Guard: validate every set field BEFORE the write (max_steps /
+    // turn_age precedent). The frontend Zod schema (types/ai.ts) enforces
+    // these on the happy path, but a direct IPC call could bypass it.
+    // Reject early so a bad value can never reach SQLite, where it would
+    // silently degrade the next generation (e.g. a ≤ 0 token budget
+    // aborts the first LLM call). `None` fields are always valid — they
+    // mean "provider default". NaN fails the range checks by design
+    // (`RangeInclusive::contains` is false for NaN).
+    if let Some(value) = model_settings.temperature {
+        if !(0.0..=2.0).contains(&value) {
+            return Err(DbError::InvalidInput(format!(
+                "model_settings.temperature must be in 0.0..=2.0, got {value}"
+            )));
+        }
+    }
+    if let Some(value) = model_settings.top_p {
+        if !(0.0..=1.0).contains(&value) {
+            return Err(DbError::InvalidInput(format!(
+                "model_settings.top_p must be in 0.0..=1.0, got {value}"
+            )));
+        }
+    }
+    if let Some(value) = model_settings.top_k {
+        if value < 1 {
+            return Err(DbError::InvalidInput(format!(
+                "model_settings.top_k must be a positive integer, got {value}"
+            )));
+        }
+    }
+    if let Some(value) = model_settings.max_output_tokens {
+        if value < 1 {
+            return Err(DbError::InvalidInput(format!(
+                "model_settings.max_output_tokens must be a positive integer, got {value}"
+            )));
+        }
+    }
+    if let Some(value) = model_settings.reasoning.as_deref() {
+        if !matches!(
+            value,
+            "none" | "minimal" | "low" | "medium" | "high" | "xhigh"
+        ) {
+            return Err(DbError::InvalidInput(format!(
+                "model_settings.reasoning must be one of none|minimal|low|medium|high|xhigh, got {value}"
+            )));
+        }
+    }
+    if let Some(value) = &model_settings.provider_options {
+        if !value.is_object() {
+            return Err(DbError::InvalidInput(format!(
+                "model_settings.provider_options must be a JSON object, got {value}"
+            )));
+        }
+    }
+    // Whole-blob replacement: the column stores the serialized struct;
+    // per-field NULL semantics live inside the JSON, not in SQL.
+    let json = serde_json::to_string(model_settings)?;
+    let now = now_iso();
+    mgr.with_space(space_id, |conn| {
+        let affected = conn.execute(
+            "UPDATE agent_configs SET model_settings = ?1, updated_at = ?2 WHERE id = ?3",
+            params![json, now, id],
+        )?;
+        if affected == 0 {
+            return Err(DbError::AgentConfigNotFound(id.to_string()));
+        }
+        // Read back the canonical row (AGENTS.md: read after mutation).
+        conn.query_row(
+            "SELECT id, name, model_id, auto_execute_dangerous_tools, shell_tool_enabled,
+                    context_compaction_enabled, context_compaction_turn_age,
+                    context_note, max_steps, model_settings, created_at, updated_at
              FROM agent_configs WHERE id = ?1",
             params![id],
             row_to_agent_config,
