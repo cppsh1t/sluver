@@ -86,6 +86,71 @@ export const contextCompactionSchema = z.object({
 
 export type ContextCompaction = z.infer<typeof contextCompactionSchema>;
 
+// ─── Model settings (ADR-0056) ──────────────────────────────────────────────
+
+/**
+ * Reasoning-effort levels of the AI SDK 7 portable top-level `reasoning`
+ * parameter (verified against `@ai-sdk/provider`'s
+ * `LanguageModelV4CallOptions["reasoning"]`). `'provider-default'` is
+ * deliberately NOT storable — that is what `null` means. (`'max'` exists
+ * only in OpenAI's providerOptions layer, not the portable param.)
+ */
+export const REASONING_EFFORTS = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+] as const;
+
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+
+/**
+ * Per-role model generation settings (ADR-0056). Every field is an
+ * optional override — `null` means "use the provider/role default". The
+ * object itself is ALWAYS present on an `AgentConfig` (the Rust side maps
+ * a NULL/corrupt `model_settings` column to the all-null default), so
+ * consumers never null-check `modelSettings` itself.
+ *
+ * `reasoning` reaches the SDK's portable parameter and is translated
+ * per-provider (OpenAI `reasoningEffort`, Anthropic `thinking`, Google
+ * `thinkingConfig`). `providerOptions` is the raw escape hatch forwarded
+ * verbatim under the provider's namespace (e.g.
+ * `{"openai":{"reasoningSummary":"auto"}}`). On the Rust side it MUST be
+ * held as `serde_json::Value` (BTreeMap — deterministic key order), never
+ * `HashMap`, so the conversation-runtime configSignature stays stable.
+ */
+export const modelSettingsSchema = z.object({
+  /** Sampling temperature. Range 0–2 for most providers. */
+  temperature: z.number().min(0).max(2).nullable(),
+  /** Nucleus sampling. Range 0–1. */
+  topP: z.number().min(0).max(1).nullable(),
+  /** Top-K sampling (mainly Google/Anthropic). Positive integer. */
+  topK: z.number().int().positive().nullable(),
+  /** Hard cap on generated tokens per step/call. Positive integer. */
+  maxOutputTokens: z.number().int().positive().nullable(),
+  /** Portable reasoning-effort override, or `null` for provider default. */
+  reasoning: z.enum(REASONING_EFFORTS).nullable(),
+  /**
+   * Raw provider-namespaced options, forwarded verbatim to the SDK.
+   * `null` when unset.
+   */
+  providerOptions: z.record(z.string(), z.unknown()).nullable(),
+});
+
+export type ModelSettings = z.infer<typeof modelSettingsSchema>;
+
+/** The all-null `ModelSettings` — every field at its provider default. */
+export const EMPTY_MODEL_SETTINGS: ModelSettings = {
+  temperature: null,
+  topP: null,
+  topK: null,
+  maxOutputTokens: null,
+  reasoning: null,
+  providerOptions: null,
+};
+
 // ─── AgentConfig ────────────────────────────────────────────────────────────
 
 /**
@@ -136,6 +201,11 @@ export const agentConfigSchema = z.object({
    * code-defined default from the role registry (`src/lib/ai-roles`).
    */
   maxSteps: z.number().int().positive().nullable(),
+  /**
+   * Per-role model generation settings (ADR-0056). Always present; a
+   * per-field `null` means "use the provider/role default".
+   */
+  modelSettings: modelSettingsSchema,
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
