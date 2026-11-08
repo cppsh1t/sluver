@@ -351,6 +351,21 @@ const SPACE_MIGRATION_014: &str = r#"
     ALTER TABLE skills ADD COLUMN kind TEXT NOT NULL DEFAULT 'user';
 "#;
 
+/// Migration 15 for `space.db`: per-role model generation settings on
+/// `agent_configs` (ADR-0056). Nullable TEXT holding a JSON blob
+/// (`ModelSettings`) — NULL (the DEFAULT for existing rows) means "every
+/// field is the provider default", so unlike the flag columns there is
+/// deliberately no NOT NULL DEFAULT; validation (temperature range,
+/// reasoning enum, provider_options object shape, …) is app-layer in
+/// `do_update_agent_config_model_settings`, following the max_steps guard
+/// precedent (SPACE_MIGRATION_012 doctrine). Added as a separate
+/// migration so existing `space.db` files get the column via
+/// `rusqlite_migration`'s incremental migration tracking — modifying
+/// `SPACE_MIGRATION_002` would NOT re-run for already-migrated databases.
+const SPACE_MIGRATION_015: &str = r#"
+    ALTER TABLE agent_configs ADD COLUMN model_settings TEXT;
+"#;
+
 // ─── world DB schema ────────────────────────────────────────────────────────
 // Tier 3 of the three-database design (ADR-0007). One file per World at
 // `spaces/{spaceId}/worlds/{worldId}.db`. Schema is byte-for-byte identical
@@ -520,6 +535,7 @@ const SPACE_SLICE: &[M] = &[
     M::up(SPACE_MIGRATION_012),
     M::up(SPACE_MIGRATION_013),
     M::up(SPACE_MIGRATION_014),
+    M::up(SPACE_MIGRATION_015),
 ];
 pub const SPACE_MIGRATIONS: Migrations = Migrations::from_slice(SPACE_SLICE);
 

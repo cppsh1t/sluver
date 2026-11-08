@@ -84,7 +84,7 @@ fn meta_fresh_install_schema() {
     );
 }
 
-/// space.db fresh install: fourteen migrations → user_version 14, exactly
+/// space.db fresh install: fifteen migrations → user_version 15, exactly
 /// the {worlds, space_config, provider_credentials, agent_configs,
 /// skills, agent_config_skills} table set, and a single named index
 /// idx_worlds_name (the UNIQUE constraints on agent_configs.name /
@@ -93,7 +93,8 @@ fn meta_fresh_install_schema() {
 /// only NULL-sql autoindexes). v11 seeds agent_config rows only; v12
 /// adds the max_steps column only; v13 swaps system_prompt for
 /// context_note; v14 adds the skills.kind discriminator (official rows
-/// are seeded later, at connection open — migrations never touch them).
+/// are seeded later, at connection open — migrations never touch them);
+/// v15 adds the agent_configs.model_settings JSON-blob column only.
 #[test]
 fn space_fresh_install_schema() {
     let mut conn = Connection::open_in_memory().expect("open in-memory space db");
@@ -103,7 +104,7 @@ fn space_fresh_install_schema() {
 
     assert_eq!(
         user_version(&conn),
-        14,
+        15,
         "space user_version after to_latest"
     );
     assert_eq!(
@@ -116,12 +117,12 @@ fn space_fresh_install_schema() {
             "space_config",
             "worlds",
         ],
-        "space table set at v14"
+        "space table set at v15"
     );
     assert_eq!(
         named_indexes(&conn),
         ["idx_worlds_name"],
-        "space named index set at v14"
+        "space named index set at v15"
     );
     assert!(
         has_column(&conn, "agent_configs", "max_steps"),
@@ -136,6 +137,10 @@ fn space_fresh_install_schema() {
         "v13 drops agent_configs.system_prompt"
     );
     assert!(has_column(&conn, "skills", "kind"), "v14 adds skills.kind");
+    assert!(
+        has_column(&conn, "agent_configs", "model_settings"),
+        "v15 adds agent_configs.model_settings"
+    );
 }
 
 /// world.db fresh install: fifteen migrations → user_version 15, the
@@ -411,15 +416,15 @@ fn world_upgrade_path_step_by_step() {
     }
 }
 
-/// space.db upgrade path: step 0→13 on ONE connection, asserting
+/// space.db upgrade path: step 0→15 on ONE connection, asserting
 /// user_version and the per-step schema facts (tables and columns added,
 /// namer row seeded at v7, vision row seeded at v10, seven ADR-0050 rows
 /// seeded at v11, max_steps column added at v12, system_prompt dropped and
-/// context_note added at v13).
+/// context_note added at v13, model_settings column added at v15).
 #[test]
 fn space_upgrade_path_step_by_step() {
     let mut conn = Connection::open_in_memory().expect("open in-memory space db");
-    for v in 0..=14 {
+    for v in 0..=15 {
         SPACE_MIGRATIONS
             .to_version(&mut conn, v)
             .unwrap_or_else(|e| panic!("space to_version({v}): {e}"));
@@ -601,7 +606,18 @@ fn space_upgrade_path_step_by_step() {
                     "v14 adds a column only — table set unchanged"
                 );
             }
-            _ => unreachable!("loop is bounded to 0..=14"),
+            15 => {
+                assert!(
+                    has_column(&conn, "agent_configs", "model_settings"),
+                    "v15 adds agent_configs.model_settings"
+                );
+                assert_eq!(
+                    table_names(&conn).len(),
+                    6,
+                    "v15 adds a column only — table set unchanged"
+                );
+            }
+            _ => unreachable!("loop is bounded to 0..=15"),
         }
     }
 }
@@ -991,7 +1007,7 @@ fn world_v15_deletes_conversations_and_cascades() {
 fn to_latest_twice_is_idempotent_for_all_kinds() {
     let cases: [(&str, &Migrations, i64); 3] = [
         ("meta", &META_MIGRATIONS, 1),
-        ("space", &SPACE_MIGRATIONS, 14),
+        ("space", &SPACE_MIGRATIONS, 15),
         ("world", &WORLD_MIGRATIONS, 15),
     ];
     for (name, migrations, latest) in cases {
