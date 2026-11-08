@@ -122,6 +122,46 @@
         "updateSuccess": "Context note updated",
         "updateFailed": "Failed to update context note"
       }
+    },
+    "modelParams": {
+      "sectionTitle": "Model parameters",
+      "sectionDescription": "Generation parameter overrides for this role; empty fields and Default use the provider's own value.",
+      "defaultPlaceholder": "Default",
+      "temperature": {
+        "title": "Temperature",
+        "description": "Sampling randomness, 0–2 — higher is more diffuse. Empty uses the provider default."
+      },
+      "topP": {
+        "title": "Top P",
+        "description": "Nucleus sampling: only candidates within this cumulative probability, 0–1. Empty uses the provider default."
+      },
+      "topK": {
+        "title": "Top K",
+        "description": "Only the K most likely candidates, a positive integer (mainly Google / Anthropic models). Empty uses the provider default."
+      },
+      "maxOutputTokens": {
+        "title": "Max output tokens",
+        "description": "Hard cap on generated tokens per call. Too small a value can truncate tool-calling loops. Empty uses the provider default."
+      },
+      "reasoning": {
+        "title": "Reasoning effort",
+        "description": "How hard thinking models reason before answering. Default leaves it to the provider.",
+        "defaultOption": "Default",
+        "option": {
+          "none": "Off",
+          "minimal": "Minimal",
+          "low": "Low",
+          "medium": "Medium",
+          "high": "High",
+          "xhigh": "Max"
+        }
+      },
+      "providerOptions": {
+        "title": "Provider options",
+        "description": "A JSON object forwarded verbatim under the provider's namespace, for settings the portable parameters don't cover. Empty for none.",
+        "placeholder": "{\"openai\":{\"reasoningSummary\":\"auto\"}}",
+        "invalidJson": "Invalid JSON — expected an object, e.g. {\"openai\":{…}}"
+      }
     }
   },
   "catalog": {

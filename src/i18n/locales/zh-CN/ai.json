@@ -122,6 +122,46 @@
         "updateSuccess": "上下文附注已更新",
         "updateFailed": "更新上下文附注失败"
       }
+    },
+    "modelParams": {
+      "sectionTitle": "模型参数",
+      "sectionDescription": "覆盖该角色的生成参数；留空或选「默认」时使用提供方默认值。",
+      "defaultPlaceholder": "默认",
+      "temperature": {
+        "title": "温度（temperature）",
+        "description": "采样的随机程度，范围 0–2，越高输出越发散。留空为提供方默认。"
+      },
+      "topP": {
+        "title": "核采样（topP）",
+        "description": "仅从累计概率达到该值的候选中采样，范围 0–1。留空为提供方默认。"
+      },
+      "topK": {
+        "title": "Top-K 采样（topK）",
+        "description": "仅从概率最高的 K 个候选中采样，正整数（主要用于 Google / Anthropic 模型）。留空为提供方默认。"
+      },
+      "maxOutputTokens": {
+        "title": "最大输出词元（maxOutputTokens）",
+        "description": "单次生成的输出词元数上限。设置过小可能截断带工具调用的多步循环。留空为提供方默认。"
+      },
+      "reasoning": {
+        "title": "推理力度（reasoning）",
+        "description": "思考型模型回答前投入的推理深度。选「默认」交由提供方决定。",
+        "defaultOption": "默认",
+        "option": {
+          "none": "关闭",
+          "minimal": "最少",
+          "low": "低",
+          "medium": "中",
+          "high": "高",
+          "xhigh": "最高"
+        }
+      },
+      "providerOptions": {
+        "title": "提供方选项（providerOptions）",
+        "description": "按提供方命名空间原样转发的 JSON 对象，用于便携参数未覆盖的设置。留空为不附加。",
+        "placeholder": "{\"openai\":{\"reasoningSummary\":\"auto\"}}",
+        "invalidJson": "无效的 JSON：需要对象形式，如 {\"openai\":{…}}"
+      }
     }
   },
   "catalog": {

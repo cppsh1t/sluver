@@ -16,11 +16,13 @@ import {
   useUpdateAgentConfigContextNote,
   useUpdateAgentConfigMaxSteps,
   useUpdateAgentConfigModel,
+  useUpdateAgentConfigModelSettings,
   useUpdateAgentConfigShellTool,
 } from "@/hooks";
 import { parseModelId } from "@/lib/ai";
 import { getRoleDefinition } from "@/lib/ai-roles";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -54,9 +56,12 @@ import {
 import type {
   AgentConfig,
   CatalogProvider,
+  ModelSettings,
   ProviderCredential,
+  ReasoningEffort,
   SkillId,
 } from "@/types";
+import { REASONING_EFFORTS } from "@/types";
 import { ModelCascadingSelect } from "./model-cascading-select";
 
 /**
@@ -80,6 +85,103 @@ const MAX_STEPS_PRESETS = [10, 15, 20, 30, 40, 50, 80, 100, 150, 200] as const;
  * are strings, so the null default (built-in 30) maps to this sentinel.
  */
 const MAX_STEPS_DEFAULT_VALUE = "default";
+
+/**
+ * Sentinel Select value for the "Default" reasoning-effort option — the
+ * null default (provider decides) maps to this sentinel, same pattern
+ * as MAX_STEPS_DEFAULT_VALUE above.
+ */
+const REASONING_DEFAULT_VALUE = "default";
+
+/**
+ * Numeric model-parameter fields with their validation rules. Each rule
+ * mirrors the corresponding bound in modelSettingsSchema so an invalid
+ * draft (NaN / out of range) reverts locally on blur instead of bouncing
+ * off the server.
+ */
+const NUMERIC_FIELD_RULES = {
+  temperature: { min: 0, max: 2, integer: false },
+  topP: { min: 0, max: 1, integer: false },
+  topK: { min: 1, max: Number.POSITIVE_INFINITY, integer: true },
+  maxOutputTokens: { min: 1, max: Number.POSITIVE_INFINITY, integer: true },
+} as const;
+
+type NumericModelField = keyof typeof NUMERIC_FIELD_RULES;
+
+/** Format a nullable numeric setting for its draft input ("" = default). */
+function numToDraft(value: number | null): string {
+  return value === null ? "" : String(value);
+}
+
+/** Pretty-print nullable providerOptions for the JSON textarea ("" = unset). */
+function prettyProviderOptions(
+  value: Record<string, unknown> | null,
+): string {
+  return value === null ? "" : JSON.stringify(value, null, 2);
+}
+
+/**
+ * Parse a numeric model-parameter draft. Returns undefined for invalid
+ * input (NaN / out of range), null for "back to provider default" (the
+ * empty string), or the parsed number.
+ */
+function parseNumericDraft(
+  field: NumericModelField,
+  raw: string,
+): number | null | undefined {
+  const trimmed = raw.trim();
+  if (trimmed === "") return null;
+  const num = Number(trimmed);
+  const rule = NUMERIC_FIELD_RULES[field];
+  const valid =
+    Number.isFinite(num) &&
+    num >= rule.min &&
+    num <= rule.max &&
+    (!rule.integer || Number.isInteger(num));
+  return valid ? num : undefined;
+}
+
+/**
+ * Parse a providerOptions draft. Returns undefined when the text is not
+ * valid JSON or not a JSON object — the schema wants a record, never a
+ * scalar/array/null literal.
+ */
+function parseProviderOptions(
+  trimmed: string,
+): Record<string, unknown> | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return undefined;
+  }
+  return parsed as Record<string, unknown>;
+}
+
+/**
+ * Compose the next whole-blob ModelSettings with one numeric field
+ * overridden. Explicit per-field cases (not a computed key) keep the
+ * result precisely typed.
+ */
+function composeNumericSettings(
+  base: ModelSettings,
+  field: NumericModelField,
+  value: number | null,
+): ModelSettings {
+  switch (field) {
+    case "temperature":
+      return { ...base, temperature: value };
+    case "topP":
+      return { ...base, topP: value };
+    case "topK":
+      return { ...base, topK: value };
+    case "maxOutputTokens":
+      return { ...base, maxOutputTokens: value };
+  }
+}
 
 /**
  * One row per agent config: a label (Explorer / Writer) on the left, a brief
@@ -112,9 +214,35 @@ export function AgentConfigModelPicker({
   const compactionMut = useUpdateAgentConfigContextCompaction(spaceId);
   const maxStepsMut = useUpdateAgentConfigMaxSteps(spaceId);
   const contextNoteMut = useUpdateAgentConfigContextNote(spaceId);
+  const modelSettingsMut = useUpdateAgentConfigModelSettings(spaceId);
   const skillsQ = useSkills(spaceId);
   const skillMut = useSetSkillEnabled(spaceId);
   const [localNote, setLocalNote] = useState(agentConfig.contextNote);
+
+  // Model parameters (ADR-0056) — local drafts follow the localNote
+  // precedent: controlled inputs over draft state, committed on blur
+  // (Enter too, for the numeric fields), re-synced from the server
+  // whenever the persisted values change.
+  const [numericDrafts, setNumericDrafts] = useState<
+    Record<NumericModelField, string>
+  >({
+    temperature: numToDraft(agentConfig.modelSettings.temperature),
+    topP: numToDraft(agentConfig.modelSettings.topP),
+    topK: numToDraft(agentConfig.modelSettings.topK),
+    maxOutputTokens: numToDraft(agentConfig.modelSettings.maxOutputTokens),
+  });
+  const [localProviderOptions, setLocalProviderOptions] = useState(() =>
+    prettyProviderOptions(agentConfig.modelSettings.providerOptions),
+  );
+  const [providerOptionsInvalid, setProviderOptionsInvalid] = useState(false);
+
+  function setNumericDraft(field: NumericModelField, value: string) {
+    setNumericDrafts((drafts) => {
+      const next: Record<NumericModelField, string> = { ...drafts };
+      next[field] = value;
+      return next;
+    });
+  }
 
   // Registry-driven role shape (ADR-0050 D1): every flag below reads the
   // role's registry entry instead of hardcoded name lists, so new roles
@@ -196,6 +324,40 @@ export function AgentConfigModelPicker({
   useEffect(() => {
     setLocalNote(agentConfig.contextNote);
   }, [agentConfig.contextNote]);
+
+  // Re-sync local model-parameter drafts whenever the server-side values
+  // change (mutation echo, external update). Per-field effects (like the
+  // contextNote one above) keep one field's commit from clobbering a
+  // sibling draft the user is still editing.
+  useEffect(() => {
+    setNumericDrafts((drafts) => ({
+      ...drafts,
+      temperature: numToDraft(agentConfig.modelSettings.temperature),
+    }));
+  }, [agentConfig.modelSettings.temperature]);
+  useEffect(() => {
+    setNumericDrafts((drafts) => ({
+      ...drafts,
+      topP: numToDraft(agentConfig.modelSettings.topP),
+    }));
+  }, [agentConfig.modelSettings.topP]);
+  useEffect(() => {
+    setNumericDrafts((drafts) => ({
+      ...drafts,
+      topK: numToDraft(agentConfig.modelSettings.topK),
+    }));
+  }, [agentConfig.modelSettings.topK]);
+  useEffect(() => {
+    setNumericDrafts((drafts) => ({
+      ...drafts,
+      maxOutputTokens: numToDraft(agentConfig.modelSettings.maxOutputTokens),
+    }));
+  }, [agentConfig.modelSettings.maxOutputTokens]);
+  useEffect(() => {
+    setLocalProviderOptions(
+      prettyProviderOptions(agentConfig.modelSettings.providerOptions),
+    );
+  }, [agentConfig.modelSettings.providerOptions]);
 
   const availableProviderIds = new Set(credentials.map((c) => c.providerId));
 
@@ -336,6 +498,144 @@ export function AgentConfigModelPicker({
     }
   }
 
+  // Model parameters (ADR-0056) — whole-blob commit through the frozen
+  // seam: every field change composes {...modelSettings, field: value}
+  // and round-trips the full object. `revert` (optional) restores local
+  // draft state when the server rejects the write so the UI keeps
+  // reflecting server truth.
+  async function persistModelSettings(
+    next: ModelSettings,
+    revert?: () => void,
+  ) {
+    try {
+      await modelSettingsMut.mutateAsync({
+        id: agentConfig.id,
+        modelSettings: next,
+      });
+      toast.success(i18n.t("ai:agentConfigs.toast.updateSuccess"));
+    } catch (err) {
+      toast.error(i18n.t("ai:agentConfigs.toast.updateFailed"), {
+        description: translateError(toErrorPayload(err)),
+      });
+      revert?.();
+    }
+  }
+
+  function handleReasoningChange(reasoning: ReasoningEffort | null) {
+    if (reasoning === agentConfig.modelSettings.reasoning) return;
+    // The Select is controlled straight off agentConfig — on failure the
+    // query is not invalidated, so the trigger falls back to server truth.
+    void persistModelSettings({ ...agentConfig.modelSettings, reasoning });
+  }
+
+  function commitNumericField(field: NumericModelField, raw: string) {
+    const persisted = agentConfig.modelSettings[field];
+    const parsed = parseNumericDraft(field, raw);
+    // Invalid drafts (NaN / out of range) and no-op values both revert
+    // the display to the persisted value — no commit, no toast spam.
+    if (parsed === undefined || parsed === persisted) {
+      setNumericDraft(field, numToDraft(persisted));
+      return;
+    }
+    void persistModelSettings(
+      composeNumericSettings(agentConfig.modelSettings, field, parsed),
+      () => setNumericDraft(field, numToDraft(persisted)),
+    );
+  }
+
+  function commitProviderOptions(raw: string) {
+    const persisted = agentConfig.modelSettings.providerOptions;
+    const trimmed = raw.trim();
+    // Empty input = unset (null).
+    if (trimmed === "") {
+      setProviderOptionsInvalid(false);
+      if (persisted !== null) {
+        void persistModelSettings(
+          { ...agentConfig.modelSettings, providerOptions: null },
+          () => setLocalProviderOptions(prettyProviderOptions(persisted)),
+        );
+      }
+      return;
+    }
+    const record = parseProviderOptions(trimmed);
+    if (record === undefined) {
+      // Invalid JSON: keep the draft so the user can fix it; flag the
+      // inline hint instead of committing or toasting.
+      setProviderOptionsInvalid(true);
+      return;
+    }
+    setProviderOptionsInvalid(false);
+    if (JSON.stringify(record) === JSON.stringify(persisted)) {
+      // Same value typed differently (e.g. re-formatted): normalize the
+      // display, skip the round trip.
+      setLocalProviderOptions(prettyProviderOptions(persisted));
+      return;
+    }
+    void persistModelSettings(
+      { ...agentConfig.modelSettings, providerOptions: record },
+      () => setLocalProviderOptions(prettyProviderOptions(persisted)),
+    );
+  }
+
+  function resetModelParamsDrafts() {
+    setNumericDrafts({
+      temperature: numToDraft(agentConfig.modelSettings.temperature),
+      topP: numToDraft(agentConfig.modelSettings.topP),
+      topK: numToDraft(agentConfig.modelSettings.topK),
+      maxOutputTokens: numToDraft(agentConfig.modelSettings.maxOutputTokens),
+    });
+    setLocalProviderOptions(
+      prettyProviderOptions(agentConfig.modelSettings.providerOptions),
+    );
+  }
+
+  // Close-time flush for the model-parameter drafts — same safety net as
+  // commitNoteIfDirty: close paths (ESC / X / backdrop) aren't guaranteed
+  // to fire blur before the content unmounts. All dirty fields coalesce
+  // into ONE whole-blob commit; per-field mutations here would race (each
+  // composes from the same pre-commit snapshot, last-write-wins).
+  function flushModelParamsOnClose() {
+    let next = agentConfig.modelSettings;
+    let dirty = false;
+    for (const field of Object.keys(
+      NUMERIC_FIELD_RULES,
+    ) as NumericModelField[]) {
+      const persisted = agentConfig.modelSettings[field];
+      const parsed = parseNumericDraft(field, numericDrafts[field]);
+      if (parsed === undefined) {
+        setNumericDraft(field, numToDraft(persisted));
+        continue;
+      }
+      if (parsed !== persisted) {
+        next = composeNumericSettings(next, field, parsed);
+        dirty = true;
+      }
+    }
+    const persistedOpts = agentConfig.modelSettings.providerOptions;
+    const trimmed = localProviderOptions.trim();
+    if (trimmed === "") {
+      if (persistedOpts !== null) {
+        next = { ...next, providerOptions: null };
+        dirty = true;
+      }
+    } else {
+      const record = parseProviderOptions(trimmed);
+      if (record === undefined) {
+        // Keep the draft + flag so it's visible the next time the dialog
+        // opens and the user can fix it there.
+        setProviderOptionsInvalid(true);
+      } else if (
+        JSON.stringify(record) !== JSON.stringify(persistedOpts)
+      ) {
+        next = { ...next, providerOptions: record };
+        dirty = true;
+      }
+    }
+    if (dirty) {
+      void persistModelSettings(next, resetModelParamsDrafts);
+    }
+  }
+
   // ADR-0043 §2 — enabling installs the skill's zip to disk, disabling
   // removes the directory. Takes effect for new conversations (same
   // lifecycle as model/shell/compaction, per the ADR-0024 agent cache).
@@ -394,9 +694,13 @@ export function AgentConfigModelPicker({
   return (
     <Dialog
       onOpenChange={(nextOpen) => {
-        // Commit an in-progress context-note edit when the dialog closes —
-        // see commitNoteIfDirty for why this is needed in addition to blur.
-        if (!nextOpen) void commitNoteIfDirty();
+        // Commit in-progress drafts (context note, model parameters) when
+        // the dialog closes — see commitNoteIfDirty for why blur alone
+        // isn't enough (close paths can unmount before onBlur fires).
+        if (!nextOpen) {
+          void commitNoteIfDirty();
+          flushModelParamsOnClose();
+        }
       }}
     >
       {/* Compact row: name + model summary + config (gear) icon button.
@@ -744,6 +1048,230 @@ export function AgentConfigModelPicker({
             />
           </div>
           )}
+
+          {/* Model parameters — per-role generation overrides (ADR-0056).
+              Applies to EVERY role: one-shot namer/vision calls take the
+              same parameters as loop roles, so the section is not gated
+              on !isOneShot. Every field commits the whole modelSettings
+              blob; null / empty / "default" = provider default. */}
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-xs font-medium text-muted-foreground">
+                {t("ai:agentConfigs.modelParams.sectionTitle")}
+              </span>
+              <span className="text-[0.6875rem] text-muted-foreground/70">
+                {t("ai:agentConfigs.modelParams.sectionDescription")}
+              </span>
+            </div>
+
+            {/* Numeric rows share one interaction model: local draft,
+                commit on blur (Enter blurs), empty = default, invalid
+                input reverts to the persisted value on blur. */}
+            <div className="flex items-center justify-between gap-6">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {t("ai:agentConfigs.modelParams.temperature.title")}
+                </span>
+                <span className="text-[0.6875rem] text-muted-foreground/70">
+                  {t("ai:agentConfigs.modelParams.temperature.description")}
+                </span>
+              </div>
+              <Input
+                type="number"
+                className="w-24"
+                min={0}
+                max={2}
+                step={0.1}
+                placeholder={t("ai:agentConfigs.modelParams.defaultPlaceholder")}
+                value={numericDrafts.temperature}
+                disabled={disabled || modelSettingsMut.isPending}
+                onChange={(e) =>
+                  setNumericDraft("temperature", e.currentTarget.value)
+                }
+                onBlur={(e) =>
+                  commitNumericField("temperature", e.currentTarget.value)
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-6">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {t("ai:agentConfigs.modelParams.topP.title")}
+                </span>
+                <span className="text-[0.6875rem] text-muted-foreground/70">
+                  {t("ai:agentConfigs.modelParams.topP.description")}
+                </span>
+              </div>
+              <Input
+                type="number"
+                className="w-24"
+                min={0}
+                max={1}
+                step={0.05}
+                placeholder={t("ai:agentConfigs.modelParams.defaultPlaceholder")}
+                value={numericDrafts.topP}
+                disabled={disabled || modelSettingsMut.isPending}
+                onChange={(e) => setNumericDraft("topP", e.currentTarget.value)}
+                onBlur={(e) => commitNumericField("topP", e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-6">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {t("ai:agentConfigs.modelParams.topK.title")}
+                </span>
+                <span className="text-[0.6875rem] text-muted-foreground/70">
+                  {t("ai:agentConfigs.modelParams.topK.description")}
+                </span>
+              </div>
+              <Input
+                type="number"
+                className="w-24"
+                min={1}
+                step={1}
+                placeholder={t("ai:agentConfigs.modelParams.defaultPlaceholder")}
+                value={numericDrafts.topK}
+                disabled={disabled || modelSettingsMut.isPending}
+                onChange={(e) => setNumericDraft("topK", e.currentTarget.value)}
+                onBlur={(e) => commitNumericField("topK", e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-6">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {t("ai:agentConfigs.modelParams.maxOutputTokens.title")}
+                </span>
+                <span className="text-[0.6875rem] text-muted-foreground/70">
+                  {t("ai:agentConfigs.modelParams.maxOutputTokens.description")}
+                </span>
+              </div>
+              {/* Wider than the other numeric rows: token caps run into
+                  five or six digits. */}
+              <Input
+                type="number"
+                className="w-28"
+                min={1}
+                step={1}
+                placeholder={t("ai:agentConfigs.modelParams.defaultPlaceholder")}
+                value={numericDrafts.maxOutputTokens}
+                disabled={disabled || modelSettingsMut.isPending}
+                onChange={(e) =>
+                  setNumericDraft("maxOutputTokens", e.currentTarget.value)
+                }
+                onBlur={(e) =>
+                  commitNumericField("maxOutputTokens", e.currentTarget.value)
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                }}
+              />
+            </div>
+
+            {/* Reasoning effort — same sentinel-Select pattern as the
+                max-steps row above ("default" maps to null). */}
+            <div className="flex items-center justify-between gap-6">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {t("ai:agentConfigs.modelParams.reasoning.title")}
+                </span>
+                <span className="text-[0.6875rem] text-muted-foreground/70">
+                  {t("ai:agentConfigs.modelParams.reasoning.description")}
+                </span>
+              </div>
+              <Select
+                value={
+                  agentConfig.modelSettings.reasoning ?? REASONING_DEFAULT_VALUE
+                }
+                onValueChange={(val) => {
+                  if (typeof val === "string") {
+                    handleReasoningChange(
+                      val === REASONING_DEFAULT_VALUE
+                        ? null
+                        : (val as ReasoningEffort),
+                    );
+                  }
+                }}
+              >
+                <SelectTrigger
+                  className="w-32"
+                  disabled={disabled || modelSettingsMut.isPending}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectList>
+                    <SelectItem value={REASONING_DEFAULT_VALUE}>
+                      <SelectItemText>
+                        {t(
+                          "ai:agentConfigs.modelParams.reasoning.defaultOption",
+                        )}
+                      </SelectItemText>
+                      <SelectItemIndicator />
+                    </SelectItem>
+                    {REASONING_EFFORTS.map((effort) => (
+                      <SelectItem key={effort} value={effort}>
+                        <SelectItemText>
+                          {t(
+                            `ai:agentConfigs.modelParams.reasoning.option.${effort}`,
+                          )}
+                        </SelectItemText>
+                        <SelectItemIndicator />
+                      </SelectItem>
+                    ))}
+                  </SelectList>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* providerOptions — raw JSON escape hatch; invalid JSON
+                keeps the draft and shows the inline hint instead of
+                committing. */}
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {t("ai:agentConfigs.modelParams.providerOptions.title")}
+                </span>
+                <span className="text-[0.6875rem] text-muted-foreground/70">
+                  {t(
+                    "ai:agentConfigs.modelParams.providerOptions.description",
+                  )}
+                </span>
+              </div>
+              <Textarea
+                value={localProviderOptions}
+                onChange={(e) => {
+                  setLocalProviderOptions(e.currentTarget.value);
+                  setProviderOptionsInvalid(false);
+                }}
+                onBlur={(e) => commitProviderOptions(e.currentTarget.value)}
+                placeholder={t(
+                  "ai:agentConfigs.modelParams.providerOptions.placeholder",
+                )}
+                className="min-h-24 font-mono text-xs"
+                aria-invalid={providerOptionsInvalid}
+                disabled={disabled || modelSettingsMut.isPending}
+              />
+              {providerOptionsInvalid && (
+                <p className="text-[0.6875rem] text-destructive">
+                  {t(
+                    "ai:agentConfigs.modelParams.providerOptions.invalidJson",
+                  )}
+                </p>
+              )}
+            </div>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
