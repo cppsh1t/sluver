@@ -24,6 +24,7 @@ export type {
   AgentLoopRunInput,
   AgentLoopRunResult,
   ProviderOptions,
+  ReasoningEffort,
 } from "./types";
 
 // Events

@@ -44,6 +44,7 @@ export {
   type LanguageModelUsage,
   type ModelMessage,
   type ProviderOptions,
+  type ReasoningEffort,
   type StepResult,
   type Tool,
   type ToolSet,

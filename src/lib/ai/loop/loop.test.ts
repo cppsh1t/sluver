@@ -278,6 +278,62 @@ describe("AgentLoop tool loop", () => {
   });
 });
 
+// ─── Call-settings pass-through (ADR-0056) ────────────────────────────────
+
+describe("AgentLoop call-settings pass-through", () => {
+  it("forwards every sampling setting to streamText on each step", async () => {
+    const model = new MockLanguageModelV3({
+      doStream: [streamOf(textChunks("done"))],
+    });
+    const loop = new AgentLoop({
+      model,
+      systemPrompt: "test",
+      tools: {},
+      maxSteps: 2,
+      temperature: 0.7,
+      topP: 0.9,
+      topK: 40,
+      maxOutputTokens: 1234,
+      reasoning: "high",
+      providerOptions: { openai: { reasoningSummary: "auto" } },
+    });
+
+    const handle = loop.run({ messages: [USER_MESSAGE] });
+    await handle.result;
+
+    expect(model.doStreamCalls).toHaveLength(1);
+    // `reasoning` is typed on the V4 call options, not the mock's recorded
+    // V3 shape — widen once for the assertion (the value is forwarded
+    // verbatim; see the SDK's `...callSettings` spread into `doStream`).
+    const call = model.doStreamCalls[0] as Record<string, unknown>;
+    expect(call).toMatchObject({
+      temperature: 0.7,
+      topP: 0.9,
+      topK: 40,
+      maxOutputTokens: 1234,
+      reasoning: "high",
+      providerOptions: { openai: { reasoningSummary: "auto" } },
+    });
+  });
+
+  it("omits unset settings — the SDK sees provider defaults", async () => {
+    const model = new MockLanguageModelV3({
+      doStream: [streamOf(textChunks("done"))],
+    });
+    const loop = makeLoop(model);
+
+    await loop.run({ messages: [USER_MESSAGE] }).result;
+
+    expect(model.doStreamCalls).toHaveLength(1);
+    // The SDK spreads all callSettings keys; unset ones materialize as
+    // `undefined`, which is the provider-default signal.
+    const call = model.doStreamCalls[0] as Record<string, unknown>;
+    expect(call.topK).toBeUndefined();
+    expect(call.reasoning).toBeUndefined();
+    expect(call.providerOptions).toBeUndefined();
+  });
+});
+
 // ─── Max steps ────────────────────────────────────────────────────────────
 
 describe("AgentLoop max steps", () => {

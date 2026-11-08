@@ -67,6 +67,25 @@ export type AgentFinishReason =
   | "aborted"
   | "max-steps";
 
+// ─── Reasoning effort ─────────────────────────────────────────────────────
+
+/**
+ * Portable reasoning-effort levels of the AI SDK's top-level `reasoning`
+ * call setting (the 6 storable values of the SDK's union, minus
+ * `'provider-default'` — omitting the option IS the provider default).
+ *
+ * Defined LOCALLY (not imported from `@/types`) to keep the library pure
+ * (ADR-0019); the app layer's `ModelSettings.reasoning` union is
+ * structurally identical, so values pass across the boundary unchanged.
+ */
+export type ReasoningEffort =
+  | "none"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh";
+
 // ─── Options ─────────────────────────────────────────────────────────────
 
 /**
@@ -90,8 +109,15 @@ export interface AgentLoopOptions {
   temperature?: number;
   /** Nucleus sampling. Pass-through to `streamText`. */
   topP?: number;
+  /** Top-K sampling (mainly Google/Anthropic). Pass-through to `streamText`. */
+  topK?: number;
   /** Max tokens generated per step. Pass-through to `streamText`. */
   maxOutputTokens?: number;
+  /**
+   * Portable reasoning-effort override (ADR-0056). Pass-through to
+   * `streamText`'s top-level `reasoning` setting.
+   */
+  reasoning?: ReasoningEffort;
   /** Transport retries; SDK default is 2. Pass-through to `streamText`. */
   maxRetries?: number;
   /** Per-call timeout. `number` is the `totalMs` shorthand. Pass-through to `streamText`. */
